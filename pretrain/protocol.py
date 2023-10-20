@@ -1,7 +1,6 @@
 # The MIT License (MIT)
 # Copyright © 2023 Yuma Rao
-# TODO(developer): Set your name
-# Copyright © 2023 <your name>
+# Copyright © 2023 const
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 # documentation files (the “Software”), to deal in the Software without restriction, including without limitation
@@ -17,17 +16,18 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
+import torch
 import typing
 import bittensor as bt
 
+class GetGradients( bt.Synapse ):
 
-def dummy(query: int, response: int) -> float:
-    """
-    Reward the miner response to the dummy request. This method returns a reward
-    value for the miner, which is used to update the miner's score.
+    # Number of gradients steps to accumulate before calling step.
+    n_steps: int = 10
 
-    Returns:
-    - float: The reward value for the miner.
-    """
+    # Passed on forward, removed on the backward.
+    state_dict: typing.Optional[ typing.Dict[ str, bt.Tensor ] ] = None
 
-    return 1.0 if response == query * 2 else 0
+    # Returned on the backward, empty on the forward.
+    gradient: typing.Optional[ typing.Dict[ str, bt.Tensor ] ] = None
+
