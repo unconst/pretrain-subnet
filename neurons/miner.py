@@ -103,7 +103,7 @@ def main(config):
         bt.logging.info(f'Start forward')
         # Clear previous gradients.
         model.zero_grad()
-        model.load_state_dict( synapse.deserialize_state() )
+        model.load_state_dict( synapse.deserialize() )
 
         # Apply n_steps gradients aggregations.
         step = 0
