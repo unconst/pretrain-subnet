@@ -41,6 +41,7 @@ def get_config():
     parser.add_argument( '--batch_size', type=int, default=8, help='Eval batch size' )
     parser.add_argument( '--sequence_length', type=int, default=512, help='Eval sequence length' )
     parser.add_argument( '--n_steps_per_worker', default=1, type=int, help='Number of steps per worker.' )
+    parser.add_argument( '--n_eval_steps', default=1, type=int, help='Number of eval steps.' )
     parser.add_argument( '--device', type = str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to run the miner on.' )
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
     bt.subtensor.add_args(parser)
@@ -152,11 +153,12 @@ def main(config):
     dataloader = pretrain.dataset.get_dataloader( config.batch_size, config.sequence_length )
     def compute_current_loss_on_subset( n_steps ):
         step = 0
+        loss = 0
         while True:
             batch = next( dataloader )
             inputs = batch.to( config.device )            
             outputs = model( inputs, labels = inputs )
-            loss = outputs.loss / n_steps      
+            loss += outputs.loss      
             if step >= n_steps: break
             else: step += 1
         return loss.item()/n_steps
@@ -170,7 +172,7 @@ def main(config):
     # Step 7: The Main Validation Loop
     bt.logging.info("Starting validator loop.")
     step = 0
-    prev_loss = compute_current_loss_on_subset( n_steps = 10 )
+    prev_loss = compute_current_loss_on_subset( n_steps = config.n_eval_steps )
     bt.logging.success(f'Step: {step} Training loss: {prev_loss}')
     while True:
         try:
@@ -192,7 +194,7 @@ def main(config):
             apply_grads_to_model_and_step( grads )
 
             # Compute current loss on subset of dataset.
-            loss = compute_current_loss_on_subset( n_steps = 10 )
+            loss = compute_current_loss_on_subset( n_steps = config.n_eval_steps )
             bt.logging.success(f'Step: {step} Training loss: {loss}')
 
             # Compute miner score based on previous loss
