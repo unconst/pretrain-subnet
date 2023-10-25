@@ -25,3 +25,7 @@ __spec_version__ = (
     + (1 * int(version_split[2]))
 )
 NETUID = 9
+
+from . import model as model
+from . import dataset as dataset
+from . import protocol as protocol

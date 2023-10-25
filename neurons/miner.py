@@ -30,8 +30,8 @@ import pretrain
 def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument( '--device', type = str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to run the miner on.' )
-    parser.add_argument( '--batch_size', type=int, default='cuda:0', help='Training batch size' )
-    parser.add_argument( '--sequence_length', type=int, default='cuda:0', help='Training sequence length' )
+    parser.add_argument( '--batch_size', type=int, default=8, help='Training batch size' )
+    parser.add_argument( '--sequence_length', type=int, default=512, help='Training sequence length' )
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
     bt.subtensor.add_args(parser)
     # Adds logging specific arguments i.e. --logging.debug ..., --logging.trace .. or --logging.logging_dir ...
@@ -50,7 +50,7 @@ def get_config():
             config.logging.logging_dir,
             config.wallet.name,
             config.wallet.hotkey,
-            config.netuid,
+            pretrain.NETUID,
             "miner",
         )
     )
@@ -135,9 +135,9 @@ def main(config):
     # Serve passes the axon information to the network + netuid we are hosting on.
     # This will auto-update if the axon port of external ip have changed.
     bt.logging.info(
-        f"Serving axon with synapse: {compute_gradients} on network: {config.subtensor.chain_endpoint} with netuid: {config.netuid}"
+        f"Serving axon with synapse: {compute_gradients} on network: {config.subtensor.chain_endpoint} with netuid: {pretrain.NETUID}"
     )
-    axon.serve(netuid=config.netuid, subtensor=subtensor)
+    axon.serve(netuid=pretrain.NETUID, subtensor=subtensor)
 
     # Start  starts the miner's axon, making it active on the network.
     bt.logging.info(f"Starting axon server on port: {config.axon.port}")

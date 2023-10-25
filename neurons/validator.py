@@ -37,10 +37,10 @@ def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument( "--alpha", default=0.9, type=float, help="The weight moving average scoring." )
     parser.add_argument( '--learning_rate', default=1e-4, type=float, help='Learning rate for the optimizer.' )
+    parser.add_argument( '--batch_size', type=int, default=8, help='Eval batch size' )
+    parser.add_argument( '--sequence_length', type=int, default=512, help='Eval sequence length' )
     parser.add_argument( '--n_steps_per_worker', default=1, type=int, help='Number of steps per worker.' )
     parser.add_argument( '--device', type = str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to run the miner on.' )
-    # Adds override arguments for network and netuid.
-    parser.add_argument("--netuid", type=int, default=1, help="The chain subnet uid.")
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
     bt.subtensor.add_args(parser)
     # Adds logging specific arguments i.e. --logging.debug ..., --logging.trace .. or --logging.logging_dir ...
@@ -57,7 +57,7 @@ def get_config():
             config.logging.logging_dir,
             config.wallet.name,
             config.wallet.hotkey,
-            config.netuid,
+            pretrain.NETUID,
             "validator",
         )
     )
@@ -73,7 +73,7 @@ def main(config):
     # Set up logging with the provided configuration and directory.
     bt.logging(config=config, logging_dir=config.full_path)
     bt.logging.info(
-        f"Running validator for subnet: {config.netuid} on network: {config.subtensor.chain_endpoint} with config:"
+        f"Running validator for subnet: {pretrain.NETUID} on network: {config.subtensor.chain_endpoint} with config:"
     )
     # Log the configuration for reference.
     bt.logging.info(config)
@@ -95,7 +95,7 @@ def main(config):
     bt.logging.info(f"Dendrite: {dendrite}")
 
     # The metagraph holds the state of the network, letting us know about other validators and miners.
-    metagraph = subtensor.metagraph(config.netuid)
+    metagraph = subtensor.metagraph(pretrain.NETUID)
     bt.logging.info(f"Metagraph: {metagraph}")
 
     # Step 5: Connect the validator to the network
@@ -203,7 +203,7 @@ def main(config):
                 # This is a crucial step that updates the incentive mechanism on the Bittensor blockchain.
                 # Miners with higher scores (or weights) receive a larger share of TAO rewards on this subnet.
                 result = subtensor.set_weights(
-                    netuid=config.netuid,  # Subnet to set weights on.
+                    netuid=pretrain.NETUID,  # Subnet to set weights on.
                     wallet=wallet,  # Wallet to sign set weights using hotkey.
                     uids=metagraph.uids,  # Uids of the miners to set weights for.
                     weights=weights,  # Weights to set for the miners.
@@ -217,7 +217,7 @@ def main(config):
             # End the current step and prepare for the next iteration.
             step += 1
             # Resync our local state with the latest state from the blockchain.
-            metagraph = subtensor.metagraph(config.netuid)
+            metagraph = subtensor.metagraph(pretrain.NETUID)
             # Sleep for a duration equivalent to the block time (i.e., time between successive blocks).
             time.sleep(bt.__blocktime__)
 
