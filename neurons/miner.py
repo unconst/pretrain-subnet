@@ -115,10 +115,8 @@ def main(config):
             batch = next( dataloader )
             inputs = batch.to( config.device )            
             outputs = model( inputs, labels = inputs )
-            loss = outputs.loss/synapse.n_steps      
-            loss.backward()
-            bt.logging.info(f'Step: {step}, Loss: {loss.item() * synapse.n_steps}')
-
+            outputs.loss.backward()     
+            bt.logging.info(f'Step: {step}, Loss: {outputs.loss.item()}')
             # Runs the forward for timeout - 2 seconds.
             if (time.time() - start_time > synapse.timeout - 2): break
             else: step += 1
