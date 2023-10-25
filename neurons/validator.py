@@ -181,7 +181,7 @@ def main(config):
 
             # Build the query.
             synapse = pretrain.protocol.ComputeGradients( n_steps = config.n_steps_per_worker )
-            synapse.serialize_state( state_dict = model.state_dict() ) 
+            synapse.serialize( state_dict = model.state_dict() ) 
 
             # Make the broadcast query
             dendrite = bt.dendrite( wallet = wallet )
