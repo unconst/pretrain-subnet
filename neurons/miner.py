@@ -108,7 +108,7 @@ def main(config):
         model.to( config.device )
         model.train()
 
-        # Apply n_steps gradients aggregations.
+        # Accumule gradients for timeout period.
         step = 0
         start_time = time.time()
         while True:
