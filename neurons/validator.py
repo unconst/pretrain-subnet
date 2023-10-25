@@ -38,10 +38,10 @@ def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument( "--alpha", default=0.9, type=float, help="The weight moving average scoring." )
     parser.add_argument( '--learning_rate', default=1e-4, type=float, help='Learning rate for the optimizer.' )
-    parser.add_argument( '--batch_size', type=int, default=8, help='Eval batch size' )
+    parser.add_argument( '--batch_size', type=int, default=2, help='Eval batch size' )
     parser.add_argument( '--sequence_length', type=int, default=512, help='Eval sequence length' )
     parser.add_argument( '--n_steps_per_worker', default=1, type=int, help='Number of steps per worker.' )
-    parser.add_argument( '--n_eval_steps', default=1, type=int, help='Number of eval steps.' )
+    parser.add_argument( '--n_eval_steps', default=20, type=int, help='Number of eval steps.' )
     parser.add_argument( '--device', type = str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to run the miner on.' )
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
     bt.subtensor.add_args(parser)
