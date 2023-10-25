@@ -162,7 +162,7 @@ def main(config):
         return loss.item()/n_steps
     
     def get_random_available_miner_axon( ) -> typing.Optional[int]:
-        available_uids = [uid for uid in metagraph.uids if metagraph.validator_permit[ uid ] == False and metagraph.active[ uid ] == 1 and metagraph.axons[ uid ].is_serving ]
+        available_uids = [uid for uid in metagraph.uids if metagraph.validator_permit[ uid ].item() == False and metagraph.active[ uid ].item() == 1 and metagraph.axons[ uid ].is_serving ]
         if len( available_uids ) == 0: return None
         random_miner_uid = random.choice( available_uids )
         return random_miner_uid
