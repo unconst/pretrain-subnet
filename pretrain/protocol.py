@@ -23,10 +23,7 @@ import bittensor as bt
 
 # --- Wire Protocol.
 class ComputeGradients( bt.Synapse ):
-
-    timeout: int = 10
-    remote_loss: float = None
-    
+        
     state_dict: typing.Optional[ typing.Dict[ str, bt.Tensor ] ] = None
 
     def serialize( self, state_dict: typing.Dict[str, torch.Tensor ] ):

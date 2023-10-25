@@ -20,6 +20,7 @@
 import os
 import time
 import torch
+import time
 import argparse
 import traceback
 import bittensor as bt
@@ -101,12 +102,15 @@ def main(config):
     # aggregated gradients. The gradients are then packed into the response and returned.
     def compute_gradients( synapse: pretrain.protocol.ComputeGradients ) -> pretrain.protocol.ComputeGradients:
         bt.logging.info(f'Start forward')
-        # Clear previous gradients.
+        # Prepare model.
         model.zero_grad()
         model.load_state_dict( synapse.deserialize() )
+        model.to( config.device )
+        model.train()
 
         # Apply n_steps gradients aggregations.
         step = 0
+        start_time = time.time()
         while True:
             batch = next( dataloader )
             inputs = batch.to( config.device )            
@@ -114,12 +118,13 @@ def main(config):
             loss = outputs.loss/synapse.n_steps      
             loss.backward()
             bt.logging.info(f'Step: {step}, Loss: {loss.item() * synapse.n_steps}')
-            if step >= synapse.n_steps: break
+
+            # Runs the forward for timeout - 2 seconds.
+            if (time.time() - start_time > synapse.timeout - 2): break
             else: step += 1
 
         # Serialize the gradients onto the model state.
-        synapse.serialize_state( state_dict = { k: v.grad for k, v in model.named_parameters() } ) 
-        synapse.loss = loss.item()
+        synapse.serialize( state_dict = { k: v.grad/step for k, v in model.named_parameters() if v.grad != None } ) 
         bt.logging.info(f'End forward')
         return synapse
 

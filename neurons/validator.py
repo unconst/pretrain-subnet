@@ -40,7 +40,6 @@ def get_config():
     parser.add_argument( '--learning_rate', default=1e-4, type=float, help='Learning rate for the optimizer.' )
     parser.add_argument( '--batch_size', type=int, default=2, help='Eval batch size' )
     parser.add_argument( '--sequence_length', type=int, default=512, help='Eval sequence length' )
-    parser.add_argument( '--n_steps_per_worker', default=1, type=int, help='Number of steps per worker.' )
     parser.add_argument( '--n_eval_steps', default=20, type=int, help='Number of eval steps.' )
     parser.add_argument( '--device', type = str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to run the miner on.' )
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
@@ -153,15 +152,17 @@ def main(config):
     dataloader = pretrain.dataset.get_dataloader( config.batch_size, config.sequence_length )
     def compute_current_loss_on_subset( n_steps ):
         step = 0
-        loss = 0
+        total_loss = 0
+        model.to( config.device )
         while True:
             batch = next( dataloader )
             inputs = batch.to( config.device )            
             outputs = model( inputs, labels = inputs )
-            loss += outputs.loss      
+            total_loss += outputs.loss.item()     
+            bt.logging.info(f'Eval Step: {step}, Loss: {outputs.loss * n_steps}')            
             if step >= n_steps: break
             else: step += 1
-        return loss.item()/n_steps
+        return total_loss/n_steps
     
     def get_random_available_miner_axon( ) -> typing.Optional[int]:
         available_uids = [uid.item() for uid in metagraph.uids if metagraph.active[ uid ].item() == 1 and metagraph.axons[ uid ].is_serving ]
@@ -182,12 +183,12 @@ def main(config):
             random_miner_axon = metagraph.axons[ random_miner_uid ]
 
             # Build the query.
-            synapse = pretrain.protocol.ComputeGradients( n_steps = config.n_steps_per_worker )
+            synapse = pretrain.protocol.ComputeGradients()
             synapse.serialize( state_dict = model.state_dict() ) 
 
             # Make the broadcast query
             dendrite = bt.dendrite( wallet = wallet )
-            grads = dendrite.query( random_miner_axon, synapse, timeout = -1, deserialize = True )
+            grads = dendrite.query( random_miner_axon, synapse, timeout = 100, deserialize = True )
             asyncio.get_event_loop().run_until_complete(dendrite.close_session())
 
             # Apply grads to model and step.
