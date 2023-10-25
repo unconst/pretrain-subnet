@@ -125,12 +125,11 @@ def main(config):
         # Sum grads from all workers on master model.
         model.zero_grad()
         if not isinstance( grads, list ): grads = [ grads ] 
-        for grad in grads:
-            remote_grads = grad.deserialize_state()
+        for grad_dict in grads:
             for (name_j, param_j) in model.named_parameters():
-                if name_j in remote_grads:
-                    if remote_grads[name_j] is not None:
-                        grad_ij = remote_grads[name_j]
+                if name_j in grad_dict:
+                    if grad_dict[name_j] is not None:
+                        grad_ij = grad_dict[name_j]
                         if param_j.grad is None:
                             param_j.grad = grad_ij.to( config.device )
                         else:
