@@ -101,6 +101,7 @@ def main(config):
     # Accepts the model state, loads the state into the model and computes a set of 
     # aggregated gradients. The gradients are then packed into the response and returned.
     def compute_gradients( synapse: pretrain.protocol.ComputeGradients ) -> pretrain.protocol.ComputeGradients:
+        start_time = time.time()
         bt.logging.info(f'Start forward')
         # Prepare model.
         model.zero_grad()
@@ -110,7 +111,6 @@ def main(config):
 
         # Accumule gradients for timeout period.
         step = 0
-        start_time = time.time()
         while True:
             batch = next( dataloader )
             inputs = batch.to( config.device )            
