@@ -162,7 +162,7 @@ def main(config):
         return loss.item()/n_steps
     
     def get_random_available_miner_axon( ) -> typing.Optional[int]:
-        available_uids = [uid for uid in metagraph.uids if metagraph.validator_permit[ uid ].item() == False and metagraph.active[ uid ].item() == 1 and metagraph.axons[ uid ].is_serving ]
+        available_uids = [uid.item() for uid in metagraph.uids if metagraph.active[ uid ].item() == 1 and metagraph.axons[ uid ].is_serving ]
         if len( available_uids ) == 0: return None
         random_miner_uid = random.choice( available_uids )
         return random_miner_uid
@@ -171,6 +171,7 @@ def main(config):
     bt.logging.info("Starting validator loop.")
     step = 0
     prev_loss = compute_current_loss_on_subset( n_steps = 10 )
+    bt.logging.success(f'Step: {step} Training loss: {prev_loss}')
     while True:
         try:
             # Select a random uid to query.
