@@ -150,18 +150,29 @@ def main(config):
 
     # Function for computing loss on a subset of the dataset.
     dataloader = pretrain.dataset.get_dataloader( config.batch_size, config.sequence_length )
-    def compute_current_loss_on_subset( n_steps ):
+    def compute_current_loss_on_subset(n_steps):
         step = 0
         total_loss = 0
-        model.to( config.device )
+        model.to(config.device)
         while True:
-            batch = next( dataloader )
-            inputs = batch.to( config.device )            
-            outputs = model( inputs, labels = inputs )
-            total_loss += outputs.loss.item()     
-            bt.logging.info(f'Eval Step: {step}, Loss: {outputs.loss * n_steps}')            
-            if step >= n_steps: break
-            else: step += 1
+            batch = next(dataloader)
+            inputs = batch.to(config.device)
+            outputs = model(inputs, labels=inputs)
+            total_loss += outputs.loss.item()
+            bt.logging.info(f'Eval Step: {step}, Loss: {outputs.loss * n_steps}')
+            if step >= n_steps:
+                break
+            else:
+                step += 1
+
+        # Delete large tensors/variables if they are no longer needed
+        del batch
+        del inputs
+        del outputs
+
+        # Clear the CUDA memory cache
+        torch.cuda.empty_cache()
+
         return total_loss/n_steps
     
     def get_random_available_miner_axon( ) -> typing.Optional[int]:
