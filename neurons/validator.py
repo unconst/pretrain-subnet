@@ -38,7 +38,7 @@ def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument( "--alpha", default=0.9, type=float, help="The weight moving average scoring." )
     parser.add_argument( '--learning_rate', default=1e-4, type=float, help='Learning rate for the optimizer.' )
-    parser.add_argument( '--batch_size', type=int, default=8, help='Eval batch size' )
+    parser.add_argument( '--batch_size', type=int, default=3, help='Eval batch size' )
     parser.add_argument( '--sequence_length', type=int, default=512, help='Eval sequence length' )
     parser.add_argument( '--n_eval_steps', default=10, type=int, help='Number of eval steps.' )
     parser.add_argument( '--device', type = str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to run the miner on.' )
@@ -122,8 +122,9 @@ def main(config):
     # Step 8: Build optimizer for validation.
     optimizer = AdamW( model.parameters(), lr=config.learning_rate )
     def apply_grads_to_model_and_step( grads: typing.List[ typing.Dict[ str, torch.Tensor ]] ):
-        # Sum grads from all workers on master model.
+        # Clear the CUDA memory cache
         model.zero_grad()
+        model.to(config.device)
         if not isinstance( grads, list ): grads = [ grads ] 
         for grad_dict in grads:
             for (name_j, param_j) in model.named_parameters():
@@ -170,13 +171,10 @@ def main(config):
         del inputs
         del outputs
 
-        # Clear the CUDA memory cache
-        torch.cuda.empty_cache()
-
         return total_loss/n_steps
     
     def get_random_available_miner_axon( ) -> typing.Optional[int]:
-        available_uids = [uid.item() for uid in metagraph.uids if metagraph.active[ uid ].item() == 1 and metagraph.axons[ uid ].is_serving ]
+        available_uids = [uid.item() for uid in metagraph.uids if metagraph.axons[ uid ].is_serving ]
         if len( available_uids ) == 0: return None
         random_miner_uid = random.choice( available_uids )
         return random_miner_uid
@@ -199,7 +197,7 @@ def main(config):
 
             # Make the broadcast query
             dendrite = bt.dendrite( wallet = wallet )
-            grads = dendrite.query( random_miner_axon, synapse, timeout = 20, deserialize = True )
+            grads = dendrite.query( random_miner_axon, synapse, timeout = 60, deserialize = True )
             asyncio.get_event_loop().run_until_complete(dendrite.close_session())
 
             # Apply grads to model and step.
@@ -244,8 +242,6 @@ def main(config):
             step += 1
             # Resync our local state with the latest state from the blockchain.
             metagraph = subtensor.metagraph(pretrain.NETUID)
-            # Sleep for a duration equivalent to the block time (i.e., time between successive blocks).
-            time.sleep(bt.__blocktime__)
 
         # If we encounter an unexpected error, log it for debugging.
         except RuntimeError as e:

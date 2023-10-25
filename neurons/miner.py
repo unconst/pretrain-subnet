@@ -118,7 +118,7 @@ def main(config):
             outputs.loss.backward()     
             bt.logging.info(f'Step: {step}, Loss: {outputs.loss.item()}')
             # Runs the forward for timeout - 2 seconds.
-            if (time.time() - start_time > (synapse.timeout/2)): break
+            if (time.time() - start_time > (synapse.timeout/3)): break
             else: step += 1
 
         # Serialize the gradients onto the model state.
