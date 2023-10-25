@@ -121,9 +121,10 @@ def main(config):
     
     # Step 8: Build optimizer for validation.
     optimizer = AdamW( model.parameters(), lr=config.learning_rate )
-    def apply_grads_to_model_and_step( grads ):
+    def apply_grads_to_model_and_step( grads: typing.List[ typing.Dict[ str, torch.Tensor ]] ):
         # Sum grads from all workers on master model.
         model.zero_grad()
+        if not isinstance( grads, list ): grads = [ grads ] 
         for grad in grads:
             remote_grads = grad.deserialize_state()
             for (name_j, param_j) in model.named_parameters():
@@ -185,7 +186,7 @@ def main(config):
 
             # Make the broadcast query
             dendrite = bt.dendrite( wallet = wallet )
-            grads = dendrite.query( random_miner_axon, synapse, timeout = -1, deserialize = False )
+            grads = dendrite.query( random_miner_axon, synapse, timeout = -1, deserialize = True )
             asyncio.get_event_loop().run_until_complete(dendrite.close_session())
 
             # Apply grads to model and step.
