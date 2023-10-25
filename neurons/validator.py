@@ -21,6 +21,7 @@
 import os
 import time
 import torch
+import typing
 import random
 import asyncio
 import argparse
@@ -159,6 +160,12 @@ def main(config):
             if step >= n_steps: break
             else: step += 1
         return loss.item()/n_steps
+    
+    def get_random_available_miner_axon( ) -> typing.Optional[int]:
+        available_uids = [uid for uid in metagraph.uids if metagraph.validator_permit[ uid ] == False and metagraph.active[ uid ] == 1 and metagraph.axons[ uid ].is_serving ]
+        if len( available_uids ) == 0: None
+        random_miner_uid = random.choice( available_uids )
+        return random_miner_uid
 
     # Step 7: The Main Validation Loop
     bt.logging.info("Starting validator loop.")
@@ -167,8 +174,9 @@ def main(config):
     while True:
         try:
             # Select a random uid to query.
-            random_miner_uid = random.randint( 0, len( metagraph.uids ) - 1 )
-            random_axon = metagraph.axons[ random_miner_uid ]
+            random_miner_uid = get_random_available_miner_axon()
+            if random_miner_uid == None: bt.logging.info('No available miners, continuing'); continue
+            random_miner_axon = metagraph.axons[ random_miner_uid ]
 
             # Build the query.
             synapse = pretrain.protocol.ComputeGradients( n_steps = config.n_steps_per_worker )
@@ -176,7 +184,7 @@ def main(config):
 
             # Make the broadcast query
             dendrite = bt.dendrite( wallet = wallet )
-            grads = dendrite.query( random_axon, synapse, timeout = -1, deserialize = False )
+            grads = dendrite.query( random_miner_axon, synapse, timeout = -1, deserialize = False )
             asyncio.get_event_loop().run_until_complete(dendrite.close_session())
 
             # Apply grads to model and step.
