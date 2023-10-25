@@ -199,7 +199,7 @@ def main(config):
 
             # Make the broadcast query
             dendrite = bt.dendrite( wallet = wallet )
-            grads = dendrite.query( random_miner_axon, synapse, timeout = 10, deserialize = True )
+            grads = dendrite.query( random_miner_axon, synapse, timeout = 20, deserialize = True )
             asyncio.get_event_loop().run_until_complete(dendrite.close_session())
 
             # Apply grads to model and step.
