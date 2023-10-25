@@ -16,18 +16,22 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
+# --- Imports
 import torch
 import typing
 import bittensor as bt
 
-class GetGradients( bt.Synapse ):
+# --- Wire Protocol.
+class ComputeGradients( bt.Synapse ):
 
-    # Number of gradients steps to accumulate before calling step.
-    n_steps: int = 10
-
-    # Passed on forward, removed on the backward.
+    timeout: int = 10
+    remote_loss: float = None
+    
     state_dict: typing.Optional[ typing.Dict[ str, bt.Tensor ] ] = None
 
-    # Returned on the backward, empty on the forward.
-    gradient: typing.Optional[ typing.Dict[ str, bt.Tensor ] ] = None
+    def serialize_state( self, state_dict: typing.Dict[str, torch.Tensor ] ):
+        self.state_dict = { key: bt.Tensor.serialize( value ) for key, value in state_dict.items() }
+
+    def deserialize_state( self ) -> typing.Dict[str, torch.Tensor ]:
+        return { key: value.deserialize() for key, value in self.state_dict.items() }
 

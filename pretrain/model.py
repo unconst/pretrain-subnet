@@ -1,7 +1,7 @@
+
 # The MIT License (MIT)
 # Copyright © 2023 Yuma Rao
-# TODO(developer): Set your name
-# Copyright © 2023 <your name>
+# Copyright © 2023 const
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 # documentation files (the “Software”), to deal in the Software without restriction, including without limitation
@@ -17,11 +17,11 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-__version__ = "0.0.0"
-version_split = __version__.split(".")
-__spec_version__ = (
-    (1000 * int(version_split[0]))
-    + (10 * int(version_split[1]))
-    + (1 * int(version_split[2]))
-)
-NETUID = 9
+from transformers import GPT2LMHeadModel, GPT2Config
+
+# --- Model Arch
+def get_model():
+    return GPT2LMHeadModel( GPT2Config(
+        n_layer = 12, 
+        n_head = 12,
+    ))

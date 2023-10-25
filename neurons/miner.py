@@ -1,7 +1,6 @@
 # The MIT License (MIT)
 # Copyright © 2023 Yuma Rao
-# TODO(developer): Set your name
-# Copyright © 2023 <your name>
+# Copyright © 2023 const
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 # documentation files (the “Software”), to deal in the Software without restriction, including without limitation
@@ -17,25 +16,22 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-# Bittensor Miner Template:
-# TODO(developer): Rewrite based on protocol and validator defintion.
-
 # Step 1: Import necessary libraries and modules
 import os
 import time
+import torch
 import argparse
-import typing
 import traceback
 import bittensor as bt
-from transformers import GPT2LMHeadModel
-from torch.utils.data import DataLoader
 
 # import this repo
 import pretrain
 
 def get_config():
     parser = argparse.ArgumentParser()
-    parser.add_argument( '--device', type=str, default='cuda:0', help='Device to run the miner on.' )
+    parser.add_argument( '--device', type = str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to run the miner on.' )
+    parser.add_argument( '--batch_size', type=int, default='cuda:0', help='Training batch size' )
+    parser.add_argument( '--sequence_length', type=int, default='cuda:0', help='Training sequence length' )
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
     bt.subtensor.add_args(parser)
     # Adds logging specific arguments i.e. --logging.debug ..., --logging.trace .. or --logging.logging_dir ...
@@ -90,36 +86,41 @@ def main(config):
     metagraph = subtensor.metagraph( pretrain.NETUID )
     bt.logging.info(f"Metagraph: {metagraph}")
 
-    if wallet.hotkey.ss58_address not in metagraph.hotkeys:
-        bt.logging.error(
-            f"\nYour miner: {wallet} is not registered to chain connection: {subtensor} \nRun btcli register and try again. "
-        )
-        exit()
-
     # Each miner gets a unique identity (UID) in the network for differentiation.
     my_subnet_uid = metagraph.hotkeys.index(wallet.hotkey.ss58_address)
     bt.logging.info(f"Running miner on uid: {my_subnet_uid}")
 
-    model = GPT2LMHeadModel( pretrain.MODEL_CONFIG )
-    model.to( config.device ) 
+    # Step 5: Initialize miner specific objects
+    model = pretrain.model.get_model().to( config.device )
 
-    dataset = pretrain.FalconDataset( tokenizer = pretrain.OKENIZER, sequence_length = 512 )
-    dataloader = iter( DataLoader( dataset, batch_size = 8, num_workers = 1 ) )
+    # --- Define dataloader.
+    dataloader = pretrain.dataset.get_dataloader( config.batch_size, config.sequence_length )
 
-    # This is the core miner function, which decides the miner's response to a valid, high-priority request.
+    # --- Define forward function.
+    # Accepts the model state, loads the state into the model and computes a set of 
+    # aggregated gradients. The gradients are then packed into the response and returned.
     def compute_gradients( synapse: pretrain.protocol.ComputeGradients ) -> pretrain.protocol.ComputeGradients:
+        bt.logging.info(f'Start forward')
+        # Clear previous gradients.
         model.zero_grad()
-        model.load_state_dict( synapse.state_dict )
+        model.load_state_dict( synapse.deserialize_state() )
+
+        # Apply n_steps gradients aggregations.
+        step = 0
         while True:
             batch = next( dataloader )
             inputs = batch.to( config.device )            
             outputs = model( inputs, labels = inputs )
             loss = outputs.loss/synapse.n_steps      
             loss.backward()
+            bt.logging.info(f'Step: {step}, Loss: {loss.item() * synapse.n_steps}')
             if step >= synapse.n_steps: break
             else: step += 1
-        synapse.grads_dict = {k: v.grad for k, v in model.named_parameters()}
-        synapse.state_dict = None
+
+        # Serialize the gradients onto the model state.
+        synapse.serialize_state( state_dict = { k: v.grad for k, v in model.named_parameters() } ) 
+        synapse.loss = loss.item()
+        bt.logging.info(f'End forward')
         return synapse
 
     # Step 6: Build and link miner functions to the axon.
@@ -148,22 +149,6 @@ def main(config):
     step = 0
     while True:
         try:
-            # TODO(developer): Define any additional operations to be performed by the miner.
-            # Below: Periodically update our knowledge of the network graph.
-            if step % 5 == 0:
-                metagraph = subtensor.metagraph(config.netuid)
-                log = (
-                    f"Step:{step} | "
-                    f"Block:{metagraph.block.item()} | "
-                    f"Stake:{metagraph.S[my_subnet_uid]} | "
-                    f"Rank:{metagraph.R[my_subnet_uid]} | "
-                    f"Trust:{metagraph.T[my_subnet_uid]} | "
-                    f"Consensus:{metagraph.C[my_subnet_uid] } | "
-                    f"Incentive:{metagraph.I[my_subnet_uid]} | "
-                    f"Emission:{metagraph.E[my_subnet_uid]}"
-                )
-                bt.logging.info(log)
-            step += 1
             time.sleep(1)
 
         # If someone intentionally stops the miner, it'll safely terminate operations.
