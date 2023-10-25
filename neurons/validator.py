@@ -112,7 +112,7 @@ def main(config):
 
     # Step 6: Set up initial scoring weights for validation
     bt.logging.info("Building validation weights.")
-    scores = torch.ones_like(metagraph.S, dtype=torch.float32)
+    scores = {}
     bt.logging.info(f"Weights: {scores}")
 
     # Step 7: Build mode for validation.
@@ -206,7 +206,10 @@ def main(config):
             # Periodically update the weights on the Bittensor blockchain.
             if (step + 1) % 10 == 0:
                 # TODO(developer): Define how the validator normalizes scores before setting weights.
-                weights = torch.nn.functional.normalize(scores, p=1.0, dim=0)
+                weights = torch.zeros_like( metagraph.S )
+                for i in range( len( metagraph.uids ) ):
+                    weights[ i ] = scores[ i ] if i in scores else 0.0
+                weights = torch.nn.functional.normalize( weights, p=1.0, dim=0)
                 bt.logging.info(f"Setting weights: {weights}")
                 # This is a crucial step that updates the incentive mechanism on the Bittensor blockchain.
                 # Miners with higher scores (or weights) receive a larger share of TAO rewards on this subnet.
