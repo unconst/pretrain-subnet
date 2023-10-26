@@ -121,63 +121,136 @@ def main(config):
     
     # Step 8: Build optimizer for validation.
     optimizer = AdamW( model.parameters(), lr=config.learning_rate )
-    def apply_grads_to_model_and_step( grads: typing.List[ typing.Dict[ str, torch.Tensor ]] ):
-        # Clear the CUDA memory cache
+    def apply_grads_to_model_and_step(grads: typing.List[typing.Dict[str, torch.Tensor]]):
+        """
+        Applies gradients received from multiple workers to the model and takes an optimizer step.
+
+        Args:
+            grads (typing.List[typing.Dict[str, torch.Tensor]]): List of dictionaries. Each dictionary 
+                represents gradients from a worker where keys are parameter names and values are 
+                corresponding gradients.
+        """
+
+        # Zero out any previous gradients of the model to ensure clean accumulation
         model.zero_grad()
+
+        # Move the model to the device specified in the config (usually GPU)
         model.to(config.device)
-        if not isinstance( grads, list ): grads = [ grads ] 
+
+        # If grads is not a list, convert it into a list for uniform processing
+        if not isinstance(grads, list):
+            grads = [grads]
+
+        # Accumulate gradients from all workers
         for grad_dict in grads:
-            for (name_j, param_j) in model.named_parameters():
+            for name_j, param_j in model.named_parameters():
                 if name_j in grad_dict:
                     if grad_dict[name_j] is not None:
                         grad_ij = grad_dict[name_j]
+                        # Check if the model parameter has not been initialized with gradients yet
                         if param_j.grad is None:
-                            param_j.grad = grad_ij.to( config.device )
+                            param_j.grad = grad_ij.to(config.device)
                         else:
-                            param_j.grad += grad_ij.to( config.device )
+                            param_j.grad += grad_ij.to(config.device)
                     else:
                         bt.logging.trace(f'remote_grads[{name_j}] is None')
                 else:
                     bt.logging.trace(f'{name_j} not in remote_grads:')
 
-        # Average grads based on number of workers.
-        for (_, param_j) in model.named_parameters():
+        # Average the accumulated gradients over the number of workers
+        for _, param_j in model.named_parameters():
             if param_j.grad is not None:
-                param_j.grad /= len( grads )
+                param_j.grad /= len(grads)
 
-        # Step.
+        # Take a step using the optimizer to update model parameters
         optimizer.step()
+
+        # Zero out the gradients to free up memory and avoid accidental accumulation in the next iteration
         model.zero_grad()
+
+        # Clear CUDA cache to free up GPU memory. This can help in reducing memory fragmentation
+        torch.cuda.empty_cache()
 
     # Function for computing loss on a subset of the dataset.
     dataloader = pretrain.dataset.get_dataloader( config.batch_size, config.sequence_length )
-    def compute_current_loss_on_subset(n_steps):
+    def compute_current_loss_on_subset(n_steps: int) -> float:
+        """
+        Computes the average loss of the model on a subset of data.
+
+        Args:
+            n_steps (int): Number of steps (batches) over which the loss should be computed.
+
+        Returns:
+            float: The average loss over the specified number of steps.
+        """
+        
+        # Initialize counters for steps and the cumulative loss
         step = 0
         total_loss = 0
+
+        # Move the model to the appropriate device (e.g., GPU) for computation
         model.to(config.device)
-        while True:
-            batch = next(dataloader)
-            inputs = batch.to(config.device)
-            outputs = model(inputs, labels=inputs)
-            total_loss += outputs.loss.item()
-            bt.logging.info(f'Eval Step: {step}, Loss: {outputs.loss * n_steps}')
-            if step >= n_steps:
-                break
-            else:
-                step += 1
 
-        # Delete large tensors/variables if they are no longer needed
-        del batch
-        del inputs
-        del outputs
+        # Since this function is only for evaluation (i.e., we only need the forward pass),
+        # we use 'torch.no_grad()' to inform PyTorch that it doesn't need to track 
+        # or compute gradients, which saves memory and speeds up the process.
+        with torch.no_grad():
+            while True:
+                # Fetch the next batch of data from the dataloader
+                batch = next(dataloader)
 
-        return total_loss/n_steps
+                # Move the batch data to the same device as the model
+                inputs = batch.to(config.device)
+                
+                # Compute the model's predictions for the given inputs
+                outputs = model(inputs, labels=inputs)
+
+                # Accumulate the loss value for this batch to the total loss
+                total_loss += outputs.loss.item()
+                
+                # Log the current step's loss for monitoring
+                bt.logging.info(f'Eval Step: {step}, Loss: {outputs.loss.item()}')
+
+                # Check if we've reached the required number of steps; if so, break out of the loop
+                if step >= n_steps:
+                    break
+                else:
+                    step += 1
+
+            # Delete the large tensor variables to free up memory. 
+            # This is especially helpful when working with limited GPU memory.
+            del batch
+            del inputs
+            del outputs
+
+            # Explicitly empty the GPU cache to further ensure memory is released
+            torch.cuda.empty_cache()
+
+        # Return the average loss value over the number of steps
+        return total_loss / n_steps
+
     
-    def get_random_available_miner_axon( ) -> typing.Optional[int]:
-        available_uids = [uid.item() for uid in metagraph.uids if metagraph.axons[ uid ].is_serving ]
-        if len( available_uids ) == 0: return None
-        random_miner_uid = random.choice( available_uids )
+    def get_random_available_miner_axon() -> typing.Optional[int]:
+        """
+        Fetches a random UID (User ID) of a miner axon that is currently serving.
+
+        Returns:
+            typing.Optional[int]: UID of a randomly selected available miner axon. 
+                                Returns None if no miner axons are available.
+        """
+        # Fetch the UIDs of all miner axons that are currently serving.
+        # List comprehension iterates through all UIDs and checks if the corresponding axon is serving.
+        available_uids = [uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving]
+
+        # Check if there are no available miner axons.
+        if len(available_uids) == 0: 
+            return None
+
+        # Randomly select a UID from the available UIDs.
+        random_miner_uid = random.choice(available_uids)
+
         return random_miner_uid
+
 
     # Step 7: The Main Validation Loop
     bt.logging.info("Starting validator loop.")

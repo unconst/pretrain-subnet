@@ -100,31 +100,79 @@ def main(config):
     # --- Define forward function.
     # Accepts the model state, loads the state into the model and computes a set of 
     # aggregated gradients. The gradients are then packed into the response and returned.
-    def compute_gradients( synapse: pretrain.protocol.ComputeGradients ) -> pretrain.protocol.ComputeGradients:
+    def compute_gradients(synapse: pretrain.protocol.ComputeGradients) -> pretrain.protocol.ComputeGradients:
+        """
+        Compute the gradients for a given model within a specified timeout.
+
+        Args:
+            synapse (pretrain.protocol.ComputeGradients): Object containing serialized model state 
+                                                        and timeout value.
+
+        Returns:
+            pretrain.protocol.ComputeGradients: Object containing the serialized gradients.
+        """
+
+        # Enable CUDA's benchmarking mode.
+        # This optimizes CUDA's algorithm choices based on input shapes. 
+        # NOTE: This should be enabled if input sizes are consistent across batches. Otherwise, 
+        # it might have a negative performance impact due to continuous algorithm recalculations.
+        torch.backends.cudnn.benchmark = True
+
+        # Capture the starting time to later ensure we don't exceed the timeout
         start_time = time.time()
         bt.logging.info(f'Start forward')
-        # Prepare model.
+            
+        # Reset any previously calculated gradients
         model.zero_grad()
-        model.load_state_dict( synapse.deserialize() )
-        model.to( config.device )
+        # Load the model's weights from the synapse object
+        model.load_state_dict(synapse.deserialize())
+        # Transfer the model to the specified device (e.g., GPU)
+        model.to(config.device)
+        # Set the model in training mode (this affects layers like dropout and batchnorm)
         model.train()
 
-        # Accumule gradients for timeout period.
         step = 0
-        while True:
-            batch = next( dataloader )
-            inputs = batch.to( config.device )            
-            outputs = model( inputs, labels = inputs )
-            outputs.loss.backward()     
-            bt.logging.info(f'Step: {step}, Loss: {outputs.loss.item()}')
-            # Runs the forward for timeout - 2 seconds.
-            if (time.time() - start_time > (synapse.timeout/3)): break
-            else: step += 1
+        try:
+            while True:
+                # Fetch the next batch from the dataloader
+                batch = next(dataloader)
+                # Move the batch to the same device as the model
+                inputs = batch.to(config.device)
 
-        # Serialize the gradients onto the model state.
-        synapse.serialize( state_dict = { k: v.grad/step for k, v in model.named_parameters() if v.grad != None } ) 
+                # The following block shouldn't have 'torch.no_grad()'. 
+                # NOTE: The forward pass needs to build a computation graph for backward.
+                # Wrapping it in 'no_grad()' would prevent gradient computation.
+                outputs = model(inputs, labels=inputs)
+                
+                # Compute gradients based on the loss
+                outputs.loss.backward()
+
+                # Remove the computational graph from the loss to save memory
+                outputs.loss.detach()
+
+                bt.logging.info(f'Step: {step}, Loss: {outputs.loss.item()}')
+                    
+                # Check if the operation has exceeded the allotted time
+                if (time.time() - start_time > (synapse.timeout/3)): 
+                    break
+                else: 
+                    step += 1
+
+                # Clear GPU cache to free up memory and avoid potential CUDA out-of-memory errors
+                torch.cuda.empty_cache()
+
+        except StopIteration:
+            # This exception is raised when the dataloader runs out of samples
+            pass
+
+        # Serialize the averaged gradients into the synapse object
+        with torch.no_grad():
+            synapse.serialize(state_dict={k: v.grad / step for k, v in model.named_parameters() if v.grad is not None})
+
         bt.logging.info(f'End forward')
+
         return synapse
+
 
     # Step 6: Build and link miner functions to the axon.
     # The axon handles request processing, allowing validators to send this process requests.
