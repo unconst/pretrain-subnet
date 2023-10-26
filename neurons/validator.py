@@ -206,7 +206,7 @@ def main(config):
                 outputs = model(inputs, labels=inputs)
 
                 # Accumulate the loss value for this batch to the total loss
-                total_loss += outputs.loss.item()
+                total_loss += outputs.loss.detach().item()
                 
                 # Log the current step's loss for monitoring
                 bt.logging.info(f'Eval Step: {step}, Loss: {outputs.loss.item()}')

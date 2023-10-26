@@ -20,6 +20,7 @@ import torch
 import typing
 import random
 import requests
+import threading
 import bittensor as bt
 from torch.utils.data import DataLoader, IterableDataset
 from transformers import GPT2LMHeadModel, GPT2Config, GPT2Tokenizer
@@ -72,10 +73,73 @@ class FalconDataset(IterableDataset):
                 self.buffer = []
 
 
-# --- Get dataloader.
-def get_dataloader( bs, sq ):
+
+class ThreadedFalconDataset(IterableDataset):
+    def __init__(self, tokenizer, sequence_length):
+        self.buffer = []
+        self.tokenizer = tokenizer
+        self.sequence_length = sequence_length
+        self.num_rows_total = 968000015
+        self.num_rows_per_page = 100
+        self.base_url = "https://datasets-server.huggingface.co/rows"
+        self.params = {
+            "dataset": "tiiuae/falcon-refinedweb",
+            "config": "default",
+            "split": "train"
+        }
+        self.buffer_lock = threading.Lock()
+        self.buffer_capacity = 2 * sequence_length  # assuming you want the capacity to be twice the sequence length
+        self.running = True
+        self.buffer_fill_thread = threading.Thread(target=self.fill_buffer)
+        self.buffer_fill_thread.start()
+
+    def get_random_data(self):
+        random_offset = random.randint(0, self.num_rows_total - self.num_rows_per_page)
+        self.params["offset"] = random_offset
+        self.params["limit"] = self.num_rows_per_page
+        response = requests.get(self.base_url, params=self.params)
+        if response.status_code == 200:
+            return response.json()["rows"]
+        else:
+            return []
+
+    def fill_buffer(self):
+        while self.running:
+            if len(self.buffer) < 0.5 * self.buffer_capacity:
+                data = self.get_random_data()
+                for row in data:
+                    content = row["row"]["content"]
+                    with self.buffer_lock:
+                        self.buffer += self.tokenizer(content)["input_ids"]
+                        self.buffer += [self.tokenizer.eos_token_id]
+
+    def __iter__(self):
+        while True:
+            if len(self.buffer) > self.sequence_length:
+                with self.buffer_lock:
+                    yield torch.tensor(self.buffer[:self.sequence_length])
+                    self.buffer = self.buffer[self.sequence_length:]
+            else:
+                # Optional sleep to reduce aggressive polling
+                time.sleep(0.1)
+
+    def __del__(self):
+        self.running = False
+        self.buffer_fill_thread.join()  # Wait for the thread to finish
+
+
+# --- Get single thread dataloader.
+def get_dataloader(bs, sq):
     tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
     tokenizer.pad_token = tokenizer.eos_token
-    dataset = FalconDataset( tokenizer = tokenizer, sequence_length = sq )
+    dataset = FalconDataset(tokenizer=tokenizer, sequence_length=sq)
+    dataloader = iter(DataLoader(dataset, batch_size=bs, num_workers=1))
+    return dataloader
+
+# --- Get threaded dataloader.
+def get_threaded_dataloader( bs, sq ):
+    tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+    tokenizer.pad_token = tokenizer.eos_token
+    dataset = ThreadedFalconDataset( tokenizer = tokenizer, sequence_length = sq )
     dataloader = iter( DataLoader( dataset, batch_size = bs, num_workers = 1 ) )
     return dataloader
