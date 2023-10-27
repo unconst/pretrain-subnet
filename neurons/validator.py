@@ -39,6 +39,7 @@ def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument( "--alpha", default=0.9, type=float, help="The weight moving average scoring." )
     parser.add_argument( '--learning_rate', default=1e-4, type=float, help='Learning rate for the optimizer.' )
+    parser.add_argument( '--n_concurrent_forward', type=int, default=4, help='Number of allowed concurrent foward requests.' )
     parser.add_argument( '--batch_size', type=int, default=3, help='Eval batch size' )
     parser.add_argument( '--sequence_length', type=int, default=512, help='Eval sequence length' )
     parser.add_argument( '--n_eval_steps', default=10, type=int, help='Number of eval steps.' )
@@ -125,7 +126,7 @@ def main(config):
     # Build forward locks.
     gpu_lock = asyncio.Lock()
     model_lock = asyncio.Lock()
-    max_concurrent_forward = asyncio.Semaphore( 1 )
+    max_concurrent_forward = asyncio.Semaphore( config.n_concurrent_forward )
 
     # Define forward function.
     async def forward( ):
@@ -142,10 +143,11 @@ def main(config):
 
 
             # Build the query for miner
+            pages = [ random.choice(1, 968000015) ]
             synapse = pretrain.protocol.ComputeGradients( 
-                batch_size = 8,
-                sequence_length = 512,
-                pages = [ 0 ]
+                batch_size = config.batch_size,
+                sequence_length = config.sequence_length,
+                pages = pages
             )
             # Get current model state.
             async with model_lock:
@@ -183,9 +185,9 @@ def main(config):
                 # Compute the gradients on the model.
                 local = helpers.compute_gradients_on_model(
                     model = eval_model,
-                    batch_size = 8,
-                    sequence_length = 512,
-                    pages = [ 0 ]
+                    batch_size = config.batch_size,
+                    sequence_length = config.sequence_length,
+                    pages = pages
                 )
                 bt.logging.success( f'Finished local gradient computation' )
                 # Accumulate the MSE of gradients difs.
