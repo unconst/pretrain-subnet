@@ -1,7 +1,6 @@
 # The MIT License (MIT)
 # Copyright © 2023 Yuma Rao
-# TODO(developer): Set your name
-# Copyright © 2023 <your name>
+# Copyright © 2023 const
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 # documentation files (the “Software”), to deal in the Software without restriction, including without limitation
@@ -19,6 +18,7 @@
 
 # Step 1: Import necessary libraries and modules
 import os
+import math
 import time
 import torch
 import typing
@@ -43,7 +43,6 @@ def get_config():
     parser.add_argument( '--n_concurrent_forward_per_uid', type=int, default=1, help='Number of allowed concurrent foward requests per uid.')
     parser.add_argument( '--batch_size', type=int, default=3, help='Eval batch size' )
     parser.add_argument( '--sequence_length', type=int, default=512, help='Eval sequence length' )
-    parser.add_argument( '--n_eval_steps', default=10, type=int, help='Number of eval steps.' )
     parser.add_argument( '--device', type = str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to run the miner on.' )
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
     bt.subtensor.add_args(parser)
@@ -132,6 +131,14 @@ def main(config):
 
     # Define forward function.
     async def forward( ):
+        """
+            The `forward` function performs a forward pass through a randomly selected miner axon,
+            computes gradients both locally and through a request to the miner, compares them to score the miner,
+            and then applies the received gradients to the local model.
+
+            This function is designed to be asynchronous to allow for concurrent execution, while also implementing
+            necessary locks to prevent race conditions and ensure the integrity of the operations.
+        """
 
         # Acquire the forward lock to limit concurrent forward calls.
         async with forward_lock:
@@ -170,7 +177,8 @@ def main(config):
                 # Check for failures.
                 if not response.is_success: 
                     # Failed requests get a mse increase of 1 added.
-                    scores[ uid ] = scores[uid] + 1 if uid in scores else 1
+                    next_score = -10
+                    scores[ uid ] = alpha * scores[uid] + ( 1 - alpha ) * next_score if uid in scores else alpha * next_score
                     return
                 bt.logging.success( f'Response success.' )
 
@@ -195,9 +203,10 @@ def main(config):
                     )
                     bt.logging.success( f'Finished local gradient computation' )
                     # Accumulate the MSE of gradients difs.
-                    mse = helpers.mse_gradients( local, grads_dict )
-                    bt.logging.success( f'Computed MSE: {mse}' )
-                    scores[ uid ] = scores[uid] + mse if uid in scores else mse
+                    alpha = 0.99
+                    next_score = -helpers.mse_gradients( local, grads_dict )
+                    bt.logging.success( f'Computed MSE: {next_score}' )
+                    scores[ uid ] = alpha * scores[uid] + ( 1 - alpha ) * next_score if uid in scores else alpha * next_score
                     bt.logging.success( f'Updated score: {scores[uid]}' )
 
                 # Apply the gradients to the local model.
@@ -236,12 +245,40 @@ def main(config):
         global metagraph
         block = 0
         while True:
+
             # Wait for one block.
             bt.logging.success("Background ideling...")
             await asyncio.sleep( bt.__blocktime__ )
             metagraph = subtensor.metagraph( pretrain.NETUID)
             bt.logging.success("End Background step.")
-            block += 1               
+            block += 1        
+
+            # Set weights every 10 blocks.       
+            if block % 50 == 0:
+                bt.logging.success( f'Setting weights on chain' )
+
+                # Fill weights. weight_i = exp( -score_i ) / SUM_j exp( -score_j )
+                # Where score_i is the moving average of negative of the MSE between grads returned and grads computed.
+                weights = torch.zeros_like( metagraph.S )
+                for i in range( len( metagraph.uids ) ):
+                    weights[ i ] = math.exp( scores[ i ] ) if i in scores else 0.0
+
+                # Normalize the scores to 1.0
+                weights = torch.nn.functional.normalize( weights, p=1.0, dim=0)
+                bt.logging.info(f"Setting weights: {weights}")
+                # This is a crucial step that updates the incentive mechanism on the Bittensor blockchain.
+                # Miners with higher scores (or weights) receive a larger share of TAO rewards on this subnet.
+                result = subtensor.set_weights(
+                    netuid=pretrain.NETUID,  # Subnet to set weights on.
+                    wallet=wallet,  # Wallet to sign set weights using hotkey.
+                    uids=metagraph.uids,  # Uids of the miners to set weights for.
+                    weights=weights,  # Weights to set for the miners.
+                    wait_for_inclusion=True,
+                )
+                if result:
+                    bt.logging.success("Successfully set weights.")
+                else:
+                    bt.logging.error("Failed to set weights.")
 
     # A function that runs a continuous loop of requests with a semaphore
     async def main_loop():
