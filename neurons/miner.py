@@ -131,12 +131,14 @@ def main(config):
             local_model = local_model.to( config.device )
             bt.logging.success( f'Aquired GPU space for query.' )
             # Compute gradients on the model.
-            grads_dict = helpers.compute_gradients_on_model(
+            grads_dict, loss = helpers.compute_gradients_on_model(
                 model = local_model,
                 batch_size = synapse.batch_size,
                 sequence_length = synapse.sequence_length,
                 pages = synapse.pages
             )
+            wandb_event['loss'] = loss
+
         # Serialize accumulated gradients into the synapse object
         synapse.serialize( state_dict = grads_dict )
         bt.logging.success( f'Serialized response gradients.' )
