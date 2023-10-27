@@ -32,6 +32,29 @@ async def compute_gradients_on_model(
         sequence_length: int,
         pages: typing.List[int],
     ) -> typing.Dict[str, torch.Tensor]:
+        """
+            Computes the gradients of the given model on a subset of data.
+
+            This function initializes a data loader with specified parameters, sets the model to training mode, and iterates
+            through the dataset to compute gradients. It also manages CUDA's benchmarking mode and clears GPU cache to avoid
+            potential out-of-memory errors. The computed gradients are averaged over all batches and returned.
+
+            Parameters:
+                model (torch.nn.Module): The model on which to compute gradients.
+                batch_size (int): The batch size for the data loader.
+                sequence_length (int): The sequence length for the data loader.
+                pages (typing.List[int]): List of page indices to be loaded by the data loader.
+
+            Returns:
+                typing.Dict[str, torch.Tensor]: A dictionary mapping parameter names to their computed gradients.
+
+            Usage:
+                >>> model = SomeTorchModel()
+                >>> batch_size = 32
+                >>> sequence_length = 128
+                >>> pages = [1, 2, 3, 4]
+                >>> gradients = await compute_gradients_on_model (model,  batch_size, sequence_length, pages )
+        """
         # Initialize the dataloader.
         loader = pretrain.dataset.SubsetFalconLoader(
             batch_size = batch_size,
