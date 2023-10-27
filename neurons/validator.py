@@ -129,14 +129,17 @@ def main(config):
 
     # Define forward function.
     async def forward( ):
+        
         # Acquire the forward lock to limit concurrent forward calls.
         async with max_concurrent_forward:
-            bt.logging.success( 'Starting validator forward.' )
+            bt.logging.success( 'Started validator forward task.' )
 
             # Get a random miner axon.
             available_uids = [uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving]
             if len(available_uids) == 0: return
             uid = random.choice(available_uids)
+            bt.logging.success( f'Selected uid:{uid}' )
+
 
             # Build the query for miner
             synapse = pretrain.protocol.ComputeGradients( 
@@ -150,9 +153,11 @@ def main(config):
 
             # Serialize the model state into the synapse object.
             synapse.serialize( state_dict = query_model_state ) 
+            bt.logging.success( f'Serialized state.' )
 
             # Make the forward query.
             dendrite = bt.dendrite( wallet = wallet )
+            bt.logging.success( f'Sent request.' )
             response = await dendrite.forward( metagraph.axons[ uid ], synapse, timeout = 60, deserialize = False )
             await dendrite.close_session()
 
@@ -161,6 +166,7 @@ def main(config):
                 # Failed requests get a mse increase of 1 added.
                 scores[ uid ] = scores[uid] + 1 if uid in scores else 1
                 return
+            bt.logging.success( f'Response success.' )
 
             # Deserialize the gradients from the response.
             grads_dict = response.deserialize()
@@ -180,7 +186,9 @@ def main(config):
                     pages = [ 0 ]
                 )
                 # Accumulate the MSE of gradients difs.
-                scores[ uid ] = scores[uid] + helpers.mse_gradients( local, grads_dict ) if uid in scores else helpers.mse_gradients( local, grads_dict )
+                mse = helpers.mse_gradients( local, grads_dict )
+                bt.logging.success( f'Computed MSE: {mse}' )
+                scores[ uid ] = scores[uid] + mse if uid in scores else mse
 
             # Apply the gradients to the local model.
             async with model_lock:
@@ -188,12 +196,18 @@ def main(config):
                 for name_j, param_j in model.named_parameters():
                     if name_j in grads_dict and grads_dict[name_j] is not None:
                         param_j.grad = param_j.grad + grads_dict[name_j] if param_j.grad is not None else grads_dict[name_j]
+                bt.logging.success( f'Applied gradients' )
 
                 # Take a step using the optimizer to update model parameters
                 optimizer.step()
+                bt.logging.success( f'Applied step.' )
 
                 # Zero out the gradients to free up memory and avoid accidental accumulation in the next iteration
                 model.zero_grad()
+
+            # Finish.
+            bt.logging.success( f'Finished forward.' )
+
 
     # Training loop.
     async def training_loop():

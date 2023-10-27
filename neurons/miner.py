@@ -108,15 +108,18 @@ def main(config):
         Returns:
             pretrain.protocol.ComputeGradients: Object containing the serialized gradients.
         """
+        bt.logging.success(f'Received request for synapse: {synapse.axon.hotkey}')
         # Load the model's weights from the synapse object
         local_model = pretrain.model.get_model()
         local_model.load_state_dict( synapse.deserialize() )
+        bt.logging.success( f'Loaded model state.' )
         # Lock the model since concurrent accumulation to the model will poision the gradients we 
         # are computing. In practice we would shuttle multiple requests across multiple machines.
         # This lock is not necessary if we are only running a single cuda core.
         async with gpu_lock:
             # Move the model to the same device as the synapse
             local_model = local_model.to( config.device )
+            bt.logging.success( f'Aquired GPU space.' )
             # Compute gradients on the model.
             grads_dict = helpers.compute_gradients_on_model(
                 model = local_model,
@@ -126,6 +129,7 @@ def main(config):
             )
         # Serialize accumulated gradients into the synapse object
         synapse.serialize( state_dict = grads_dict )
+        bt.logging.success( f'Serialized response gradients.' )
         return synapse
 
     # Step 6: Build and link miner functions to the axon.

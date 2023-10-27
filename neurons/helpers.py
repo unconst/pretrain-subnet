@@ -1,6 +1,7 @@
 import torch
 import typing
 import pretrain
+import bittensor as bt
 
 async def mse_gradients(
         grads_A: typing.Dict[str, torch.Tensor],
@@ -61,6 +62,7 @@ async def compute_gradients_on_model(
             sequence_length = sequence_length,
             pages = pages
         )
+        bt.logging.success( f'Loaded data subset.' )
         # Enable CUDA's benchmarking mode.
         # This optimizes CUDA's algorithm choices based on input shapes. 
         # NOTE: This should be enabled if input sizes are consistent across batches. Otherwise, 
@@ -70,6 +72,7 @@ async def compute_gradients_on_model(
         model.zero_grad()
         # Set the model in training mode (this affects layers like dropout and batchnorm)
         model.train()
+        bt.logging.success( f'Started gradient computation.' )
         # Iterate over samples this ends once the loader runs out.
         for i, batch in enumerate( loader ):
             # Move the batch to the same device as the model
@@ -84,8 +87,10 @@ async def compute_gradients_on_model(
             outputs.loss.detach()
             # Clear GPU cache to free up memory and avoid potential CUDA out-of-memory errors
             torch.cuda.empty_cache()
+            bt.logging.success( f'Computed gradients with step: {i} loss: {outputs.loss}' )
         # Serialize the averaged gradients into the synapse object
         with torch.no_grad():
             grads = { k: v.grad / (i+1) for k, v in model.named_parameters() if v.grad is not None}
         # Return gradients.
+        bt.logging.success( f'Finished gradient computation.' )
         return grads
