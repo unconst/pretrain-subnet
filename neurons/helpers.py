@@ -17,7 +17,7 @@ def mse_gradients(
     # Iterate through each key in grads_A (keys in grads_B should match due to the assert statement)
     for key in grads_A.keys():
         # Compute the squared difference between corresponding gradients
-        squared_diff = (grads_A[key] - grads_B[key]) ** 2
+        squared_diff = (grads_A[key].to('cpu') - grads_B[key].to('cpu')) ** 2
         
         # Compute the mean of the squared difference
         mse = torch.mean(squared_diff)

@@ -187,6 +187,7 @@ def main(config):
                     sequence_length = 512,
                     pages = [ 0 ]
                 )
+                bt.logging.success( f'Finished local gradient computation' )
                 # Accumulate the MSE of gradients difs.
                 mse = helpers.mse_gradients( local, grads_dict )
                 bt.logging.success( f'Computed MSE: {mse}' )
