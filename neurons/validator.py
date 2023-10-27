@@ -198,9 +198,10 @@ def main(config):
             async with model_lock:
                 bt.logging.success( f'Aquired model lock.' )
                 # Accumulate grads on local model.
+                model.to('cpu')
                 for name_j, param_j in model.named_parameters():
                     if name_j in grads_dict and grads_dict[name_j] is not None:
-                        param_j.grad = param_j.grad + grads_dict[name_j] if param_j.grad is not None else grads_dict[name_j]
+                        param_j.grad = param_j.grad + grads_dict[name_j].to('cpu') if param_j.grad is not None else grads_dict[name_j].to('cpu')
                 bt.logging.success( f'Applied gradients to model.' )
 
                 # Take a step using the optimizer to update model parameters
