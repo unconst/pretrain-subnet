@@ -1,3 +1,4 @@
+import wandb
 import torch
 import typing
 import pretrain
@@ -70,6 +71,7 @@ def compute_gradients_on_model(
         model.train()
         bt.logging.success( f'Started gradient computation.' )
         # Iterate over samples this ends once the loader runs out.
+        average_loss = 0.0
         for i, batch in enumerate( loader ):
             # Move the batch to the same device as the model
             inputs = batch.to( model.device )
@@ -80,7 +82,7 @@ def compute_gradients_on_model(
             # Compute gradients based on the loss
             outputs.loss.backward()
             # Remove the computational graph from the loss to save memory
-            outputs.loss.detach()
+            average_loss += outputs.loss.detach().item()
             # Clear GPU cache to free up memory and avoid potential CUDA out-of-memory errors
             torch.cuda.empty_cache()
             bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
@@ -89,4 +91,19 @@ def compute_gradients_on_model(
             grads = { k: v.grad / (i+1) for k, v in model.named_parameters() if v.grad is not None}
         # Return gradients.
         bt.logging.success( f'Finished gradient computation.' )
-        return grads
+        return grads, average_loss/(i+1)
+
+
+def init_wandb(config, wallet, reinit=False):
+    """Starts a new wandb run."""
+    tags = [ 'validator', wallet.hotkey.ss58_address, pretrain.__version__, str(pretrain.__spec_version__), f'netuid_{pretrain.NETUID}']
+    wandb.init(
+        anonymous = "allow",
+        reinit = reinit,
+        project = config.wandb.project_name,
+        entity = config.wandb.entity,
+        config = config,
+        mode="offline" if config.wandb.offline else "online",
+        dir = config.full_path,
+        tags=tags,
+    )

@@ -20,6 +20,7 @@
 import os
 import math
 import time
+import wandb
 import torch
 import typing
 import random
@@ -44,17 +45,14 @@ def get_config():
     parser.add_argument( '--batch_size', type=int, default=3, help='Eval batch size' )
     parser.add_argument( '--sequence_length', type=int, default=512, help='Eval sequence length' )
     parser.add_argument( '--device', type = str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to run the miner on.' )
-    # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
+    parser.add_argument( "--wandb.off", action="store_true", help="Turn off wandb.", default=False)
+    parser.add_argument( "--wandb.project_name", type=str, help="The name of the project where you are sending the new run.", default="openvalidators" )
+    parser.add_argument( "--wandb.entity", type=str, help="An entity is a username or team name where youre sending runs.", default="opentensor-dev" )
+    parser.add_argument( "--wandb.offline", action="store_true", help="Runs wandb in offline mode.", default=False,)
     bt.subtensor.add_args(parser)
-    # Adds logging specific arguments i.e. --logging.debug ..., --logging.trace .. or --logging.logging_dir ...
     bt.logging.add_args(parser)
-    # Adds wallet specific arguments i.e. --wallet.name ..., --wallet.hotkey ./. or --wallet.path ...
     bt.wallet.add_args(parser)
-    # Parse the config (will take command-line arguments if provided)
-    # To print help message, run python3 template/validator.py --help
     config = bt.config(parser)
-    # Step 3: Set up logging directory
-    # Logging is crucial for monitoring and debugging purposes.
     config.full_path = os.path.expanduser(
         "{}/{}/{}/netuid{}/{}".format(
             config.logging.logging_dir,
@@ -73,54 +71,32 @@ def get_config():
 
 
 def main(config):
-    # Set up logging with the provided configuration and directory.
+    # Setup logging.
     bt.logging(config=config, logging_dir=config.full_path)
-    bt.logging.info(
-        f"Running validator for subnet: {pretrain.NETUID} on network: {config.subtensor.chain_endpoint} with config:"
-    )
-    # Log the configuration for reference.
     bt.logging.info(config)
 
-    # Step 4: Build Bittensor validator objects
-    # These are core Bittensor classes to interact with the network.
-    bt.logging.info("Setting up bittensor objects.")
-
-    # The wallet holds the cryptographic key pairs for the validator.
+    # Build bittensor objects.
     wallet = bt.wallet(config=config)
-    bt.logging.info(f"Wallet: {wallet}")
-
-    # The subtensor is our connection to the Bittensor blockchain.
     subtensor = bt.subtensor(config=config)
-    bt.logging.info(f"Subtensor: {subtensor}")
-
-    # Dendrite is the RPC client; it lets us send messages to other nodes (axons) in the network.
-    dendrite = bt.dendrite(wallet=wallet)
-    bt.logging.info(f"Dendrite: {dendrite}")
-
-    # The metagraph holds the state of the network, letting us know about other validators and miners.
     metagraph = subtensor.metagraph(pretrain.NETUID)
+    helpers.init_wandb( wallet = wallet, config = config )
+    bt.logging.info(f"Wallet: {wallet}")
+    bt.logging.info(f"Subtensor: {subtensor}")
     bt.logging.info(f"Metagraph: {metagraph}")
 
-    # Step 5: Connect the validator to the network
+    # Check registration.
     if wallet.hotkey.ss58_address not in metagraph.hotkeys:
-        bt.logging.error(
-            f"\nYour validator: {wallet} if not registered to chain connection: {subtensor} \nRun btcli register and try again."
-        )
+        # You are not registered.
+        bt.logging.error( f"\nYour validator: {wallet} if not registered to chain connection: {subtensor} \nRun btcli register and try again.")
         exit()
+    else:
+        # You are registered
+        my_subnet_uid = metagraph.hotkeys.index(wallet.hotkey.ss58_address)
+        bt.logging.info(f"Running validator on uid: {my_subnet_uid}")
 
-    # Each validator gets a unique identity (UID) in the network for differentiation.
-    my_subnet_uid = metagraph.hotkeys.index(wallet.hotkey.ss58_address)
-    bt.logging.info(f"Running validator on uid: {my_subnet_uid}")
-
-    # Step 6: Set up initial scoring weights for validation
-    bt.logging.info("Building validation weights.")
+    # Build training objects.
     scores = {}
-    bt.logging.info(f"Weights: {scores}")
-
-    # Step 7: Build mode for validation.
     model = pretrain.model.get_model().to( config.device )
-    
-    # Step 8: Build optimizer for validation.
     optimizer = AdamW( model.parameters(), lr=config.learning_rate )
     
     # Build forward locks.
@@ -139,6 +115,8 @@ def main(config):
             This function is designed to be asynchronous to allow for concurrent execution, while also implementing
             necessary locks to prevent race conditions and ensure the integrity of the operations.
         """
+        wandb_event = {}
+        wandb_event['begin_forward'] = time.time()
 
         # Acquire the forward lock to limit concurrent forward calls.
         async with forward_lock:
@@ -149,6 +127,7 @@ def main(config):
             if len(available_uids) == 0: return
             uid = random.choice(available_uids)
             bt.logging.success( f'Selected uid:{uid}' )
+            wandb_event['uid'] = uid
 
             # Acquire the per uid lock to limit concurrent forward calls to the same uid.
             async with per_uid_locks[uid]:
@@ -160,6 +139,11 @@ def main(config):
                     sequence_length = config.sequence_length,
                     pages = pages
                 )
+                wandb_event['batch_size'] = config.batch_size
+                wandb_event['sequence_length'] = config.batch_size
+                wandb_event['pages'] = pages
+                wandb_event['n_pages'] = len(pages)
+
                 # Get current model state.
                 async with model_lock:
                     query_model_state = model.state_dict()
@@ -169,75 +153,89 @@ def main(config):
                 bt.logging.success( f'Serialized state.' )
 
                 # Make the forward query.
+                wandb_event['query_time'] = time.time()
                 dendrite = bt.dendrite( wallet = wallet )
                 bt.logging.success( f'Sent request.' )
                 response = await dendrite.forward( metagraph.axons[ uid ], synapse, timeout = 60, deserialize = False )
                 await dendrite.close_session()
+                wandb_event['end_query_time'] = time.time()
 
                 # Check for failures.
                 if not response.is_success: 
+                    bt.logging.error( f'Response failure.' )
+                    wandb_event['success'] = False
                     # Failed requests get a mse increase of 1 added.
                     next_score = -10
-                    scores[ uid ] = alpha * scores[uid] + ( 1 - alpha ) * next_score if uid in scores else alpha * next_score
-                    return
-                bt.logging.success( f'Response success.' )
+                    scores[ uid ] = config.alpha * scores[uid] + ( 1 - config.alpha ) * next_score if uid in scores else config.alpha * next_score
+                    wandb_event['next_score'] = next_score
+                    wandb_event['current_score'] = scores[ uid ] 
+                    wandb_event['end_forward'] = time.time()
+                    wandb.log( wandb_event )
+                    return 
+                
+                else:
+                    wandb_event['success'] = True
 
-                # Deserialize the gradients from the response.
-                grads_dict = response.deserialize()
+                    bt.logging.success( f'Response success.' )
+                    # Deserialize the gradients from the response.
+                    grads_dict = response.deserialize()
+                    # Score the local model by comparing the gradients generated locally vs 
+                    # the gradients generated by the miner.
+                    async with gpu_lock:
+                        # Run eval.
+                        wandb_event['begin_eval'] = time.time()
+                        bt.logging.success( f'Aquired GPU space.' )
+                        # Load the models weights into a new model and position it on the gpu.
+                        eval_model = pretrain.model.get_model()
+                        eval_model.load_state_dict( query_model_state )
+                        eval_model.to( config.device )
+                        bt.logging.success( f'Created eval model on GPU')
+                        # Compute the gradients on the model.
+                        local_grads, loss = helpers.compute_gradients_on_model(
+                            model = eval_model,
+                            batch_size = config.batch_size,
+                            sequence_length = config.sequence_length,
+                            pages = pages
+                        )
+                        bt.logging.success( f'Finished local gradient computation with loss: {loss}' )
+                        wandb_event['loss'] = loss
 
-                # Score the local model by comparing the gradients generated locally vs 
-                # the gradients generated by the miner.
-                async with gpu_lock:
-                    bt.logging.success( f'Aquired GPU space.' )
-                    # Load the models weights into a new model and position it on the gpu.
-                    eval_model = pretrain.model.get_model()
-                    eval_model.load_state_dict( query_model_state )
-                    eval_model.to( config.device )
-                    bt.logging.success( f'Created eval model on GPU')
-                    # Compute the gradients on the model.
-                    local = helpers.compute_gradients_on_model(
-                        model = eval_model,
-                        batch_size = config.batch_size,
-                        sequence_length = config.sequence_length,
-                        pages = pages
-                    )
-                    bt.logging.success( f'Finished local gradient computation' )
-                    # Accumulate the MSE of gradients difs.
-                    alpha = 0.99
-                    next_score = -helpers.mse_gradients( local, grads_dict )
-                    bt.logging.success( f'Computed MSE: {next_score}' )
-                    scores[ uid ] = alpha * scores[uid] + ( 1 - alpha ) * next_score if uid in scores else alpha * next_score
-                    bt.logging.success( f'Updated score: {scores[uid]}' )
+                        # Compute MSE
+                        alpha = 0.99
+                        next_score = -helpers.mse_gradients( local_grads, grads_dict )
+                        scores[ uid ] = alpha * scores[uid] + ( 1 - alpha ) * next_score if uid in scores else alpha * next_score
+                        bt.logging.success( f'Computed MSE: {next_score}' )
+                        bt.logging.success( f'Updated score: {scores[uid]}' )
+                        wandb_event['next_score'] = next_score
+                        wandb_event['current_score'] = scores[ uid ] 
+                        wandb_event['end_eval'] = time.time()
 
-                # Apply the gradients to the local model.
-                async with model_lock:
-                    bt.logging.success( f'Aquired model lock.' )
-                    # Accumulate grads on local model.
-                    model.to('cpu')
-                    for name_j, param_j in model.named_parameters():
-                        if name_j in grads_dict and grads_dict[name_j] is not None:
-                            param_j.grad = param_j.grad + grads_dict[name_j].to('cpu') if param_j.grad is not None else grads_dict[name_j].to('cpu')
-                    bt.logging.success( f'Applied gradients to model.' )
+                    # Apply the gradients to the local model.
+                    async with model_lock:
+                        bt.logging.success( f'Aquired model lock.' )
+                        wandb_event['begin_apply_grad'] = time.time()
+                        # Accumulate grads on local model.
+                        model.to('cpu')
+                        for name_j, param_j in model.named_parameters():
+                            if name_j in grads_dict and grads_dict[name_j] is not None:
+                                param_j.grad = param_j.grad + grads_dict[name_j].to('cpu') if param_j.grad is not None else grads_dict[name_j].to('cpu')
+                        bt.logging.success( f'Applied gradients to model.' )
 
-                    # Take a step using the optimizer to update model parameters
-                    optimizer.step()
-                    bt.logging.success( f'Applied step.' )
+                        # Take a step using the optimizer to update model parameters
+                        optimizer.step()
+                        bt.logging.success( f'Applied step.' )
 
-                    # Zero out the gradients to free up memory and avoid accidental accumulation in the next iteration
-                    model.zero_grad()
+                        # Zero out the gradients to free up memory and avoid accidental accumulation in the next iteration
+                        model.zero_grad()
+                        wandb_event['end_apply_grad'] = time.time()
 
-                # Finish.
-                bt.logging.success( f'Finished forward.' )
+                    # Finish.
+                    bt.logging.success( f'Finished forward.' )
+                    wandb_event['end_forward'] = time.time()
+                    wandb.log( wandb_event )
+                    return 
 
 
-    # Training loop.
-    async def training_loop():
-        bt.logging.success( 'Starting validator training loop.' )
-        while True:
-            # Create a task for each request and add it to the event loop
-            asyncio.create_task( forward() )
-            # Wait for a short time before creating the next task
-            await asyncio.sleep( 0.1 )
 
     # Background loop.
     async def background_loop():
@@ -280,6 +278,15 @@ def main(config):
                 else:
                     bt.logging.error("Failed to set weights.")
 
+    # Training loop.
+    async def training_loop():
+        bt.logging.success( 'Starting validator training loop.' )
+        while True:
+            # Create a task for each request and add it to the event loop
+            asyncio.create_task( forward() )
+            # Wait for a short time before creating the next task
+            await asyncio.sleep( 1 )
+
     # A function that runs a continuous loop of requests with a semaphore
     async def main_loop():
         bt.logging.success( 'Starting validator main loop.' )
@@ -295,7 +302,6 @@ def main(config):
         loop.set_exception_handler(handle_exception)
         loop.run_until_complete(main_loop())
 
-
     # If we encounter an unexpected error, log it for debugging.
     except RuntimeError as e:
         bt.logging.error(e)
@@ -304,6 +310,7 @@ def main(config):
     # If the user interrupts the program, gracefully exit.
     except KeyboardInterrupt:
         bt.logging.success("Keyboard interrupt detected. Exiting validator.")
+        wandb.finish()
         exit()
 
 # The main function parses the configuration and runs the validator.
