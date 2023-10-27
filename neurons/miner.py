@@ -91,9 +91,8 @@ def main(config):
     my_subnet_uid = metagraph.hotkeys.index(wallet.hotkey.ss58_address)
     bt.logging.info(f"Running miner on uid: {my_subnet_uid}")
 
-    # Step 5: Initialize miner specific objects
-    model_lock = asyncio.Lock()
-    model = pretrain.model.get_model().to( config.device )
+    # Build lock on GPU to prevent concurrent access to the GPU.
+    gpu_lock = asyncio.Lock()
 
     # --- Define forward function.
     # Accepts the model state, loads the state into the model and computes a set of 
@@ -110,20 +109,23 @@ def main(config):
             pretrain.protocol.ComputeGradients: Object containing the serialized gradients.
         """
         # Load the model's weights from the synapse object
-        model.load_state_dict( synapse.deserialize() )
+        local_model = pretrain.model.get_model()
+        local_model.load_state_dict( synapse.deserialize() )
         # Lock the model since concurrent accumulation to the model will poision the gradients we 
         # are computing. In practice we would shuttle multiple requests across multiple machines.
         # This lock is not necessary if we are only running a single cuda core.
-        with model_lock:
+        async with gpu_lock:
+            # Move the model to the same device as the synapse
+            local_model = local_model.to( config.device )
             # Compute gradients on the model.
-            grads = helpers.compute_gradients_on_model(
-                model = model,
+            grads_dict = helpers.compute_gradients_on_model(
+                model = local_model,
                 batch_size = synapse.batch_size,
                 sequence_length = synapse.sequence_length,
                 pages = synapse.pages
             )
         # Serialize accumulated gradients into the synapse object
-        synapse.serialize( state_dict = grads )
+        synapse.serialize( state_dict = grads_dict )
         return synapse
 
     # Step 6: Build and link miner functions to the axon.
