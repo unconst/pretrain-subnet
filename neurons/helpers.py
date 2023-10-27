@@ -3,7 +3,7 @@ import typing
 import pretrain
 import bittensor as bt
 
-async def mse_gradients(
+def mse_gradients(
         grads_A: typing.Dict[str, torch.Tensor],
         grads_B: typing.Dict[str, torch.Tensor],
     ) -> typing.Dict[str, torch.Tensor]:
@@ -27,7 +27,7 @@ async def mse_gradients(
 
     return gradients_mse
       
-async def compute_gradients_on_model( 
+def compute_gradients_on_model( 
         model: torch.nn.Module,
         batch_size: int,
         sequence_length: int,
