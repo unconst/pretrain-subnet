@@ -185,7 +185,7 @@ def main(config):
                         eval_model.to( config.device )
                         bt.logging.success( f'Created eval model on GPU')
                         # Compute the gradients on the model.
-                        local_grads, loss = helpers.compute_gradients_on_model(
+                        local_grads, loss, n_tokens, n_examples, n_batches  = helpers.compute_gradients_on_model(
                             model = eval_model,
                             batch_size = config.batch_size,
                             sequence_length = config.sequence_length,
@@ -193,6 +193,9 @@ def main(config):
                         )
                         bt.logging.success( f'Finished local gradient computation with loss: {loss}' )
                         wandb_event['loss'] = loss
+                        wandb_event['n_tokens'] = n_tokens
+                        wandb_event['n_examples'] = n_examples
+                        wandb_event['n_batches'] = n_batches
 
                         # Compute MSE
                         alpha = 0.99

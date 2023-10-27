@@ -73,6 +73,8 @@ def compute_gradients_on_model(
         # Iterate over samples this ends once the loader runs out.
         average_loss = 0.0
         n_tokens = 0.0
+        n_examples = 0.0
+        n_batches = 0.0
         for i, batch in enumerate( loader ):
             # Move the batch to the same device as the model
             inputs = batch.to( model.device )
@@ -87,12 +89,15 @@ def compute_gradients_on_model(
             # Clear GPU cache to free up memory and avoid potential CUDA out-of-memory errors
             torch.cuda.empty_cache()
             bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
+            n_tokens += inputs.numel()
+            n_examples += inputs.shape[0]
+            n_batches += 1
         # Serialize the averaged gradients into the synapse object
         with torch.no_grad():
             grads = { k: v.grad / (i+1) for k, v in model.named_parameters() if v.grad is not None}
         # Return gradients.
         bt.logging.success( f'Finished gradient computation.' )
-        return grads, average_loss/(i+1)
+        return grads, average_loss/(i+1), n_tokens, n_examples, n_batches
 
 
 def init_wandb(config, wallet, type: str, uid: int, reinit=False,):
