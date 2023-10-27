@@ -143,7 +143,7 @@ def main(config):
 
 
             # Build the query for miner
-            pages = [ random.choice(1, 968000015) ]
+            pages = [ random.randint(1, 968000015) ]
             synapse = pretrain.protocol.ComputeGradients( 
                 batch_size = config.batch_size,
                 sequence_length = config.sequence_length,
