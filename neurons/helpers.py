@@ -72,6 +72,7 @@ def compute_gradients_on_model(
         bt.logging.success( f'Started gradient computation.' )
         # Iterate over samples this ends once the loader runs out.
         average_loss = 0.0
+        n_tokens = 0.0
         for i, batch in enumerate( loader ):
             # Move the batch to the same device as the model
             inputs = batch.to( model.device )
@@ -94,9 +95,9 @@ def compute_gradients_on_model(
         return grads, average_loss/(i+1)
 
 
-def init_wandb(config, wallet, reinit=False):
+def init_wandb(config, wallet, type: str, uid: int, reinit=False,):
     """Starts a new wandb run."""
-    tags = [ 'validator', wallet.hotkey.ss58_address, pretrain.__version__, str(pretrain.__spec_version__), f'netuid_{pretrain.NETUID}']
+    tags = [ type, f'uid:{uid}', wallet.hotkey.ss58_address, pretrain.__version__, str(pretrain.__spec_version__), f'netuid_{pretrain.NETUID}']
     wandb.init(
         anonymous = "allow",
         reinit = reinit,

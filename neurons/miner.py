@@ -16,11 +16,11 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-# Step 1: Import necessary libraries and modules
 import os
 import time
 import torch
 import time
+import typing
 import asyncio
 import argparse
 import traceback
@@ -33,19 +33,16 @@ import helpers
 def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument( '--device', type = str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to run the miner on.' )
-    # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
+    parser.add_argument( "--max_concurrent_forward_requests", type=int, help="Maximum number of concurrent forward requests.", default=1 )
+    parser.add_argument( "--wandb.off", action="store_true", help="Turn off wandb.", default=False)
+    parser.add_argument( "--wandb.project_name", type=str, help="The name of the project where you are sending the new run.", default="openpretraining" )
+    parser.add_argument( "--wandb.entity", type=str, help="An entity is a username or team name where youre sending runs.", default="opentensor-dev" )
+    parser.add_argument( "--wandb.offline", action="store_true", help="Runs wandb in offline mode.", default=False,)
     bt.subtensor.add_args(parser)
-    # Adds logging specific arguments i.e. --logging.debug ..., --logging.trace .. or --logging.logging_dir ...
     bt.logging.add_args(parser)
-    # Adds wallet specific arguments i.e. --wallet.name ..., --wallet.hotkey ./. or --wallet.path ...
     bt.wallet.add_args(parser)
-    # Adds axon specific arguments i.e. --axon.port ...
     bt.axon.add_args(parser)
-    # Activating the parser to read any command-line inputs.
-    # To print help message, run python3 template/miner.py --help
     config = bt.config(parser)
-    # Set up logging directory
-    # Logging captures events for diagnosis or understanding miner's behavior.
     config.full_path = os.path.expanduser(
         "{}/{}/{}/netuid{}/{}".format(
             config.logging.logging_dir,
@@ -62,41 +59,53 @@ def get_config():
 
 # Main takes the config and starts the miner.
 def main(config):
-    # Activating Bittensor's logging with the set configurations.
-    bt.logging(config=config, logging_dir=config.full_path)
-    bt.logging.info(
-        f"Running miner for subnet: { pretrain.NETUID } on network: {config.subtensor.chain_endpoint} with config:"
-    )
 
-    # This logs the active configuration to the specified logging directory for review.
+    # === Logging ===
+    bt.logging(config=config, logging_dir=config.full_path)
+    bt.logging.info( f"Running miner for subnet: { pretrain.NETUID } on network: {config.subtensor.chain_endpoint} with config:")
     bt.logging.info(config)
 
-    # Step 4: Initialize Bittensor miner objects
-    # These classes are vital to interact and function within the Bittensor network.
-    bt.logging.info("Setting up bittensor objects.")
-
-    # Wallet holds cryptographic information, ensuring secure transactions and communication.
+    # === Bittensor objects ===
     wallet = bt.wallet(config=config)
-    bt.logging.info(f"Wallet: {wallet}")
-
-    # subtensor manages the blockchain connection, facilitating interaction with the Bittensor blockchain.
     subtensor = bt.subtensor(config=config)
-    bt.logging.info(f"Subtensor: {subtensor}")
-
-    # metagraph provides the network's current state, holding state about other participants in a subnet.
     metagraph = subtensor.metagraph( pretrain.NETUID )
-    bt.logging.info(f"Metagraph: {metagraph}")
-
-    # Each miner gets a unique identity (UID) in the network for differentiation.
+    if wallet.hotkey.ss58_address not in metagraph.hotkeys: raise Exception("You are not registered.")
     my_subnet_uid = metagraph.hotkeys.index(wallet.hotkey.ss58_address)
+    helpers.init_wandb( wallet = wallet, config = config, type = 'validator', uid = my_subnet_uid )
+    bt.logging.info(f"Wallet: {wallet}")
+    bt.logging.info(f"Subtensor: {subtensor}")
+    bt.logging.info(f"Metagraph: {metagraph}")
     bt.logging.info(f"Running miner on uid: {my_subnet_uid}")
 
-    # Build lock on GPU to prevent concurrent access to the GPU.
-    gpu_lock = asyncio.Lock()
+    # === Locks ===
+    # Limits GPU usage to 1 request at a time for space considerations. In practice, we would
+    # shuttle multiple requests across multiple machines.
+    gpu_lock = asyncio.Lock() 
+    # Limits the number of queries that can pass the header checks in the blacklist.
+    # Increasing this number allow for the miner to download more requests concurrently.
+    global_forward_lock = asyncio.Semaphore( config.max_concurrent_forward_requests ) 
 
-    # --- Define forward function.
-    # Accepts the model state, loads the state into the model and computes a set of 
-    # aggregated gradients. The gradients are then packed into the response and returned.
+    # === Blacklist ===
+    async def blacklist_fn( synapse: pretrain.protocol.ComputeGradients ) -> typing.Tuple[bool, str]:
+        # Locks requests to only allowing max_concurrent_forward_requests at a time.
+        # After the blacklist the full synapse is pulled into memory so we want to limit
+        # the number here.
+        async with global_forward_lock:
+            # Check if the hotkey is in the metagraph.
+            if synapse.dendrite.hotkey not in metagraph.hotkeys:
+                    # Allow query through.
+                    return True, "Unrecognized hotkey"
+            # Blacklist query.
+            return False, "Hotkey recognized!"
+
+    # === Priority ===
+    async def priority_fn( synapse: pretrain.protocol.ComputeGradients ) -> float:
+        # Priority is stake based.
+        caller_uid = metagraph.hotkeys.index( synapse.dendrite.hotkey )  
+        prirority = float(metagraph.S[caller_uid]) 
+        return prirority
+
+    # === Forward ===
     async def compute_gradients( synapse: pretrain.protocol.ComputeGradients ) -> pretrain.protocol.ComputeGradients:
         """
         Compute the gradients for a given model based on passed batch, sequence length and pages.
@@ -108,18 +117,19 @@ def main(config):
         Returns:
             pretrain.protocol.ComputeGradients: Object containing the serialized gradients.
         """
+        wandb_event = {}
+        wandb_event['init_forward'] = time.time()
         bt.logging.success(f'Received request for synapse: {synapse.axon.hotkey}')
-        # Load the model's weights from the synapse object
-        local_model = pretrain.model.get_model()
-        local_model.load_state_dict( synapse.deserialize() )
-        bt.logging.success( f'Loaded model state.' )
         # Lock the model since concurrent accumulation to the model will poision the gradients we 
         # are computing. In practice we would shuttle multiple requests across multiple machines.
         # This lock is not necessary if we are only running a single cuda core.
         async with gpu_lock:
+            wandb_event['forward_start'] = time.time()
             # Move the model to the same device as the synapse
+            local_model = pretrain.model.get_model()
+            local_model.load_state_dict( synapse.deserialize() )
             local_model = local_model.to( config.device )
-            bt.logging.success( f'Aquired GPU space.' )
+            bt.logging.success( f'Aquired GPU space for query.' )
             # Compute gradients on the model.
             grads_dict = helpers.compute_gradients_on_model(
                 model = local_model,
@@ -130,41 +140,36 @@ def main(config):
         # Serialize accumulated gradients into the synapse object
         synapse.serialize( state_dict = grads_dict )
         bt.logging.success( f'Serialized response gradients.' )
+        wandb_event['forward_end'] = time.time()
+        wandb_event['forward_full_time'] = time.time() - wandb_event['init_forward']
+        wandb_event['forward_process_time'] = time.time() - wandb_event['forward_start']
         return synapse
 
-    # Step 6: Build and link miner functions to the axon.
-    # The axon handles request processing, allowing validators to send this process requests.
-    axon = bt.axon(wallet=wallet, config=config)
-    bt.logging.info(f"Axon {axon}")
+    # === Axon ===
+    axon = bt.axon( 
+        wallet = wallet, 
+        config = config 
+    ).attach( 
+        forward_fn = compute_gradients,
+        priority_fn = priority_fn,
+        blacklist_fn = blacklist_fn
+    ).start()
+    bt.logging.info(f"Served Axon {axon} on network: on network: {config.subtensor.chain_endpoint} with netuid: {pretrain.NETUID}")
 
-    # Attach determiners which functions are called when servicing a request.
-    bt.logging.info(f"Attaching forward function to axon.")
-    axon.attach( forward_fn = compute_gradients )
-
-    # Serve passes the axon information to the network + netuid we are hosting on.
-    # This will auto-update if the axon port of external ip have changed.
-    bt.logging.info(
-        f"Serving axon with synapse: {compute_gradients} on network: {config.subtensor.chain_endpoint} with netuid: {pretrain.NETUID}"
-    )
-    axon.serve(netuid=pretrain.NETUID, subtensor=subtensor)
-
-    # Start  starts the miner's axon, making it active on the network.
-    bt.logging.info(f"Starting axon server on port: {config.axon.port}")
-    axon.start()
-
-    # Step 7: Keep the miner alive
-    # This loop maintains the miner's operations until intentionally stopped.
+    # === Global Loop ===
     bt.logging.info(f"Starting main loop")
-    step = 0
+    block = 0
     while True:
-        try:
-            time.sleep(1)
+        try: 
+            time.sleep( bt.__blocktime__ )
+            block += 1
 
         # If someone intentionally stops the miner, it'll safely terminate operations.
         except KeyboardInterrupt:
             axon.stop()
             bt.logging.success("Miner killed by keyboard interrupt.")
             break
+
         # In case of unforeseen errors, the miner will log the error and continue operations.
         except Exception as e:
             bt.logging.error(traceback.format_exc())

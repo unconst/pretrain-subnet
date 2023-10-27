@@ -46,7 +46,7 @@ def get_config():
     parser.add_argument( '--sequence_length', type=int, default=512, help='Eval sequence length' )
     parser.add_argument( '--device', type = str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to run the miner on.' )
     parser.add_argument( "--wandb.off", action="store_true", help="Turn off wandb.", default=False)
-    parser.add_argument( "--wandb.project_name", type=str, help="The name of the project where you are sending the new run.", default="openvalidators" )
+    parser.add_argument( "--wandb.project_name", type=str, help="The name of the project where you are sending the new run.", default="openpretraining" )
     parser.add_argument( "--wandb.entity", type=str, help="An entity is a username or team name where youre sending runs.", default="opentensor-dev" )
     parser.add_argument( "--wandb.offline", action="store_true", help="Runs wandb in offline mode.", default=False,)
     bt.subtensor.add_args(parser)
@@ -71,41 +71,35 @@ def get_config():
 
 
 def main(config):
-    # Setup logging.
+
+    # === Logging ===
     bt.logging(config=config, logging_dir=config.full_path)
     bt.logging.info(config)
 
-    # Build bittensor objects.
+    # === Bittensor objects ===
     wallet = bt.wallet(config=config)
     subtensor = bt.subtensor(config=config)
     metagraph = subtensor.metagraph(pretrain.NETUID)
-    helpers.init_wandb( wallet = wallet, config = config )
+    if wallet.hotkey.ss58_address not in metagraph.hotkeys: raise Exception("You are not registered.")
+    my_subnet_uid = metagraph.hotkeys.index(wallet.hotkey.ss58_address)
+    helpers.init_wandb( wallet = wallet, config = config, type = 'validator', uid = my_subnet_uid )
     bt.logging.info(f"Wallet: {wallet}")
     bt.logging.info(f"Subtensor: {subtensor}")
     bt.logging.info(f"Metagraph: {metagraph}")
+    bt.logging.info(f"Running miner on uid: {my_subnet_uid}")
 
-    # Check registration.
-    if wallet.hotkey.ss58_address not in metagraph.hotkeys:
-        # You are not registered.
-        bt.logging.error( f"\nYour validator: {wallet} if not registered to chain connection: {subtensor} \nRun btcli register and try again.")
-        exit()
-    else:
-        # You are registered
-        my_subnet_uid = metagraph.hotkeys.index(wallet.hotkey.ss58_address)
-        bt.logging.info(f"Running validator on uid: {my_subnet_uid}")
-
-    # Build training objects.
+    # === Training objects ===
     scores = {}
     model = pretrain.model.get_model().to( config.device )
     optimizer = AdamW( model.parameters(), lr=config.learning_rate )
     
-    # Build forward locks.
+    # === Locks ===
     gpu_lock = asyncio.Lock()
     model_lock = asyncio.Lock()
     forward_lock = asyncio.Semaphore( config.n_concurrent_forward )
     per_uid_locks = { i: asyncio.Semaphore( config.n_concurrent_forward_per_uid ) for i in range(256) }
 
-    # Define forward function.
+    # === Forward Function ===
     async def forward( ):
         """
             The `forward` function performs a forward pass through a randomly selected miner axon,
@@ -237,7 +231,7 @@ def main(config):
 
 
 
-    # Background loop.
+    # === Background Function ===
     async def background_loop():
         bt.logging.success( 'Starting validator background loop.' )
         global metagraph
@@ -278,7 +272,7 @@ def main(config):
                 else:
                     bt.logging.error("Failed to set weights.")
 
-    # Training loop.
+    # === Training loop ===
     async def training_loop():
         bt.logging.success( 'Starting validator training loop.' )
         while True:
@@ -287,13 +281,13 @@ def main(config):
             # Wait for a short time before creating the next task
             await asyncio.sleep( 1 )
 
-    # A function that runs a continuous loop of requests with a semaphore
+    # === Main loop ===
     async def main_loop():
         bt.logging.success( 'Starting validator main loop.' )
         asyncio.run( training_loop() )
         asyncio.run( background_loop() )
 
-    # Run the main loop until completion.
+    # === Start ===
     loop = asyncio.get_event_loop()
     try:
         def handle_exception(loop, context):
@@ -313,9 +307,6 @@ def main(config):
         wandb.finish()
         exit()
 
-# The main function parses the configuration and runs the validator.
+# === Init ===
 if __name__ == "__main__":
-    # Parse the configuration.
-    config = get_config()
-    # Run the main function.
-    main(config)
+    main( get_config() )
