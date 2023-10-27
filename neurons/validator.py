@@ -31,6 +31,7 @@ from transformers import AdamW
 
 # import this repo
 import pretrain
+import helpers
 
 # Step 2: Set up the configuration parser
 # This function is responsible for setting up and parsing command-line arguments.
@@ -116,219 +117,105 @@ def main(config):
     bt.logging.info(f"Weights: {scores}")
 
     # Step 7: Build mode for validation.
-    async_model_lock = asyncio.Lock()
     model = pretrain.model.get_model().to( config.device )
-    model.train()
     
     # Step 8: Build optimizer for validation.
     optimizer = AdamW( model.parameters(), lr=config.learning_rate )
-
-    async def apply_grads_to_model_and_step(grads: typing.List[typing.Dict[str, torch.Tensor]]):
-        """
-        Applies gradients received from multiple workers to the model and takes an optimizer step.
-
-        Args:
-            grads (typing.List[typing.Dict[str, torch.Tensor]]): List of dictionaries. Each dictionary 
-                represents gradients from a worker where keys are parameter names and values are 
-                corresponding gradients.
-        """
-        # Lock this function to ensure that only one worker can apply gradients at a time
-        async with async_model_lock:
-
-            # Zero out any previous gradients of the model to ensure clean accumulation
-            model.zero_grad()
-
-            # Move the model to the device specified in the config (usually GPU)
-            model.to(config.device)
-
-            # If grads is not a list, convert it into a list for uniform processing
-            if not isinstance(grads, list):
-                grads = [grads]
-
-            # Accumulate gradients from all workers
-            for grad_dict in grads:
-                for name_j, param_j in model.named_parameters():
-                    if name_j in grad_dict:
-                        if grad_dict[name_j] is not None:
-                            grad_ij = grad_dict[name_j]
-                            # Check if the model parameter has not been initialized with gradients yet
-                            if param_j.grad is None:
-                                param_j.grad = grad_ij.to(config.device)
-                            else:
-                                param_j.grad += grad_ij.to(config.device)
-                        else:
-                            bt.logging.trace(f'remote_grads[{name_j}] is None')
-                    else:
-                        bt.logging.trace(f'{name_j} not in remote_grads:')
-
-            # Average the accumulated gradients over the number of workers
-            for _, param_j in model.named_parameters():
-                if param_j.grad is not None:
-                    param_j.grad /= len(grads)
-
-            # Take a step using the optimizer to update model parameters
-            optimizer.step()
-
-            # Zero out the gradients to free up memory and avoid accidental accumulation in the next iteration
-            model.zero_grad()
-
-            # Clear CUDA cache to free up GPU memory. This can help in reducing memory fragmentation
-            torch.cuda.empty_cache()
-
-    # Function for computing loss on a subset of the dataset.
-    dataloader = pretrain.dataset.get_dataloader( config.batch_size, config.sequence_length )
-    async def compute_current_loss_on_subset(n_steps: int) -> float:
-        """
-        Computes the average loss of the model on a subset of data.
-
-        Args:
-            n_steps (int): Number of steps (batches) over which the loss should be computed.
-
-        Returns:
-            float: The average loss over the specified number of steps.
-        """
-        # Lock this function to ensure that only one worker can apply gradients at a time
-        async with async_model_lock:
-        
-            # Initialize counters for steps and the cumulative loss
-            step = 0
-            total_loss = 0
-
-            # Move the model to the appropriate device (e.g., GPU) for computation
-            model.to(config.device)
-
-            # Since this function is only for evaluation (i.e., we only need the forward pass),
-            # we use 'torch.no_grad()' to inform PyTorch that it doesn't need to track 
-            # or compute gradients, which saves memory and speeds up the process.
-            with torch.no_grad():
-                while True:
-                    # Fetch the next batch of data from the dataloader
-                    batch = next(dataloader)
-
-                    # Move the batch data to the same device as the model
-                    inputs = batch.to(config.device)
-                    
-                    # Compute the model's predictions for the given inputs
-                    outputs = model(inputs, labels=inputs)
-
-                    # Accumulate the loss value for this batch to the total loss
-                    total_loss += outputs.loss.detach().item()
-                    
-                    # Log the current step's loss for monitoring
-                    bt.logging.info(f'Eval Step: {step}, Loss: {outputs.loss.item()}')
-
-                    # Check if we've reached the required number of steps; if so, break out of the loop
-                    if step >= n_steps:
-                        break
-                    else:
-                        step += 1
-
-                # Delete the large tensor variables to free up memory. 
-                # This is especially helpful when working with limited GPU memory.
-                del batch
-                del inputs
-                del outputs
-
-                # Explicitly empty the GPU cache to further ensure memory is released
-                torch.cuda.empty_cache()
-
-            # Return the average loss value over the number of steps
-            return total_loss / n_steps
-
-    def get_random_available_miner_axon() -> typing.Optional[int]:
-        """
-        Fetches a random UID (User ID) of a miner axon that is currently serving.
-
-        Returns:
-            typing.Optional[int]: UID of a randomly selected available miner axon. 
-                                Returns None if no miner axons are available.
-        """
-        # Fetch the UIDs of all miner axons that are currently serving.
-        # List comprehension iterates through all UIDs and checks if the corresponding axon is serving.
-        available_uids = [uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving]
-
-        # Check if there are no available miner axons.
-        if len(available_uids) == 0: 
-            return None
-
-        # Randomly select a UID from the available UIDs.
-        random_miner_uid = random.choice(available_uids)
-
-        return random_miner_uid
     
-    # Function for forwarding to a random miner.
-    max_concurrent_forwards_semaphore = asyncio.Semaphore( 10 )
+    # Build forward locks.
+    gpu_lock = asyncio.Lock()
+    model_lock = asyncio.Lock()
+    max_concurrent_forward = asyncio.Semaphore( 1 )
+
+    # Define forward function.
     async def forward( ):
-        bt.logging.success( 'Starting validator forward.' )
+        # Acquire the forward lock to limit concurrent forward calls.
+        async with max_concurrent_forward:
+            bt.logging.success( 'Starting validator forward.' )
 
-        # Get a random miner axon.
-        uid = get_random_available_miner_axon(  )
-
-        async with max_concurrent_forwards_semaphore:
-            # Get axon of miner.
-            axon = metagraph.axons[ uid ]
+            # Get a random miner axon.
+            available_uids = [uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving]
+            if len(available_uids) == 0: return
+            uid = random.choice(available_uids)
 
             # Build the query for miner
-            synapse = pretrain.protocol.ComputeGradients()
-            synapse.serialize( state_dict = model.state_dict() ) 
+            synapse = pretrain.protocol.ComputeGradients( 
+                batch_size = 8,
+                sequence_length = 512,
+                pages = [ 0 ]
+            )
+            # Get current model state.
+            async with model_lock:
+                query_model_state = model.state_dict()
 
-            # Make the broadcast query
+            # Serialize the model state into the synapse object.
+            synapse.serialize( state_dict = query_model_state ) 
+
+            # Make the forward query.
             dendrite = bt.dendrite( wallet = wallet )
-            grads = await dendrite.forward( axon, synapse, timeout = 60, deserialize = True )
+            response = await dendrite.forward( metagraph.axons[ uid ], synapse, timeout = 60, deserialize = False )
             await dendrite.close_session()
 
-            # Apply grads to model and step.
-            apply_grads_to_model_and_step( grads )
+            # Check for failures.
+            if not response.is_success: 
+                # Failed requests get a mse increase of 1 added.
+                scores[ uid ] = scores[uid] + 1 if uid in scores else 1
+                return
 
-            # Compute current loss on subset of dataset.
-            loss = compute_current_loss_on_subset( n_steps = config.n_eval_steps )
-            return loss
-        
-    # Training loop
+            # Deserialize the gradients from the response.
+            grads_dict = response.deserialize()
+
+            # Score the local model by comparing the gradients generated locally vs 
+            # the gradients generated by the miner.
+            async with gpu_lock:
+                # Load the models weights into a new model and position it on the gpu.
+                eval_model = pretrain.model.get_model().to( config.device )
+                eval_model.load_state_dict( query_model_state )
+                eval_model.to( config.device )
+                # Compute the gradients on the model.
+                local = helpers.compute_gradients_on_model(
+                    model = eval_model,
+                    batch_size = 8,
+                    sequence_length = 512,
+                    pages = [ 0 ]
+                )
+                # Accumulate the MSE of gradients difs.
+                scores[ uid ] = scores[uid] + helpers.mse_gradients( local, grads_dict ) if uid in scores else helpers.mse_gradients( local, grads_dict )
+
+            # Apply the gradients to the local model.
+            async with model_lock:
+                # Accumulate grads on local model.
+                for name_j, param_j in model.named_parameters():
+                    if name_j in grads_dict and grads_dict[name_j] is not None:
+                        param_j.grad = param_j.grad + grads_dict[name_j] if param_j.grad is not None else grads_dict[name_j]
+
+                # Take a step using the optimizer to update model parameters
+                optimizer.step()
+
+                # Zero out the gradients to free up memory and avoid accidental accumulation in the next iteration
+                model.zero_grad()
+
+    # Training loop.
     async def training_loop():
         bt.logging.success( 'Starting validator training loop.' )
-        # Create a semaphore with a maximum of 10 concurrent tasks
         while True:
             # Create a task for each request and add it to the event loop
             asyncio.create_task( forward() )
             # Wait for a short time before creating the next task
             await asyncio.sleep( 0.1 )
 
+    # Background loop.
     async def background_loop():
         bt.logging.success( 'Starting validator background loop.' )
-
+        global metagraph
         block = 0
         while True:
-
             # Wait for one block.
             bt.logging.success("Background ideling...")
             await asyncio.sleep( bt.__blocktime__ )
-            metagraph = subtensor.metagraph(pretrain.NETUID)
+            metagraph = subtensor.metagraph( pretrain.NETUID)
             bt.logging.success("End Background step.")
-            block += 1
-
-            # Periodically update the weights on the Bittensor blockchain.
-            if (block + 1) % 10 == 0:
-                # TODO(developer): Define how the validator normalizes scores before setting weights.
-                weights = torch.zeros_like( metagraph.S )
-                for i in range( len( metagraph.uids ) ):
-                    weights[ i ] = scores[ i ] if i in scores else 0.0
-                weights = torch.nn.functional.normalize( weights, p=1.0, dim=0)
-                bt.logging.success(f"Setting weights: {weights}")
-                # This is a crucial step that updates the incentive mechanism on the Bittensor blockchain.
-                # Miners with higher scores (or weights) receive a larger share of TAO rewards on this subnet.
-                result = subtensor.set_weights(
-                    netuid=pretrain.NETUID,  # Subnet to set weights on.
-                    wallet=wallet,  # Wallet to sign set weights using hotkey.
-                    uids=metagraph.uids,  # Uids of the miners to set weights for.
-                    weights=weights,  # Weights to set for the miners.
-                    wait_for_inclusion=True,
-                )
-                if result:
-                    bt.logging.success("Successfully set weights.")
-                else:
-                    bt.logging.error("Failed to set weights.")
-
+            block += 1               
 
     # A function that runs a continuous loop of requests with a semaphore
     async def main_loop():

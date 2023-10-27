@@ -23,6 +23,12 @@ import bittensor as bt
 
 # --- Wire Protocol.
 class ComputeGradients( bt.Synapse ):
+
+    batch_size: int
+
+    sequence_length: int
+
+    pages: typing.List[int]
         
     state_dict: typing.Optional[ typing.Dict[ str, bt.Tensor ] ] = None
 

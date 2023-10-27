@@ -21,18 +21,18 @@ import os
 import time
 import torch
 import time
+import asyncio
 import argparse
 import traceback
 import bittensor as bt
 
 # import this repo
 import pretrain
+import helpers
 
 def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument( '--device', type = str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to run the miner on.' )
-    parser.add_argument( '--batch_size', type=int, default=8, help='Training batch size' )
-    parser.add_argument( '--sequence_length', type=int, default=512, help='Training sequence length' )
     # Adds subtensor specific arguments i.e. --subtensor.chain_endpoint ... --subtensor.network ...
     bt.subtensor.add_args(parser)
     # Adds logging specific arguments i.e. --logging.debug ..., --logging.trace .. or --logging.logging_dir ...
@@ -92,17 +92,15 @@ def main(config):
     bt.logging.info(f"Running miner on uid: {my_subnet_uid}")
 
     # Step 5: Initialize miner specific objects
+    model_lock = asyncio.Lock()
     model = pretrain.model.get_model().to( config.device )
-
-    # --- Define dataloader.
-    dataloader = pretrain.dataset.get_dataloader( config.batch_size, config.sequence_length )
 
     # --- Define forward function.
     # Accepts the model state, loads the state into the model and computes a set of 
     # aggregated gradients. The gradients are then packed into the response and returned.
-    def compute_gradients(synapse: pretrain.protocol.ComputeGradients) -> pretrain.protocol.ComputeGradients:
+    async def compute_gradients( synapse: pretrain.protocol.ComputeGradients ) -> pretrain.protocol.ComputeGradients:
         """
-        Compute the gradients for a given model within a specified timeout.
+        Compute the gradients for a given model based on passed batch, sequence length and pages.
 
         Args:
             synapse (pretrain.protocol.ComputeGradients): Object containing serialized model state 
@@ -111,68 +109,22 @@ def main(config):
         Returns:
             pretrain.protocol.ComputeGradients: Object containing the serialized gradients.
         """
-
-        # Enable CUDA's benchmarking mode.
-        # This optimizes CUDA's algorithm choices based on input shapes. 
-        # NOTE: This should be enabled if input sizes are consistent across batches. Otherwise, 
-        # it might have a negative performance impact due to continuous algorithm recalculations.
-        torch.backends.cudnn.benchmark = True
-
-        # Capture the starting time to later ensure we don't exceed the timeout
-        start_time = time.time()
-        bt.logging.info(f'Start forward')
-            
-        # Reset any previously calculated gradients
-        model.zero_grad()
         # Load the model's weights from the synapse object
-        model.load_state_dict(synapse.deserialize())
-        # Transfer the model to the specified device (e.g., GPU)
-        model.to(config.device)
-        # Set the model in training mode (this affects layers like dropout and batchnorm)
-        model.train()
-
-        step = 0
-        try:
-            while True:
-                # Fetch the next batch from the dataloader
-                batch = next(dataloader)
-                # Move the batch to the same device as the model
-                inputs = batch.to(config.device)
-
-                # The following block shouldn't have 'torch.no_grad()'. 
-                # NOTE: The forward pass needs to build a computation graph for backward.
-                # Wrapping it in 'no_grad()' would prevent gradient computation.
-                outputs = model(inputs, labels=inputs)
-                
-                # Compute gradients based on the loss
-                outputs.loss.backward()
-
-                # Remove the computational graph from the loss to save memory
-                outputs.loss.detach()
-
-                bt.logging.info(f'Step: {step}, Loss: {outputs.loss.item()}')
-                    
-                # Check if the operation has exceeded the allotted time
-                if (time.time() - start_time > (synapse.timeout/3)): 
-                    break
-                else: 
-                    step += 1
-
-                # Clear GPU cache to free up memory and avoid potential CUDA out-of-memory errors
-                torch.cuda.empty_cache()
-
-        except StopIteration:
-            # This exception is raised when the dataloader runs out of samples
-            pass
-
-        # Serialize the averaged gradients into the synapse object
-        with torch.no_grad():
-            synapse.serialize(state_dict={k: v.grad / step for k, v in model.named_parameters() if v.grad is not None})
-
-        bt.logging.info(f'End forward')
-
+        model.load_state_dict( synapse.deserialize() )
+        # Lock the model since concurrent accumulation to the model will poision the gradients we 
+        # are computing. In practice we would shuttle multiple requests across multiple machines.
+        # This lock is not necessary if we are only running a single cuda core.
+        with model_lock:
+            # Compute gradients on the model.
+            grads = helpers.compute_gradients_on_model(
+                model = model,
+                batch_size = synapse.batch_size,
+                sequence_length = synapse.sequence_length,
+                pages = synapse.pages
+            )
+        # Serialize accumulated gradients into the synapse object
+        synapse.serialize( state_dict = grads )
         return synapse
-
 
     # Step 6: Build and link miner functions to the axon.
     # The axon handles request processing, allowing validators to send this process requests.
