@@ -86,7 +86,7 @@ def main(config):
     bt.logging.info(f"Wallet: {wallet}")
     bt.logging.info(f"Subtensor: {subtensor}")
     bt.logging.info(f"Metagraph: {metagraph}")
-    bt.logging.info(f"Running miner on uid: {my_subnet_uid}")
+    bt.logging.info(f"Running validator on uid: {my_subnet_uid}")
 
     # === Training objects ===
     scores = {}
