@@ -40,8 +40,8 @@ def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument( "--alpha", default=0.9, type=float, help="The weight moving average scoring." )
     parser.add_argument( '--learning_rate', default=1e-4, type=float, help='Learning rate for the optimizer.' )
-    parser.add_argument( '--n_concurrent_forward', type=int, default=4, help='Number of allowed concurrent foward requests.' )
-    parser.add_argument( '--n_concurrent_forward_per_uid', type=int, default=1, help='Number of allowed concurrent foward requests per uid.')
+    parser.add_argument( '--max_concurrent_forward', type=int, default=4, help='Number of allowed concurrent foward requests.' )
+    parser.add_argument( '--max_concurrent_forward_per_uid', type=int, default=1, help='Number of allowed concurrent foward requests per uid.')
     parser.add_argument( '--batch_size', type=int, default=3, help='Eval batch size' )
     parser.add_argument( '--sequence_length', type=int, default=512, help='Eval sequence length' )
     parser.add_argument( '--device', type = str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to run the miner on.' )
@@ -96,8 +96,19 @@ def main(config):
     # === Locks ===
     gpu_lock = asyncio.Lock()
     model_lock = asyncio.Lock()
-    forward_lock = asyncio.Semaphore( config.n_concurrent_forward )
-    per_uid_locks = { i: asyncio.Semaphore( config.n_concurrent_forward_per_uid ) for i in range(256) }
+    forward_lock = asyncio.Semaphore( config.max_concurrent_forward )
+    per_uid_locks = { i: asyncio.Semaphore( config.max_concurrent_forward_per_uid ) for i in range(256) }
+
+    # === State ===
+    global_state = {
+        'tokens': 0,
+        'batchs': 0,
+        'examples': 0,
+        'loss': 0.0,
+        'forwards': 0,
+        'successes': 0,
+        'failures': 0,
+    }
 
     # === Forward Function ===
     async def forward( ):
@@ -109,20 +120,19 @@ def main(config):
             This function is designed to be asynchronous to allow for concurrent execution, while also implementing
             necessary locks to prevent race conditions and ensure the integrity of the operations.
         """
+        # Build forward event.
         wandb_event = {}
-        wandb_event['begin_forward'] = time.time()
+        start_forward = time.time()
+
+        # Get a random miner axon.
+        available_uids = [uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving]
+        if len(available_uids) == 0: return
+        uid = random.choice(available_uids)
+        bt.logging.success( f'Selected uid:{uid}' )
+        wandb_event['uid'] = uid
 
         # Acquire the forward lock to limit concurrent forward calls.
         async with forward_lock:
-            bt.logging.success( 'Started validator forward task.' )
-
-            # Get a random miner axon.
-            available_uids = [uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving]
-            if len(available_uids) == 0: return
-            uid = random.choice(available_uids)
-            bt.logging.success( f'Selected uid:{uid}' )
-            wandb_event['uid'] = uid
-
             # Acquire the per uid lock to limit concurrent forward calls to the same uid.
             async with per_uid_locks[uid]:
 
@@ -133,10 +143,6 @@ def main(config):
                     sequence_length = config.sequence_length,
                     pages = pages
                 )
-                wandb_event['batch_size'] = config.batch_size
-                wandb_event['sequence_length'] = config.batch_size
-                wandb_event['pages'] = pages
-                wandb_event['n_pages'] = len(pages)
 
                 # Get current model state.
                 async with model_lock:
@@ -147,28 +153,33 @@ def main(config):
                 bt.logging.success( f'Serialized state.' )
 
                 # Make the forward query.
-                wandb_event['query_time'] = time.time()
+                start_query =  time.time()
                 dendrite = bt.dendrite( wallet = wallet )
                 bt.logging.success( f'Sent request.' )
                 response = await dendrite.forward( metagraph.axons[ uid ], synapse, timeout = 60, deserialize = False )
                 await dendrite.close_session()
-                wandb_event['end_query_time'] = time.time()
+                wandb_event['query_time'] = time.time() - start_query
 
                 # Check for failures.
                 if not response.is_success: 
                     bt.logging.error( f'Response failure.' )
                     wandb_event['success'] = False
+                    global_state['failures'] += 1
                     # Failed requests get a mse increase of 1 added.
                     next_score = -10
                     scores[ uid ] = config.alpha * scores[uid] + ( 1 - config.alpha ) * next_score if uid in scores else config.alpha * next_score
-                    wandb_event['next_score'] = next_score
                     wandb_event['current_score'] = scores[ uid ] 
-                    wandb_event['end_forward'] = time.time()
                     wandb.log( wandb_event )
                     return 
                 
                 else:
+                    # Success.
                     wandb_event['success'] = True
+                    global_state['successes'] += 1
+                    global_state['batches'] += config.batch_size
+                    global_state['examples'] += config.batch_size * config.sequence_length
+                    global_state['tokens'] += config.batch_size * config.sequence_length * config.sequence_length
+                    global_state['forwards'] += 1
 
                     bt.logging.success( f'Response success.' )
                     # Deserialize the gradients from the response.
@@ -228,7 +239,7 @@ def main(config):
 
                     # Finish.
                     bt.logging.success( f'Finished forward.' )
-                    wandb_event['end_forward'] = time.time()
+                    wandb_event['forward_time'] = time.time() - start_forward
                     wandb.log( wandb_event )
                     return 
 
