@@ -13,6 +13,52 @@
 
 ---
 
+## Running
+
+Miners process produce gradients using their local machines. 
+```bash
+# Miner script.
+#   python neurons/miner.py
+#
+# Miner wallet name
+#    --wallet.name i.e. miner
+#
+# Miner hotkey must be distinct per miner
+#    --wallet.hotkey i.e. my_hotkey
+#
+# Select a device (different for each miner), if you dont have a GPU pass 'cpu'  
+#    --device cuda:1  
+#
+# Each miner must have a separate port here (also different for each miner)
+#    --axon.port 8091 
+
+# Run first miner
+python neurons/miner.py --wallet.name YOUR_MINER_COLD --wallet.hotkey YOUR_MINER_HOT_1 --device MINER_DEVICE_1 --axon.port AXON_PORT_1
+
+# Run your second miner
+python neurons/miner.py --wallet.name YOUR_MINER_COLD --wallet.hotkey YOUR_MINER_HOT_2 --device MINER_DEVICE_1 --axon.port AXON_PORT_2
+```
+
+Second run your validator/trainer on the same machine.
+```bash
+# Validator name:
+#   python neurons/validator.py
+#
+# The validator wallet name:
+#    --wallet.name i.e. validator 
+#
+# The validator hotkey name:
+#    --wallet.hotkey i.e. default 
+#
+# The validator device, different that miners:
+#    --device i.e. cuda:0 
+#
+# Run the validator
+python neurons/validator.py --wallet.name YOUR_VALIDATOR_COLD --wallet.hotkey YOUR_VALIDATOR_HOT --logging.debug --device YOUR_DEVICE
+```
+
+---
+
 ## License
 This repository is licensed under the MIT License.
 ```text
