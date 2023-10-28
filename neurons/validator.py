@@ -102,7 +102,7 @@ def main(config):
     # === State ===
     global_state = {
         'tokens': 0,
-        'batchs': 0,
+        'batches': 0,
         'examples': 0,
         'forwards': 0,
         'successes': 0,
@@ -132,7 +132,7 @@ def main(config):
             uid = random.choice(available_uids)
             bt.logging.success( f'Selected uid:{uid}' )
             wandb_event['uid'] = uid
-            
+
             # Acquire the per uid lock to limit concurrent forward calls to the same uid.
             async with per_uid_locks[uid]:
 
