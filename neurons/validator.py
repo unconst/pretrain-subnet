@@ -258,10 +258,8 @@ def main(config):
             bt.logging.success("End Background step.")
             block += 1        
 
-            # Set weights every 10 blocks.       
-            if block % 50 == 0:
-                bt.logging.success( f'Setting weights on chain' )
-
+            # Returns the scores for current miners.
+            def compute_weights():
                 # Fill weights. weight_i = exp( -score_i ) / SUM_j exp( -score_j )
                 # Where score_i is the moving average of negative of the MSE between grads returned and grads computed.
                 weights = torch.zeros_like( metagraph.S )
@@ -270,6 +268,14 @@ def main(config):
 
                 # Normalize the scores to 1.0
                 weights = torch.nn.functional.normalize( weights, p=1.0, dim=0)
+                return weights
+
+            # Log the scores.
+            bt.logging.success( f'Block: {block} Scores: {compute_weights()}' )
+
+            # Set weights every 10 blocks.       
+            if block % 50 == 0:
+                weights = compute_weights()
                 bt.logging.info(f"Setting weights: {weights}")
                 # This is a crucial step that updates the incentive mechanism on the Bittensor blockchain.
                 # Miners with higher scores (or weights) receive a larger share of TAO rewards on this subnet.
