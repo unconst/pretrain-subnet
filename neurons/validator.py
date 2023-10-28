@@ -265,15 +265,15 @@ def main(config):
                 # Fill weights. weight_i = exp( -score_i ) / SUM_j exp( -score_j )
                 # Where score_i is the moving average of negative of the MSE between grads returned and grads computed.
                 weights = torch.zeros_like( metagraph.S )
-                for i in range( len( metagraph.uids ) ):
-                    weights[ i ] = math.exp( scores[ i ] ) if i in scores else 0.0
+                for uid in metagraph.uids:
+                    weights[ uid ] = math.exp( scores[ uid ] ) if uid in scores else 0.0
 
                 # Normalize the scores to 1.0
                 weights = torch.nn.functional.normalize( weights, p=1.0, dim=0)
                 return weights
 
             # Log the scores.
-            bt.logging.success( f'Block: {block} Scores: {compute_weights()}' )
+            bt.logging.success( f'Block: {block} Scores: { scores }' )
 
             # Set weights every 10 blocks.       
             if block % 50 == 0:
