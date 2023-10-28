@@ -104,7 +104,6 @@ def main(config):
         'tokens': 0,
         'batchs': 0,
         'examples': 0,
-        'loss': 0.0,
         'forwards': 0,
         'successes': 0,
         'failures': 0,
@@ -240,7 +239,7 @@ def main(config):
                     # Finish.
                     bt.logging.success( f'Finished forward.' )
                     wandb_event['forward_time'] = time.time() - start_forward
-                    wandb.log( wandb_event )
+                    wandb.log( wandb_event.update( global_state ) )
                     return 
 
 
