@@ -240,7 +240,8 @@ def main(config):
                     # Finish.
                     bt.logging.success( f'Finished forward.' )
                     wandb_event['forward_time'] = time.time() - start_forward
-                    wandb.log( wandb_event.update( global_state ) )
+                    wandb_event.update( global_state ) 
+                    wandb.log( wandb_event )
                     return 
 
 
@@ -304,8 +305,8 @@ def main(config):
     # === Main loop ===
     async def main_loop():
         bt.logging.success( 'Starting validator main loop.' )
+        asyncio.create_task( background_loop() )
         asyncio.run( training_loop() )
-        asyncio.run( background_loop() )
 
     # === Start ===
     loop = asyncio.get_event_loop()
