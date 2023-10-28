@@ -123,15 +123,16 @@ def main(config):
         wandb_event = {}
         start_forward = time.time()
 
-        # Get a random miner axon.
-        available_uids = [uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving]
-        if len(available_uids) == 0: return
-        uid = random.choice(available_uids)
-        bt.logging.success( f'Selected uid:{uid}' )
-        wandb_event['uid'] = uid
-
         # Acquire the forward lock to limit concurrent forward calls.
         async with forward_lock:
+
+             # Get a random miner axon.
+            available_uids = [uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving]
+            if len(available_uids) == 0: return
+            uid = random.choice(available_uids)
+            bt.logging.success( f'Selected uid:{uid}' )
+            wandb_event['uid'] = uid
+            
             # Acquire the per uid lock to limit concurrent forward calls to the same uid.
             async with per_uid_locks[uid]:
 
