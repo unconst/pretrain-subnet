@@ -83,7 +83,7 @@ async def forward(self: object) -> dict:
         if response.is_success:
             # Deserialize gradients and validate against local computation
             grads_dict = response.deserialize()
-            mse_score = validate_gradients(self, grads_dict, begin_model_state, forward_event)
+            mse_score = await validate_gradients(self, grads_dict, begin_model_state, forward_event)
             update_score(self, uid, mse_score, forward_event)
 
             # Apply received gradients to local model
@@ -274,7 +274,7 @@ def log_state( self, forward_event: dict ):
     self.global_state['n_successes'] += 1 if 'success' in forward_event and forward_event['success'] else 0
     self.global_state['n_failures'] += 0 if 'success' in forward_event and forward_event['success'] else 1
     self.global_state['n_exceptions'] += 1 if 'exception' in forward_event and forward_event['exception'] else 0
-    self.global_state['n_pages'] += len(forward_event['pages'])
+    self.global_state['n_pages'] += len(forward_event['pages']) if 'pages' in forward_event else 0
     self.global_state['steps_per_second'] = 1 / (time.time() - self.global_state['last_query'])
     self.global_state['last_query'] = time.time()
 
