@@ -98,7 +98,7 @@ class Miner:
                 self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
                 self.block = self.metagraph.block.item()
                 time.sleep( bt.__blocktime__ )
-                block += 1
+                self.block += 1
 
             # If someone intentionally stops the miner, it'll safely terminate operations.
             except KeyboardInterrupt:
