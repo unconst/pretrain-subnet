@@ -13,9 +13,40 @@
 
 ---
 
+# Installation
+
+Make sure you have python3.8 or above before continuing.
+```bash
+git clone https://github.com/unconst/pretrain-subnet.git
+cd pretrain-subnet
+python -m pip install -e . 
+```
+
+---
+
+## Preable
+
+To mine or validate first create your wallet with cold and hotkey pair, and register it to subnet 9.
+For instance, creating 1 coldkey wallet with 3 hotkeys for a validator and two miners.
+
+```bash
+# Create your wallet and hotkeys.
+btcli w new_coldkey --wallet.name my_wallet
+btcli w new_hotkey --wallet.name my_wallet --wallet.hotkey miner1
+btcli w new_hotkey --wallet.name my_wallet --wallet.hotkey miner2
+btcli w new_hotkey --wallet.name my_wallet --wallet.hotkey validator
+
+# Register your hotkeys to the main chain.
+# NOTE: this costs TAO.
+btcli s recycle_register --wallet.name my_wallet --wallet.hotkey miner1
+btcli s recycle_register --wallet.name my_wallet --wallet.hotkey miner1
+btcli s recycle_register --wallet.name my_wallet --wallet.hotkey validator
+```
+---
+
 ## Running
 
-Miners process produce gradients using their local machines. 
+Miners produce gradients using their local machines. You can run a miner like so.
 ```bash
 # Miner script.
 #   python neurons/miner.py
@@ -33,13 +64,14 @@ Miners process produce gradients using their local machines.
 #    --axon.port 8091 
 
 # Run first miner
-python neurons/miner.py --wallet.name YOUR_MINER_COLD --wallet.hotkey YOUR_MINER_HOT_1 --device MINER_DEVICE_1 --axon.port AXON_PORT_1
+python neurons/miner/run.py --wallet.name my_wallet --wallet.hotkey miner1 --device cuda:1 --logging.debug --axon.port 9091
 
 # Run your second miner
-python neurons/miner.py --wallet.name YOUR_MINER_COLD --wallet.hotkey YOUR_MINER_HOT_2 --device MINER_DEVICE_1 --axon.port AXON_PORT_2
+python neurons/miner/run.py --wallet.name my_wallet --wallet.hotkey miner2 --device cuda:2 --logging.debug --axon.port 9092
 ```
 
-Second run your validator/trainer on the same machine.
+Validators train a GPT2 model over the network and validate the gradients produced by the miners.
+You can run your validator/trainer like so.
 ```bash
 # Validator name:
 #   python neurons/validator.py
@@ -54,7 +86,7 @@ Second run your validator/trainer on the same machine.
 #    --device i.e. cuda:0 
 #
 # Run the validator
-python neurons/validator/run.py --wallet.name YOUR_VALIDATOR_COLD --wallet.hotkey YOUR_VALIDATOR_HOT --logging.debug --device YOUR_DEVICE
+python neurons/validator/run.py --wallet.name my_wallet --wallet.hotkey validator --logging.debug --device cuda:3
 ```
 
 ---

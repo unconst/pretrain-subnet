@@ -49,7 +49,7 @@ class Miner:
         self.wallet = bt.wallet( config = self.config ) 
         self.subtensor = bt.subtensor( config = self.config)
         self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
-        if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys: raise Exception("You are not registered.")
+        if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys: raise Exception("You are not registered. Use `btcli s recycle_register` to register.")
         self.uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
         bt.logging.info(f"Wallet: {self.wallet}")
         bt.logging.info(f"Subtensor: {self.subtensor}")
