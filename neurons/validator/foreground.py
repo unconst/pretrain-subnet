@@ -20,12 +20,14 @@ import time
 import torch
 import random
 import asyncio
-import helpers
 import pretrain
 import traceback
 import bittensor as bt
 from rich import print
 from rich.table import Table
+
+from helpers import compute_gradients_on_model
+from helpers import mse_gradients
 
 # === Training loop ===
 async def foreground_loop(self: object):
@@ -216,7 +218,7 @@ async def validate_gradients(self: object, grads_dict: dict, model_state: dict, 
             eval_model.to(self.config.device)
 
             # Compute local gradients on the model
-            local_grads, loss, n_tokens, n_examples, n_batches = self.helpers.compute_gradients_on_model(
+            local_grads, loss, n_tokens, n_examples, n_batches = compute_gradients_on_model(
                 model=eval_model,
                 batch_size=self.config.batch_size,
                 sequence_length=self.config.sequence_length,
@@ -227,7 +229,7 @@ async def validate_gradients(self: object, grads_dict: dict, model_state: dict, 
             del eval_model
     
     # Compute the Mean Squared Error between the received and locally computed gradients
-    mse_score = -helpers.mse_gradients(local_grads, grads_dict)
+    mse_score = -mse_gradients(local_grads, grads_dict)
     
     # Log and record the result of the gradient validation
     forward_event['validation_loss'] = loss
