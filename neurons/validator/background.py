@@ -66,20 +66,25 @@ async def background_loop( self: object ):
     self.block = 0
     while True:
 
-        # Wait for one block.
-        bt.logging.debug("Background ideling...")
-        await asyncio.sleep( 1 )
+        try:
+            # Wait for one block.
+            bt.logging.debug("Background ideling...")
+            await asyncio.sleep( 1 )
 
-        # Resync the metagraph.
-        self.weights = compute_weights( self )
-        self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
-        self.block = self.metagraph.block.item()
-        pretty_print_weights( self )
+            # Resync the metagraph.
+            self.weights = compute_weights( self )
+            self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
+            self.block = self.metagraph.block.item()
+            self.weights = compute_weights( self )
+            pretty_print_weights( self )
 
-        # Log weights.
-        bt.logging.debug(f"Weights: {self.weights}")
+            # Log weights.
+            bt.logging.debug(f"Weights: {self.weights}")
 
-        # Set weights every 50 blocks.    
-        if self.block % 50 == 0:
-            set_weights( self )
+            # Set weights every 50 blocks.    
+            if self.block % 50 == 0:
+                set_weights( self )
+    
+        except Exception as e:
+            bt.logging.error( f"Caught exception in background loop with error: {e}" )
           
