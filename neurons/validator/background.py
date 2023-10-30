@@ -66,8 +66,6 @@ def compute_weights( self: object ):
     # Where score_i is the moving average of negative of the MSE between grads returned and grads computed.
     self.weights = torch.zeros_like( self.metagraph.S )
     for uid in self.metagraph.uids.tolist():
-        if uid == 230:
-            print (uid, math.exp( self.scores[ uid ] ) )
         self.weights[ uid ] = math.exp( self.scores[ uid ] ) if uid in self.scores else 0.0
     # Normalize the scores to 1.0
     self.weights = self.weights / self.weights.sum()
@@ -107,6 +105,7 @@ async def background_loop( self: object ):
             self.weights = compute_weights( self )
             pretty_print_weights( self )
             bt.logging.success(f"Available: {self.available_uids}")
+            bt.logging.success(f"Weights: {self.weights}")
 
             # Set weights every 50 blocks.    
             if self.block % 50 == 0:
