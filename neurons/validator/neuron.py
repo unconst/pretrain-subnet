@@ -45,7 +45,7 @@ class Validator:
         if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys: raise Exception("You are not registered.")
         self.uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
         #self.available_uids = self.metagraph.uids.tolist()
-        self.available_uids = [ 230 ]
+        self.available_uids = [ 107 ]
         
         # === Init wandb ===
         self.wandb = init_wandb( self, type = 'validator', uid = self.uid )
