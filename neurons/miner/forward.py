@@ -67,7 +67,7 @@ async def compute_gradients( self, synapse: pretrain.protocol.ComputeGradients )
         # This lock is not necessary if we are only running a single cuda core.
         async with self.gpu_lock:
             # Lock the model since concurrent accumulation to the model will poision the gradients we
-            start_process = time.time()
+            start_forward = time.time()
             bt.logging.debug( f'Aquired GPU space for query.' )
 
             # Move the model to the same device as the synapse
@@ -99,7 +99,7 @@ async def compute_gradients( self, synapse: pretrain.protocol.ComputeGradients )
         forward_event['exception'] = synapse.pages
         forward_event['pages'] = synapse.pages
         forward_event['call_time'] = time.time() - start_call
-        forward_event['process_time'] = time.time() - start_process
+        forward_event['forward_time'] = time.time() - start_forward
 
     except Exception as e:
         forward_event['success'] = False
@@ -109,7 +109,7 @@ async def compute_gradients( self, synapse: pretrain.protocol.ComputeGradients )
     finally:
         # log_state
         forward_event['exception'] = False
-        forward_event['success'] = False
+        forward_event['success'] = True
         log_state( self, forward_event )
         return synapse
 
@@ -141,10 +141,8 @@ def log_state( self, forward_event: dict ):
         'n_batches': self.global_state['n_batches'],
         'loss': self.global_state['loss'],
         'steps_per_second': self.global_state['steps_per_second'],
-        'validation_time': forward_event['validation_time'] if 'validation_time' in forward_event else 0.0,
-        'query_time': forward_event['query_time'] if 'query_time' in forward_event else 0.0,
         'forward_time': forward_event['forward_time'] if 'forward_time' in forward_event else 0.0,
-        'step_time': forward_event['step_time'] if 'step_time' in forward_event else 0.0,
+        'call_time': forward_event['call_time'] if 'call_time' in forward_event else 0.0,
     }
 
     # Log using rich.
@@ -158,9 +156,8 @@ def log_state( self, forward_event: dict ):
     table.add_row("Pages", str(log['n_pages']))
     table.add_row("Steps Per Second", f"{log['steps_per_second']:.2f}")
     table.add_row("Validation Time", f"{log['validation_time']:.2f}")
-    table.add_row("Query Time", f"{log['query_time']:.2f}")
     table.add_row("Forward Time", f"{log['forward_time']:.2f}")
-    table.add_row("Step Time", f"{log['step_time']:.2f}")
+    table.add_row("Call Time", f"{log['call_time']:.2f}")
     table.add_row("Loss", f"{log['loss']:.2f}")
     table.add_row("Tokens", f"{log['n_tokens']:.2f}")
     table.add_row("Examples", f"{log['n_examples']:.2f}")
