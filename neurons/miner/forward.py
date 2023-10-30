@@ -103,6 +103,7 @@ async def compute_gradients( self, synapse: pretrain.protocol.ComputeGradients )
     except Exception as e:
         forward_event['success'] = False
         forward_event['exception'] = True
+        bt.logging.error('Exception in forward: {}'.format(e))
 
     finally:
         # log_state
