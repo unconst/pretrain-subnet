@@ -95,7 +95,7 @@ async def background_loop( self: object ):
             await asyncio.sleep( bt.__blocktime__ )
 
             # Resync the metagraph.
-            #self.available_uids = get_available_uids( self )
+            self.available_uids = get_available_uids( self )
             self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
             self.block = self.metagraph.block.item()
             self.weights = compute_weights( self )
