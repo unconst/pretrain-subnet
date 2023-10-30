@@ -101,6 +101,7 @@ async def background_loop( self: object ):
             self.block = self.metagraph.block.item()
             self.weights = compute_weights( self )
             pretty_print_weights( self )
+            bt.logging.success(f"Available: {self.available}")
 
             # Set weights every 50 blocks.    
             if self.block % 50 == 0:
