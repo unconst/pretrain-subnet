@@ -279,6 +279,7 @@ def log_state( self, forward_event: dict ):
 
     # Create a log dictionary
     log = {
+        'uid': forward_event['uid'],
         'n_steps': self.global_state['n_steps'],
         'n_successes': self.global_state['n_successes'],
         'n_exceptions': self.global_state['n_exceptions'],
