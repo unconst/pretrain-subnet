@@ -32,17 +32,13 @@ def normalize(value, min_value, max_value):
 
 def get_weight_color(value, min_value, max_value):
     norm_value = normalize(value, min_value, max_value)
-    try:
-        green_intensity = int(255 * norm_value)
-    except:
-        green_intensity = 1
-    return f'\033[38;2;0;{green_intensity};0m'  # RGB color code for varying shades of green
+    return f'\033[38;2;0;255;0m'  # RGB color code for varying shades of green
 
 def pretty_print_weights(self):
     min_weight = min(self.weights)
     max_weight = max(self.weights)
     items = [
-        Text(f"Index: {index}, Weight: {weight}", style=get_weight_color(weight, min_weight, max_weight))
+        Text(f"UID: {index}, Weight: [green]{weight}[\green]" )
         for index, weight in enumerate(self.weights.tolist())
     ]
     columns = Columns(items, equal=True, expand=True)
@@ -105,7 +101,6 @@ async def background_loop( self: object ):
             self.weights = compute_weights( self )
             pretty_print_weights( self )
             bt.logging.success(f"Available: {self.available_uids}")
-            bt.logging.success(f"Weights: {self.weights}")
 
             # Set weights every 50 blocks.    
             if self.block % 50 == 0:
