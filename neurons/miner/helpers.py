@@ -42,7 +42,7 @@ def init_wandb( self: object, type: str, uid: int, reinit=False ):
 
 
 def compute_gradients_on_model( 
-        self,
+        self: object,
         model: torch.nn.Module,
         batch_size: int,
         sequence_length: int,
