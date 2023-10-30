@@ -46,10 +46,7 @@ async def foreground_loop(self: object):
         async with self.forward_lock:
             
             # Create a task for a forward pass
-            forward_event = await asyncio.create_task(forward(self))
-            
-            # Update the global state with the forward event
-            log_state( self, forward_event )
+            asyncio.create_task(forward(self))
                         
             # Introduce a short wait before the next iteration
             await asyncio.sleep(1)
@@ -98,14 +95,14 @@ async def forward(self: object) -> dict:
     # Log and record exceptions
     except Exception as e:
         bt.logging.error(f'Caught exception during forward with error:: {e}')
-        forward_event['forward_time'] = time.time() - start_forward
         forward_event['exception'] = True
-        return forward_event
 
     # Log success and return forward event details
     finally:
-        forward_event['exception'] = False
         bt.logging.debug(f'Finished forward to uid: {uid} call with success.')
+        forward_event['forward_time'] = time.time() - start_forward
+        forward_event['exception'] = False
+        log_state( self, forward_event )
         return forward_event
 
 
