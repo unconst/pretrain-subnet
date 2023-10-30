@@ -13,7 +13,13 @@
 
 ---
 
-# Installation
+# Introduction
+
+Bittensor subnet 9 is currently designed to reward miners for producing gradients which can be used to train LLMs. In its first iteration Subnet 9 only produces gradients for a GPT2 model and uses the Falcon Refined Web as the base dataset. Clients of this network can broadcast requests to miners to produce gradients and aggregate them to train their local model. Subnet 9 is still in development phase. 
+
+---
+
+## Installation
 
 Make sure you have python3.8 or above before continuing.
 ```bash
