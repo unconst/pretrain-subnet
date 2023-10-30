@@ -85,6 +85,10 @@ def set_weights( self: object ):
 
 async def background_loop( self: object ):
 
+    # === Getting availble ===
+    self.available_uids = get_available_uids( self )
+    bt.logging.success(f"Available UIDs: {self.available_uids}")
+
     bt.logging.success( 'Starting validator background loop.' )
     self.block = 0
     while True:
@@ -95,16 +99,19 @@ async def background_loop( self: object ):
             await asyncio.sleep( bt.__blocktime__ )
 
             # Resync the metagraph.
-            self.available_uids = get_available_uids( self )
             self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
             self.block = self.metagraph.block.item()
             self.weights = compute_weights( self )
             pretty_print_weights( self )
-            bt.logging.success(f"Available: {self.available_uids}")
 
             # Set weights every 50 blocks.    
             if self.block % 50 == 0:
                 set_weights( self )
+
+            # Update available.
+            if self.block % 50 == 0:
+                self.available_uids = get_available_uids( self )
+                bt.logging.success(f"Available: {self.available_uids}")
     
         except Exception as e:
             bt.logging.error( f"Caught exception in background loop with error: {e}" )
