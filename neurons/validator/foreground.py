@@ -22,6 +22,7 @@ import random
 import asyncio
 import helpers
 import pretrain
+import traceback
 import bittensor as bt
 from rich import print
 from rich.table import Table
@@ -94,7 +95,7 @@ async def forward(self: object) -> dict:
 
     # Log and record exceptions
     except Exception as e:
-        bt.logging.error(f'Caught exception during forward with error:: {e}')
+        bt.logging.error(f'Caught exception during forward with error:: {e} traceback:{traceback.format_exc()}')
         forward_event['exception'] = True
 
     # Log success and return forward event details
