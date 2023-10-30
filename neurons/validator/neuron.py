@@ -17,6 +17,7 @@
 # DEALINGS IN THE SOFTWARE.
 
 import time
+import torch
 import wandb
 import asyncio
 import traceback
@@ -52,7 +53,7 @@ class Validator:
         # === Training objects ===
         self.scores = {}
         self.model = pretrain.model.get_model().to( self.config.device )
-        self.optimizer = AdamW( self.model.parameters(), lr = self.config.learning_rate )
+        self.optimizer = torch.optim.AdamW( self.model.parameters(), lr = self.config.learning_rate )
     
         # === Locks ===
         self.gpu_lock = asyncio.Lock()
