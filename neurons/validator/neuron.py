@@ -79,6 +79,7 @@ class Validator:
         async def main_loop():
             bt.logging.success( 'Starting validator main loop.' )
             asyncio.create_task( background_loop( self ) )
+            await asyncio.sleep( 5 )
             asyncio.run( foreground_loop( self ) )
 
         # === Start ===
