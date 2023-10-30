@@ -82,7 +82,7 @@ async def forward(self: object) -> dict:
         if response.is_success:
             # Deserialize gradients and validate against local computation
             grads_dict = response.deserialize()
-            mse_score = validate_gradients(self, uid, grads_dict, begin_model_state, forward_event)
+            mse_score = validate_gradients(self, grads_dict, begin_model_state, forward_event)
             update_score(self, uid, mse_score, forward_event)
 
             # Apply received gradients to local model
