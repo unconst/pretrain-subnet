@@ -72,9 +72,9 @@ class Miner:
             wallet = self.wallet, 
             config = self.config 
         ).attach( 
-            forward_fn = self.compute_gradients,
-            priority_fn = self.priority_fn,
-            blacklist_fn = self.blacklist_fn
+            forward_fn = compute_gradients,
+            priority_fn = priority_fn,
+            blacklist_fn = blacklist_fn
         ).start()
         bt.logging.info(f"Served Axon {self.axon} on network: on network: {self.config.subtensor.chain_endpoint} with netuid: {pretrain.NETUID}")
 
