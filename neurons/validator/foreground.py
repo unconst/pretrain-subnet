@@ -179,7 +179,7 @@ async def query_uid(self: object, uid: int, model_state: dict, forward_event: di
         
         if not response.is_success:
             # Log and record a failed query
-            bt.logging.error(f'Forward query was a failure with error: {response.axon.status_code}:{response.axon.status_message}')
+            bt.logging.error(f'Forward query was a failure with error: {response.dendrite.status_code}:{response.dendrite.status_message}')
             forward_event['success'] = False
         else:
             # Log and record a successful query
