@@ -274,7 +274,7 @@ def log_state( self, forward_event: dict ):
     # Log the forward event to the console
     self.global_state['n_steps'] += 1
     self.global_state['n_successes'] += 1 if 'success' in forward_event and forward_event['success'] else 0
-    self.global_state['n_failures'] += 0 if 'success' in forward_event and forward_event['success'] else 1
+    self.global_state['n_failures'] += 0 if 'success' in forward_event and not forward_event['success'] else 1
     self.global_state['n_exceptions'] += 1 if 'exception' in forward_event and forward_event['exception'] else 0
     self.global_state['n_pages'] += len(forward_event['pages']) if 'pages' in forward_event else 0
     self.global_state['steps_per_second'] = 1 / (time.time() - self.global_state['last_query'])
