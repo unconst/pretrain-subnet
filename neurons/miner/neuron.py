@@ -17,6 +17,7 @@
 # DEALINGS IN THE SOFTWARE.
 
 import time
+import typing
 import asyncio
 import pretrain
 import traceback
@@ -63,7 +64,7 @@ class Miner:
         self.global_forward_lock = asyncio.Semaphore( self.config.max_concurrent_forward_requests ) 
 
         # === Axon Callbacks ===
-        async def blacklist_fn( synapse: pretrain.protocol.ComputeGradients ) -> float: return blacklist_fn( self, synapse )
+        async def blacklist_fn( synapse: pretrain.protocol.ComputeGradients ) -> typing.Tuple[bool, str]: return blacklist_fn( self, synapse )
         async def priority_fn( synapse: pretrain.protocol.ComputeGradients ) -> float: return priority_fn( self, synapse )
         async def compute_gradients( synapse: pretrain.protocol.ComputeGradients ) -> float: return compute_gradients( self, synapse )
 
