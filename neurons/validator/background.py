@@ -38,7 +38,7 @@ def pretty_print_weights(self):
     min_weight = min(self.weights)
     max_weight = max(self.weights)
     items = [
-        Text(f"UID: {index}, Weight: [green]{weight}[\green]" )
+        Text(f"UID: {index}, Weight: {weight}" )
         for index, weight in enumerate(self.weights.tolist())
     ]
     columns = Columns(items, equal=True, expand=True)
