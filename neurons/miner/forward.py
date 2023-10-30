@@ -155,7 +155,6 @@ def log_state( self, forward_event: dict ):
     table.add_row("Failures", str(log['n_failures']))
     table.add_row("Pages", str(log['n_pages']))
     table.add_row("Steps Per Second", f"{log['steps_per_second']:.2f}")
-    table.add_row("Validation Time", f"{log['validation_time']:.2f}")
     table.add_row("Forward Time", f"{log['forward_time']:.2f}")
     table.add_row("Call Time", f"{log['call_time']:.2f}")
     table.add_row("Loss", f"{log['loss']:.2f}")
