@@ -28,7 +28,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 def pretty_print_weights(self):
-    items = [Text(f"Index: {index}, Weight: {weight}") for index, weight in enumerate( self.weights.items() )]
+    items = [Text(f"Index: {index}, Weight: {weight}") for index, weight in enumerate( self.weights.tolist() )]
     columns = Columns(items, equal=True, expand=True)
     panel = Panel(columns, title="Weights")
     print(panel)
