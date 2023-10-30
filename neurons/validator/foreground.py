@@ -118,10 +118,9 @@ def next_uid_to_query( self: object ) -> int:
             Exception: If there are no available UIDs.
     """
     # Get a random miner axon.
-    available_uids = [uid.item() for uid in self.metagraph.uids if self.metagraph.axons[uid].is_serving]
-    if len(available_uids) == 0:
+    if len(self.available_uids) == 0:
         raise Exception('No available uids.')
-    uid = random.choice(available_uids)
+    uid = random.choice(self.available_uids)
     return uid
 
 # === Update UID score ===
@@ -271,9 +270,9 @@ def log_state( self, forward_event: dict ):
 
     # Log the forward event to the console
     self.global_state['n_steps'] += 1
-    self.global_state['n_successes'] += 1 if forward_event['success'] else 0
-    self.global_state['n_failures'] += 0 if forward_event['success'] else 1
-    self.global_state['n_exceptions'] += 1 if forward_event['exception'] else 0
+    self.global_state['n_successes'] += 1 if 'success' in forward_event and forward_event['success'] else 0
+    self.global_state['n_failures'] += 0 if 'success' in forward_event and forward_event['success'] else 1
+    self.global_state['n_exceptions'] += 1 if 'exception' in forward_event and forward_event['exception'] else 0
     self.global_state['n_pages'] += len(forward_event['pages'])
     self.global_state['steps_per_second'] = 1 / (time.time() - self.global_state['last_query'])
     self.global_state['last_query'] = time.time()

@@ -46,6 +46,17 @@ def pretty_print_weights(self):
     panel = Panel(columns, title="Weights")
     print(panel)
 
+def get_available_uids( self: object ):
+    available_uids = []
+    dendrite = bt.dendrite( wallet = self.wallet )
+    serving_uids = [uid.item() for uid in self.metagraph.uids if self.metagraph.axons[uid].is_serving]
+    serving_axons = [ self.metagraph.axons[uid] for uid in serving_uids ]
+    ping_responses = dendrite.query( serving_axons )
+    for resp, uid in list(zip( ping_responses, serving_uids) ):
+        if resp.is_success:
+            available_uids.append( uid )
+    return available_uids
+
 # Returns the scores for current miners.
 def compute_weights( self: object ):
     # Fill weights. weight_i = exp( -score_i ) / SUM_j exp( -score_j )
@@ -85,6 +96,7 @@ async def background_loop( self: object ):
             await asyncio.sleep( bt.__blocktime__ )
 
             # Resync the metagraph.
+            self.available_uids = get_available_uids( self )
             self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
             self.block = self.metagraph.block.item()
             self.weights = compute_weights( self )

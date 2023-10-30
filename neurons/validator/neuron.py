@@ -43,6 +43,7 @@ class Validator:
         self.metagraph = self.subtensor.metagraph(pretrain.NETUID)
         if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys: raise Exception("You are not registered.")
         self.uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
+        self.available_uids = self.metagraph.uids.tolist()
         
         # === Init wandb ===
         self.wandb = init_wandb( self, type = 'validator', uid = self.uid )
@@ -71,6 +72,7 @@ class Validator:
 
     # === Validator entrypoint ===
     def run( self ):
+
         # === Main loop ===
         async def main_loop():
             bt.logging.success( 'Starting validator main loop.' )
