@@ -32,7 +32,10 @@ def normalize(value, min_value, max_value):
 
 def get_color(value, min_value, max_value):
     norm_value = normalize(value, min_value, max_value)
-    green_intensity = int(255 * norm_value)
+    try:
+        green_intensity = int(255 * norm_value)
+    except:
+        green_intensity = 1
     return f'\033[38;2;0;{green_intensity};0m'  # RGB color code for varying shades of green
 
 def pretty_print_weights(self):
