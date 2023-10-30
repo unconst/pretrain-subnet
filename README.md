@@ -54,7 +54,7 @@ Second run your validator/trainer on the same machine.
 #    --device i.e. cuda:0 
 #
 # Run the validator
-python neurons/validator.py --wallet.name YOUR_VALIDATOR_COLD --wallet.hotkey YOUR_VALIDATOR_HOT --logging.debug --device YOUR_DEVICE
+python neurons/validator/run.py --wallet.name YOUR_VALIDATOR_COLD --wallet.hotkey YOUR_VALIDATOR_HOT --logging.debug --device YOUR_DEVICE
 ```
 
 ---
