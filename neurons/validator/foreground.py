@@ -46,7 +46,7 @@ async def foreground_loop(self: object):
         async with self.forward_lock:
             
             # Create a task for a forward pass
-            forward_event = asyncio.create_task(forward(self))
+            forward_event = await asyncio.create_task(forward(self))
             
             # Update the global state with the forward event
             log_state( self, forward_event )
