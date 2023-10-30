@@ -27,7 +27,7 @@ import bittensor as bt
 from helpers import compute_gradients_on_model
 
 # === Blacklist ===
-async def blacklist_fn( self, synapse: pretrain.protocol.ComputeGradients ) -> typing.Tuple[bool, str]:
+async def blacklist( self, synapse: pretrain.protocol.ComputeGradients ) -> typing.Tuple[bool, str]:
     # Locks requests to only allowing max_concurrent_forward_requests at a time.
     # After the blacklist the full synapse is pulled into memory so we want to limit
     # the number here.
@@ -40,7 +40,7 @@ async def blacklist_fn( self, synapse: pretrain.protocol.ComputeGradients ) -> t
         return False, "Hotkey recognized!"
 
 # === Priority ===
-async def priority_fn( self, synapse: pretrain.protocol.ComputeGradients ) -> float:
+async def priority( self, synapse: pretrain.protocol.ComputeGradients ) -> float:
     # Priority is stake based.
     caller_uid = self.metagraph.hotkeys.index( synapse.dendrite.hotkey )  
     prirority = float(self.metagraph.S[caller_uid]) 
