@@ -72,11 +72,11 @@ async def forward(self: object) -> dict:
     start_forward = time.time()
     bt.logging.debug(f'Starting forward call')
 
+    # Get uid to query
+    uid = next_uid_to_query(self)
+    forward_event['uid'] = uid
+    
     try:
-        # Get uid to query
-        uid = next_uid_to_query(self)
-        forward_event['uid'] = uid
-
         # Query the miner
         begin_model_state = self.model.state_dict()
         response = await query_uid(self, uid, begin_model_state, forward_event)
