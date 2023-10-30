@@ -17,6 +17,7 @@
 # DEALINGS IN THE SOFTWARE.
 
 import os
+import torch
 import pretrain
 import argparse
 import bittensor as bt
