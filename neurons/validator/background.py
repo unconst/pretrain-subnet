@@ -86,7 +86,7 @@ def set_weights( self: object ):
 async def background_loop( self: object ):
 
     # === Getting availble ===
-    self.available_uids = get_available_uids( self )
+    #self.available_uids = get_available_uids( self )
     bt.logging.success(f"Available UIDs: {self.available_uids}")
 
     bt.logging.success( 'Starting validator background loop.' )
@@ -110,7 +110,7 @@ async def background_loop( self: object ):
 
             # Update available.
             if self.block % 50 == 0:
-                self.available_uids = get_available_uids( self )
+                #self.available_uids = get_available_uids( self )
                 bt.logging.success(f"Available: {self.available_uids}")
     
         except Exception as e:
