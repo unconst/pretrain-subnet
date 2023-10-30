@@ -82,8 +82,11 @@ class Validator:
         # === Start ===
         loop = asyncio.get_event_loop()
         try:
-            def handle_exception( loop, context ):
-                bt.logging.error(f"Caught exception: {context['exception']}")
+            def handle_exception(loop, context):
+                if 'exception' in context:
+                    bt.logging.error(f"Caught exception: {context['exception']}")
+                else:
+                    bt.logging.error(f"Caught exception, but no exception object was provided in the context. Context: {context}")
             # Run the main loop until completion.
             loop.set_exception_handler( handle_exception )
             loop.run_until_complete( main_loop() )
