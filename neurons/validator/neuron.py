@@ -64,6 +64,7 @@ class Validator:
             'n_failures': 0,
             'n_exceptions': 0,
             'n_pages': 0.0,
+            'n_steps': 0,
             'steps_per_second': 0.0,
             'last_query': time.time(),
         }
