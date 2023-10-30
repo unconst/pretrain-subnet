@@ -30,7 +30,7 @@ from rich.text import Text
 def normalize(value, min_value, max_value):
     return (value - min_value) / (max_value - min_value + 0.00000001)
 
-def get_color(value, min_value, max_value):
+def get_weight_color(value, min_value, max_value):
     norm_value = normalize(value, min_value, max_value)
     try:
         green_intensity = int(255 * norm_value)
@@ -42,7 +42,7 @@ def pretty_print_weights(self):
     min_weight = min(self.weights)
     max_weight = max(self.weights)
     items = [
-        Text(f"Index: {index}, Weight: {weight}", style=get_color(weight, min_weight, max_weight))
+        Text(f"Index: {index}, Weight: {weight}", style=get_weight_color(weight, min_weight, max_weight))
         for index, weight in enumerate(self.weights.tolist())
     ]
     columns = Columns(items, equal=True, expand=True)
