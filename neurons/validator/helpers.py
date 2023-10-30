@@ -6,7 +6,7 @@ import bittensor as bt
 
 def init_wandb( self: object, type: str, uid: int, reinit=False ):
     """Starts a new wandb run."""
-    if not self.config.wandb.off:
+    if self.config.wandb.on:
         tags = [ type, f'uid:{uid}', self.wallet.hotkey.ss58_address, pretrain.__version__, str(pretrain.__spec_version__), f'netuid_{pretrain.NETUID}']
         return wandb.init(
             anonymous = "allow",
