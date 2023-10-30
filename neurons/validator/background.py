@@ -22,6 +22,17 @@ import asyncio
 import pretrain
 import bittensor as bt
 
+from rich import print
+from rich.columns import Columns
+from rich.panel import Panel
+from rich.text import Text
+
+def pretty_print_weights(self):
+    items = [Text(f"Index: {index}, Weight: {weight}") for index, weight in enumerate( self.weights.items() )]
+    columns = Columns(items, equal=True, expand=True)
+    panel = Panel(columns, title="Weights")
+    print(panel)
+
 # Returns the scores for current miners.
 def compute_weights( self: object ):
     # Fill weights. weight_i = exp( -score_i ) / SUM_j exp( -score_j )
@@ -63,6 +74,7 @@ async def background_loop( self: object ):
         self.weights = compute_weights( self )
         self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
         self.block = self.metagraph.block.item()
+        pretty_print_weights( self )
 
         # Log weights.
         bt.logging.debug(f"Weights: {self.weights}")
