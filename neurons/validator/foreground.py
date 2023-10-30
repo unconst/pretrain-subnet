@@ -75,7 +75,7 @@ async def forward(self: object) -> dict:
     # Get uid to query
     uid = next_uid_to_query(self)
     forward_event['uid'] = uid
-    
+
     try:
         # Query the miner
         begin_model_state = self.model.state_dict()
@@ -181,12 +181,12 @@ async def query_uid(self: object, uid: int, model_state: dict, forward_event: di
         
         if not response.is_success:
             # Log and record a failed query
-            bt.logging.error(f'Forward query was a failure with error: {response.dendrite.status_code}:{response.dendrite.status_message}')
+            bt.logging.error(f'Forward query to {uid} a failure with error: {response.dendrite.status_code}:{response.dendrite.status_message}')
             forward_event['success'] = False
         else:
             # Log and record a successful query
             forward_event['success'] = True
-            bt.logging.debug(f'Forward query was a success with process time: {response.axon.process_time }s')
+            bt.logging.debug(f'Forward query to {uid} a success with process time: {response.axon.process_time }s')
         
         # Return the response object
         return response
