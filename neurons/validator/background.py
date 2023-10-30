@@ -26,9 +26,23 @@ from rich import print
 from rich.columns import Columns
 from rich.panel import Panel
 from rich.text import Text
+from colorama import Fore, Back
+
+def normalize(value, min_value, max_value):
+    return (value - min_value) / (max_value - min_value)
+
+def get_color(value, min_value, max_value):
+    norm_value = normalize(value, min_value, max_value)
+    green_intensity = int(255 * norm_value)
+    return f'\033[38;2;0;{green_intensity};0m'  # RGB color code for varying shades of green
 
 def pretty_print_weights(self):
-    items = [Text(f"Index: {index}, Weight: {weight}") for index, weight in enumerate( self.weights.tolist() )]
+    min_weight = min(self.weights)
+    max_weight = max(self.weights)
+    items = [
+        Text(f"Index: {index}, Weight: {weight}", style=get_color(weight, min_weight, max_weight))
+        for index, weight in enumerate(self.weights.tolist())
+    ]
     columns = Columns(items, equal=True, expand=True)
     panel = Panel(columns, title="Weights")
     print(panel)

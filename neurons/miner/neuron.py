@@ -79,6 +79,22 @@ class Miner:
         ).start()
         bt.logging.info(f"Served Axon {self.axon} on network: on network: {self.config.subtensor.chain_endpoint} with netuid: {pretrain.NETUID}")
 
+
+        # === State ===
+        self.global_state = {
+            'n_successes': 0,
+            'n_failures': 0,
+            'n_exceptions': 0,
+            'n_pages': 0.0,
+            'n_steps': 0,
+            'steps_per_second': 0.0,
+            'last_query': time.time(),
+            'n_tokens': 0,
+            'n_examples': 0,
+            'n_batches': 0,
+            'loss': 0.0,
+        }
+
     # === Miner entrypoint ===
     def run(self):
 
