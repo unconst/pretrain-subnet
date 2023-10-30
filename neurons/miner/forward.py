@@ -77,6 +77,7 @@ async def compute_gradients( self, synapse: pretrain.protocol.ComputeGradients )
             
             # Compute gradients on the model.
             grads_dict, loss, n_tokens, n_examples, n_batches = compute_gradients_on_model(
+                self = self,
                 model = local_model,
                 batch_size = synapse.batch_size,
                 sequence_length = synapse.sequence_length,
