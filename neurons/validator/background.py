@@ -68,7 +68,7 @@ async def background_loop( self: object ):
 
         # Wait for one block.
         bt.logging.debug("Background ideling...")
-        await asyncio.sleep( bt.__blocktime__ )
+        await asyncio.sleep( 1 )
 
         # Resync the metagraph.
         self.weights = compute_weights( self )
