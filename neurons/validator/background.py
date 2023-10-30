@@ -26,10 +26,9 @@ from rich import print
 from rich.columns import Columns
 from rich.panel import Panel
 from rich.text import Text
-from colorama import Fore, Back
 
 def normalize(value, min_value, max_value):
-    return (value - min_value) / (max_value - min_value)
+    return (value - min_value) / (max_value - min_value + 0.00000001)
 
 def get_color(value, min_value, max_value):
     norm_value = normalize(value, min_value, max_value)
