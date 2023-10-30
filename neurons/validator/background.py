@@ -65,10 +65,12 @@ def compute_weights( self: object ):
     # Fill weights. weight_i = exp( -score_i ) / SUM_j exp( -score_j )
     # Where score_i is the moving average of negative of the MSE between grads returned and grads computed.
     self.weights = torch.zeros_like( self.metagraph.S )
-    for uid in self.metagraph.uids:
+    for uid in self.metagraph.uids.tolist():
+        if uid == 230:
+            print (uid, math.exp( self.scores[ uid ] ) )
         self.weights[ uid ] = math.exp( self.scores[ uid ] ) if uid in self.scores else 0.0
     # Normalize the scores to 1.0
-    self.weights = torch.nn.functional.normalize( self.weights, p=1.0, dim=0)
+    self.weights = self.weights / self.weights.sum()
     return self.weights
 
 def set_weights( self: object ):
