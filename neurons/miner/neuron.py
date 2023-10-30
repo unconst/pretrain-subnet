@@ -104,6 +104,15 @@ class Miner:
             netuid = pretrain.NETUID,
         )
 
+        # === Set active ping. ===
+        self.subtensor.set_weights (
+            netuid = pretrain.NETUID,
+            wallet = self.wallet, 
+            uids = [self.uid], 
+            weights = [1.0], 
+            wait_for_inclusion=False,
+        )
+
         # === Global Loop ===
         bt.logging.info(f"Starting main loop")
         self.block = 0
@@ -115,6 +124,16 @@ class Miner:
                 self.block = self.metagraph.block.item()
                 time.sleep( bt.__blocktime__ )
                 self.block += 1
+
+                # Set ping weights every 50 blocks.
+                if self.block % 100 == 0:
+                    self.subtensor.set_weights (
+                        netuid = pretrain.NETUID,
+                        wallet = self.wallet, 
+                        uids = [self.uid], 
+                        weights = [1.0], 
+                        wait_for_inclusion=False,
+                    )
 
             # If someone intentionally stops the miner, it'll safely terminate operations.
             except KeyboardInterrupt:

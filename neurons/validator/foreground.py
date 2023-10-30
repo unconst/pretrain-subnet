@@ -123,7 +123,7 @@ def next_uid_to_query( self: object ) -> int:
         Raises:
             Exception: If there are no available UIDs.
     """
-    # Get a random miner axon.
+    self.available_uids = [ uid.item() for uid in self.metagraph.uids if self.metagraph.axons[uid].is_serving and (self.metagraph.block.item() - self.metagraph.last_update[uid] < 1000) ]
     if len(self.available_uids) == 0:
         raise Exception('No available uids.')
     uid = random.choice(self.available_uids)

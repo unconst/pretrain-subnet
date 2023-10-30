@@ -45,17 +45,6 @@ def pretty_print_weights(self):
     panel = Panel(columns, title="Weights")
     print(panel)
 
-def get_available_uids( self: object ):
-    available_uids = []
-    dendrite = bt.dendrite( wallet = self.wallet )
-    serving_uids = [uid.item() for uid in self.metagraph.uids if self.metagraph.axons[uid].is_serving]
-    serving_axons = [ self.metagraph.axons[uid] for uid in serving_uids ]
-    ping_responses = dendrite.query( serving_axons )
-    for resp, uid in list(zip( ping_responses, serving_uids) ):
-        if resp.is_success:
-            available_uids.append( uid )
-    return available_uids
-
 # Returns the scores for current miners.
 def compute_weights( self: object ):
     # Fill weights. weight_i = exp( -score_i ) / SUM_j exp( -score_j )
@@ -86,9 +75,6 @@ def set_weights( self: object ):
 async def background_loop( self: object ):
 
     # === Getting availble ===
-    #self.available_uids = get_available_uids( self )
-    bt.logging.success(f"Available UIDs: {self.available_uids}")
-
     bt.logging.success( 'Starting validator background loop.' )
     self.block = 0
     while True:
@@ -107,11 +93,6 @@ async def background_loop( self: object ):
             # Set weights every 50 blocks.    
             if self.block % 50 == 0:
                 set_weights( self )
-
-            # Update available.
-            if self.block % 50 == 0:
-                #self.available_uids = get_available_uids( self )
-                bt.logging.success(f"Available: {self.available_uids}")
     
         except Exception as e:
             bt.logging.error( f"Caught exception in background loop with error: {e}" )
