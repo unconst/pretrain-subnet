@@ -87,6 +87,7 @@ async def compute_gradients( self, synapse: pretrain.protocol.ComputeGradients )
             forward_event['n_tokens'] = n_tokens
             forward_event['n_examples'] = n_examples
             forward_event['n_batches'] = n_batches
+            forward_event['pages'] = synapse.pages
 
         # Serialize accumulated gradients into the synapse object
         synapse.serialize( state_dict = grads_dict )
@@ -118,13 +119,13 @@ def log_state( self, forward_event: dict ):
     self.global_state['n_successes'] += 1 if forward_event['success'] else 0
     self.global_state['n_failures'] += 0 if forward_event['success'] else 1
     self.global_state['n_exceptions'] += 1 if forward_event['exception'] else 0
-    self.global_state['n_pages'] += len(forward_event['pages'])
+    self.global_state['n_pages'] += len(forward_event['pages']) if 'pages' in forward_event else 0
     self.global_state['steps_per_second'] = 1 / (time.time() - self.global_state['last_query'])
     self.global_state['last_query'] = time.time()
-    self.global_state['n_tokens'] += forward_event['n_tokens']
-    self.global_state['n_examples'] += forward_event['n_examples']
-    self.global_state['n_batches'] += forward_event['n_batches']
-    self.global_state['loss'] = forward_event['loss']
+    self.global_state['n_tokens'] += forward_event['n_tokens'] if 'n_tokens' in forward_event else 0
+    self.global_state['n_examples'] += forward_event['n_examples'] if 'n_examples' in forward_event else 0
+    self.global_state['n_batches'] += forward_event['n_batches'] if 'n_batches' in forward_event else 0
+    self.global_state['loss'] = forward_event['loss'] if 'loss' in forward_event else 0.0
 
     # Create a log dictionary
     log = {
