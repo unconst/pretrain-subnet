@@ -68,30 +68,30 @@ class Validator:
             'last_query': time.time(),
         }
 
-        # === Validator entrypoint ===
-        def run( self ):
-            # === Main loop ===
-            async def main_loop():
-                bt.logging.success( 'Starting validator main loop.' )
-                asyncio.create_task( background_loop( self ) )
-                asyncio.run( foreground_loop( self ) )
+    # === Validator entrypoint ===
+    def run( self ):
+        # === Main loop ===
+        async def main_loop():
+            bt.logging.success( 'Starting validator main loop.' )
+            asyncio.create_task( background_loop( self ) )
+            asyncio.run( foreground_loop( self ) )
 
-            # === Start ===
-            loop = asyncio.get_event_loop()
-            try:
-                def handle_exception( loop, context ):
-                    bt.logging.error(f"Caught exception: {context['exception']}")
-                # Run the main loop until completion.
-                loop.set_exception_handler( handle_exception )
-                loop.run_until_complete( main_loop() )
+        # === Start ===
+        loop = asyncio.get_event_loop()
+        try:
+            def handle_exception( loop, context ):
+                bt.logging.error(f"Caught exception: {context['exception']}")
+            # Run the main loop until completion.
+            loop.set_exception_handler( handle_exception )
+            loop.run_until_complete( main_loop() )
 
-            # If we encounter an unexpected error, log it for debugging.
-            except RuntimeError as e:
-                bt.logging.error(e)
-                traceback.print_exc()
+        # If we encounter an unexpected error, log it for debugging.
+        except RuntimeError as e:
+            bt.logging.error(e)
+            traceback.print_exc()
 
-            # If the user interrupts the program, gracefully exit.
-            except KeyboardInterrupt:
-                bt.logging.success("Keyboard interrupt detected. Exiting validator.")
-                wandb.finish()
-                exit()
+        # If the user interrupts the program, gracefully exit.
+        except KeyboardInterrupt:
+            bt.logging.success("Keyboard interrupt detected. Exiting validator.")
+            wandb.finish()
+            exit()
