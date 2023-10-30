@@ -270,7 +270,7 @@ async def step_with_gradients(self: object, grads_dict: dict, forward_event: dic
         forward_event['step_time'] = time.time() - start_step
 
 
-async def log_state( self, forward_event: dict ):
+def log_state( self, forward_event: dict ):
 
     # Log the forward event to the console
     self.global_state['n_steps'] += 1
@@ -294,7 +294,7 @@ async def log_state( self, forward_event: dict ):
         'forward_time': forward_event['forward_time'],
         'step_time': forward_event['step_time'],
     }
-    
+
     # Log using rich.
     table = Table()
     table.add_column("Metric", style="bold magenta")
