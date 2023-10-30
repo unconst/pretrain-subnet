@@ -29,11 +29,6 @@ from forward import compute_gradients
 
 class Miner:
 
-    # === Callbacks ===
-    async def blacklist_fn( self, synapse: pretrain.protocol.ComputeGradients ) -> float: return blacklist_fn( self, synapse )
-    async def priority_fn( self, synapse: pretrain.protocol.ComputeGradients ) -> float: return priority_fn( self, synapse )
-    async def compute_gradients( self, synapse: pretrain.protocol.ComputeGradients ) -> float: return compute_gradients( self, synapse )
-
     # === Init ===
     def __init__(self, config):
 
@@ -66,6 +61,11 @@ class Miner:
         # Limits the number of queries that can pass the header checks in the blacklist.
         # Increasing this number allow for the miner to download more requests concurrently.
         self.global_forward_lock = asyncio.Semaphore( self.config.max_concurrent_forward_requests ) 
+
+        # === Axon Callbacks ===
+        async def blacklist_fn( synapse: pretrain.protocol.ComputeGradients ) -> float: return blacklist_fn( self, synapse )
+        async def priority_fn( synapse: pretrain.protocol.ComputeGradients ) -> float: return priority_fn( self, synapse )
+        async def compute_gradients( synapse: pretrain.protocol.ComputeGradients ) -> float: return compute_gradients( self, synapse )
 
         # === Axon ===
         self.axon = bt.axon( 
