@@ -49,7 +49,10 @@ async def foreground_loop(self: object):
         async with self.forward_lock:
             
             # Create a task for a forward pass
-            await asyncio.create_task(forward(self))
+            if self.config.sync:
+                await asyncio.create_task(forward(self))
+            else:
+                asyncio.create_task(forward(self))
                         
             # Introduce a short wait before the next iteration
             await asyncio.sleep(1)
