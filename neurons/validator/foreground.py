@@ -279,6 +279,7 @@ def log_state( self, forward_event: dict ):
     self.global_state['n_pages'] += len(forward_event['pages']) if 'pages' in forward_event else 0
     self.global_state['steps_per_second'] = 1 / (time.time() - self.global_state['last_query'])
     self.global_state['last_query'] = time.time()
+    self.global_state['validation_loss'] = forward_event['validation_loss'] if 'validation_loss' in forward_event else 0.0
 
     # Create a log dictionary
     log = {
@@ -290,6 +291,7 @@ def log_state( self, forward_event: dict ):
         'n_pages': self.global_state['n_pages'],
         'steps_per_second': self.global_state['steps_per_second'],
         'validation_time': forward_event['validation_time'] if 'validation_time' in forward_event else 0.0,
+        'validation_loss': forward_event['validation_loss'] if 'validation_loss' in forward_event else 0.0,
         'query_time': forward_event['query_time'] if 'query_time' in forward_event else 0.0,
         'forward_time': forward_event['forward_time'] if 'forward_time' in forward_event else 0.0,
         'step_time': forward_event['step_time'] if 'step_time' in forward_event else 0.0,
