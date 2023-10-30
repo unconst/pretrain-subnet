@@ -2,3 +2,4 @@ bittensor
 torch
 transformers
 wandb
+rich

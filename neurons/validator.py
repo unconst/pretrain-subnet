@@ -156,7 +156,7 @@ def main(config):
                 start_query =  time.time()
                 dendrite = bt.dendrite( wallet = wallet )
                 bt.logging.success( f'Sent request.' )
-                response = await dendrite.forward( metagraph.axons[ uid ], synapse, timeout = 60, deserialize = False )
+                response = await dendrite.forward( metagraph.axons[ uid ], synapse, timeout = 360, deserialize = False )
                 await dendrite.close_session()
                 wandb_event['query_time'] = time.time() - start_query
 

@@ -4,6 +4,23 @@ import typing
 import pretrain
 import bittensor as bt
 
+def init_wandb( self: object, type: str, uid: int, reinit=False ):
+    """Starts a new wandb run."""
+    if not self.config.wandb.off:
+        tags = [ type, f'uid:{uid}', self.wallet.hotkey.ss58_address, pretrain.__version__, str(pretrain.__spec_version__), f'netuid_{pretrain.NETUID}']
+        return wandb.init(
+            anonymous = "allow",
+            reinit = reinit,
+            project = self.config.wandb.project_name,
+            entity = self.config.wandb.entity,
+            config = self.config,
+            mode = "offline" if self.config.wandb.offline else "online",
+            dir = self.config.full_path,
+            tags=tags,
+        )
+    else:
+        return None
+
 def mse_gradients(
         grads_A: typing.Dict[str, torch.Tensor],
         grads_B: typing.Dict[str, torch.Tensor],
@@ -99,17 +116,3 @@ def compute_gradients_on_model(
         bt.logging.success( f'Finished gradient computation.' )
         return grads, average_loss/(i+1), n_tokens, n_examples, n_batches
 
-
-def init_wandb(config, wallet, type: str, uid: int, reinit=False,):
-    """Starts a new wandb run."""
-    tags = [ type, f'uid:{uid}', wallet.hotkey.ss58_address, pretrain.__version__, str(pretrain.__spec_version__), f'netuid_{pretrain.NETUID}']
-    wandb.init(
-        anonymous = "allow",
-        reinit = reinit,
-        project = config.wandb.project_name,
-        entity = config.wandb.entity,
-        config = config,
-        mode="offline" if config.wandb.offline else "online",
-        dir = config.full_path,
-        tags=tags,
-    )
