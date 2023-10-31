@@ -27,7 +27,7 @@ from neuron import Miner
 def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument( '--device', type = str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to run the miner on.' )
-    parser.add_argument( "--max_concurrent_forward_requests", type=int, help="Maximum number of concurrent forward requests.", default=1 )
+    parser.add_argument( "--max_concurrent_forward_requests", type=int, help="Maximum number of concurrent forward requests.", default=3 )
     parser.add_argument( "--wandb.on", action="store_true", help="Turn on wandb.", default=False)
     parser.add_argument( "--wandb.project_name", type=str, help="The name of the project where you are sending the new run.", default="openpretraining" )
     parser.add_argument( "--wandb.entity", type=str, help="An entity is a username or team name where youre sending runs.", default="opentensor-dev" )
