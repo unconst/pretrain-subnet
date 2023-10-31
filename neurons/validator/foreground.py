@@ -51,8 +51,8 @@ async def foreground_loop(self: object):
             # Create a task for a forward pass
             await asyncio.create_task(forward(self))
                         
-            # Introduce a short wait before the next iteration
-            await asyncio.sleep(1)
+        # Introduce a short wait before the next iteration
+        await asyncio.sleep(1)
 
 # === Forward Function ===
 async def forward(self: object) -> dict:
