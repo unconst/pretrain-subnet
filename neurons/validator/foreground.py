@@ -170,7 +170,7 @@ async def query_uid(self: object, uid: int, model_state: dict, forward_event: di
         # Issue the query and record the start time
         start_query = time.time()
         dendrite = bt.dendrite(wallet=self.wallet)
-        response = await dendrite.forward(self.metagraph.axons[uid], synapse, timeout=360, deserialize=False)
+        response = await dendrite.forward(self.metagraph.axons[uid], synapse, timeout=60, deserialize=False)
         await dendrite.close_session()
         
         # Log and record the result of the query
