@@ -75,7 +75,7 @@ def set_weights( self: object ):
         wallet = self.wallet,  # Wallet to sign set weights using hotkey.
         uids = self.metagraph.uids,  # Uids of the miners to set weights for.
         weights = self.weights,  # Weights to set for the miners.
-        wait_for_inclusion=True,
+        wait_for_inclusion=False,
     )
     if result:
         bt.logging.success("Successfully set weights.")
