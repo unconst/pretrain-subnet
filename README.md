@@ -50,10 +50,10 @@ btcli s recycle_register --wallet.name my_wallet --wallet.hotkey validator
 ```
 ---
 
-# Auto-updating
+# Auto-updat-running
 
 ```bash
-crontab -e * * * * * git -C . pull
+echo '* * * * * git -C <path to pretrain-subnet repo> pull' >> /etc/crontab
 pm2 start neurons/validator/run.py --name sn9_validator --interpreter python3 --watch -- --wallet.name my_wallet --wallet.hotkey validator --logging.debug --device cuda:1 
 pm2 start neurons/miner/run.py --name sn9_miner_1 --interpreter python3 --watch -- --wallet.name my_wallet --wallet.hotkey miner1 --logging.debug --device cuda:2 
 pm2 start neurons/miner/run.py --name sn9_miner_2 --interpreter python3 --watch -- --wallet.name my_wallet --wallet.hotkey miner2 --logging.debug --device cuda:3 
