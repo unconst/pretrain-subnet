@@ -35,17 +35,6 @@ def get_weight_color(value, min_value, max_value):
     return f'\033[38;2;0;255;0m'  # RGB color code for varying shades of green
 
 def pretty_print_weights(self):
-    min_weight = min(self.weights)
-    max_weight = max(self.weights)
-    items = [
-        Text(f"UID: {index}, Weight: {weight}" )
-        for index, weight in enumerate(self.weights.tolist())
-    ]
-    columns = Columns(items, equal=True, expand=True)
-    panel = Panel(columns, title="Weights")
-    print(panel)
-
-def pretty_print_weights(self):
     mean_weight = sum(self.weights)/len(self.weights)
     items = [
         Text(f"UID: {index}, Weight: {weight}", style=f"color: {'green' if weight > mean_weight else 'red' if weight <= mean_weight else 'yellow'}" )
