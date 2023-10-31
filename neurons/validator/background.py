@@ -45,6 +45,16 @@ def pretty_print_weights(self):
     panel = Panel(columns, title="Weights")
     print(panel)
 
+def pretty_print_weights(self):
+    mean_weight = sum(self.weights)/len(self.weights)
+    items = [
+        Text(f"UID: {index}, Weight: {weight}", style=f"color: {'green' if weight > mean_weight else 'red' if weight <= mean_weight else 'yellow'}" )
+        for index, weight in enumerate(self.weights.tolist())
+    ]
+    columns = Columns(items, equal=True, expand=True)
+    panel = Panel(columns, title="Weights")
+    print(panel)
+
 # Returns the scores for current miners.
 def compute_weights( self: object ):
     # Fill weights. weight_i = exp( -score_i ) / SUM_j exp( -score_j )
