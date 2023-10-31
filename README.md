@@ -50,6 +50,17 @@ btcli s recycle_register --wallet.name my_wallet --wallet.hotkey validator
 ```
 ---
 
+# Auto-updating
+
+```bash
+crontab -e * * * * * git -C . pull
+pm2 start neurons/validator/run.py --name sn9_validator --interpreter python3 --watch -- --wallet.name my_wallet --wallet.hotkey validator --logging.debug --device cuda:1 
+pm2 start neurons/miner/run.py --name sn9_miner_1 --interpreter python3 --watch -- --wallet.name my_wallet --wallet.hotkey miner1 --logging.debug --device cuda:2 
+pm2 start neurons/miner/run.py --name sn9_miner_2 --interpreter python3 --watch -- --wallet.name my_wallet --wallet.hotkey miner2 --logging.debug --device cuda:3 
+```
+
+---
+
 ## Running
 
 Miners produce gradients using their local machines. You can run a miner like so.
