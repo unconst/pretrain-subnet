@@ -68,12 +68,15 @@ Miners produce gradients using their local machines. You can run a miner like so
 #
 # Each miner must have a separate port here (also different for each miner)
 #    --axon.port 8091 
+#
+# To use wandb pass 
+#    --wandb.on
 
 # Run first miner
-python neurons/miner/run.py --wallet.name my_wallet --wallet.hotkey miner1 --device cuda:1 --logging.debug --axon.port 9091
+python neurons/miner/run.py --wallet.name my_wallet --wallet.hotkey miner1 --device cuda:1 --logging.debug --axon.port 9091 --wandb.on
 
 # Run your second miner
-python neurons/miner/run.py --wallet.name my_wallet --wallet.hotkey miner2 --device cuda:2 --logging.debug --axon.port 9092
+python neurons/miner/run.py --wallet.name my_wallet --wallet.hotkey miner2 --device cuda:2 --logging.debug --axon.port 9092 --wandb.on
 ```
 
 Validators train a GPT2 model over the network and validate the gradients produced by the miners.
@@ -89,10 +92,13 @@ You can run your validator/trainer like so.
 #    --wallet.hotkey i.e. default 
 #
 # The validator device, different that miners:
-#    --device i.e. cuda:0 
+#    --device i.e. cuda:0
+# 
+# To use wandb pass 
+#    --wandb.on
 #
 # Run the validator
-python neurons/validator/run.py --wallet.name my_wallet --wallet.hotkey validator --logging.debug --device cuda:3
+python neurons/validator/run.py --wallet.name my_wallet --wallet.hotkey validator --logging.debug --device cuda:3 --wandb.on
 ```
 
 ---
