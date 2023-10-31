@@ -45,11 +45,8 @@ async def foreground_loop(self: object):
     bt.logging.debug('Starting validator training loop.')
     
     while True:
-        # Control concurrency of forward calls using a lock
-        async with self.forward_lock:
-            
-            # Create a task for a forward pass
-            await asyncio.create_task(forward(self))
+        # Create a task for a forward pass
+        asyncio.create_task(forward(self))
                         
         # Introduce a short wait before the next iteration
         await asyncio.sleep(1)
@@ -67,46 +64,47 @@ async def forward(self: object) -> dict:
                 any exceptions that may have occurred.
 
     """
-    # Initialize forward event dictionary and record start time
-    forward_event = {}
-    start_forward = time.time()
-    bt.logging.debug(f'Starting forward call')
+    async with self.forward_lock:
+        # Initialize forward event dictionary and record start time
+        forward_event = {}
+        start_forward = time.time()
+        bt.logging.debug(f'Starting forward call')
 
-    # Get uid to query
-    uid = next_uid_to_query(self)
-    forward_event['uid'] = uid
+        # Get uid to query
+        uid = next_uid_to_query(self)
+        forward_event['uid'] = uid
 
-    try:
-        # Query the miner
-        begin_model_state = self.model.state_dict()
-        response = await query_uid(self, uid, begin_model_state, forward_event)
+        try:
+            # Query the miner
+            begin_model_state = self.model.state_dict()
+            response = await query_uid(self, uid, begin_model_state, forward_event)
 
-        # Check for successful response
-        if response.is_success:
-            # Deserialize gradients and validate against local computation
-            grads_dict = response.deserialize()
-            mse_score = await validate_gradients(self, grads_dict, begin_model_state, forward_event)
-            update_score(self, uid, mse_score, forward_event)
+            # Check for successful response
+            if response.is_success:
+                # Deserialize gradients and validate against local computation
+                grads_dict = response.deserialize()
+                mse_score = await validate_gradients(self, grads_dict, begin_model_state, forward_event)
+                update_score(self, uid, mse_score, forward_event)
 
-            # Apply received gradients to local model
-            await step_with_gradients(self, grads_dict, forward_event)
+                # Apply received gradients to local model
+                await step_with_gradients(self, grads_dict, forward_event)
 
-        else:
-            # Update score negatively for failure
-            update_score(self, uid, -10, forward_event)
+            else:
+                # Update score negatively for failure
+                update_score(self, uid, -10, forward_event)
 
-    # Log and record exceptions
-    except Exception as e:
-        bt.logging.error(f'Caught exception during forward with error:: {e} traceback:{traceback.format_exc()}')
-        forward_event['exception'] = True
+        # Log and record exceptions
+        except Exception as e:
+            bt.logging.error(f'Caught exception during forward with error:: {e} traceback:{traceback.format_exc()}')
+            forward_event['exception'] = True
 
-    # Log success and return forward event details
-    finally:
-        bt.logging.debug(f'Finished forward to uid: {uid} call with success.')
-        forward_event['forward_time'] = time.time() - start_forward
-        forward_event['exception'] = False
-        log_state( self, forward_event )
-        return forward_event
+        # Log success and return forward event details
+        finally:
+            bt.logging.debug(f'Finished forward to uid: {uid} call with success.')
+            forward_event['forward_time'] = time.time() - start_forward
+            forward_event['exception'] = False
+            log_state( self, forward_event )
+            return forward_event
 
 
 # === Returns next uid to query ===

@@ -56,8 +56,8 @@ class Validator:
         # === Locks ===
         self.gpu_lock = asyncio.Lock()
         self.model_lock = asyncio.Lock()
-        self.forward_lock = asyncio.Semaphore( self.config.max_concurrent_forward )
-        self.per_uid_locks = { i: asyncio.Semaphore( self.config.max_concurrent_forward_per_uid ) for i in range(256) }
+        self.forward_lock = asyncio.BoundedSemaphore( self.config.max_concurrent_forward if not self.config.sync else 1 )
+        self.per_uid_locks = { i: asyncio.BoundedSemaphore( self.config.max_concurrent_forward_per_uid ) for i in range(256) }
 
         # === State ===
         self.global_state = {
