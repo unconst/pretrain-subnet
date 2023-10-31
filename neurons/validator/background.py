@@ -91,6 +91,7 @@ async def background_loop( self: object ):
 
             # Set weights every 50 blocks.    
             if self.block % 50 == 0:
+                bt.logging.success('Setting weights on chain.')
                 set_weights( self )
     
         except Exception as e:
