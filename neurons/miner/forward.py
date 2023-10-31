@@ -127,7 +127,9 @@ def log_state( self, forward_event: dict ):
     self.global_state['n_tokens'] += forward_event['n_tokens'] if 'n_tokens' in forward_event else 0
     self.global_state['n_examples'] += forward_event['n_examples'] if 'n_examples' in forward_event else 0
     self.global_state['n_batches'] += forward_event['n_batches'] if 'n_batches' in forward_event else 0
-    self.global_state['loss'] = forward_event['loss'] if 'loss' in forward_event else 0.0
+    self.global_state['loss'] = forward_event['loss'] if 'loss' in forward_event else self.global_state['loss']
+    self.global_state['forward_time'] = forward_event['forward_time'] if 'forward_time' in forward_event else self.global_state['forward_time']
+    self.global_state['call_time'] = forward_event['call_time'] if 'call_time' in forward_event else self.global_state['call_time']
 
     # Create a log dictionary
     log = {

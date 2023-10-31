@@ -93,6 +93,8 @@ class Miner:
             'n_examples': 0,
             'n_batches': 0,
             'loss': 0.0,
+            'forward_time': 60,
+            'call_time': 60,
         }
 
     # === Miner entrypoint ===
