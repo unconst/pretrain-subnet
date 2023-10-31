@@ -1,5 +1,5 @@
 bittensor
 torch
-transformers
+transformers=4.34.1
 wandb
 rich

@@ -24,6 +24,9 @@ from torch.utils.data import IterableDataset
 from transformers import GPT2Tokenizer
 
 class SubsetFalconLoader(IterableDataset):
+    
+    max_pages: int = 968000015
+
     def __init__(self, batch_size, sequence_length, pages: typing.List[int] ):
         self.batch_size = batch_size
         self.sequence_length = sequence_length

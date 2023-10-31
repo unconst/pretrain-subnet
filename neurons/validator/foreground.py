@@ -159,7 +159,7 @@ async def query_uid(self: object, uid: int, model_state: dict, forward_event: di
         bt.logging.debug(f'Making forward query to uid: {uid}')
         
         # Build the query
-        pages = [random.randint(1, 968000015)]
+        pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages)]
         synapse = pretrain.protocol.ComputeGradients(
             batch_size=self.config.batch_size,
             sequence_length=self.config.sequence_length,
