@@ -68,6 +68,11 @@ class Validator:
             'n_steps': 0,
             'steps_per_second': 0.0,
             'last_query': time.time(),
+            'validation_loss': 10,
+            'validation_time': 60,
+            'query_time': 60,
+            'forward_time': 60,
+            'step_time': 10
         }
 
     # === Validator entrypoint ===
