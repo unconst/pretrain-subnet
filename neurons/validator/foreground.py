@@ -157,6 +157,15 @@ async def query_uid(self: object, uid: int, model_state: dict, forward_event: di
 
         # Log the initiation of the query
         bt.logging.debug(f'Making forward query to uid: {uid}')
+
+        # First ping the miner to see if it is online.
+        dendrite = bt.dendrite(wallet=self.wallet)
+        ping_response = await dendrite.forward(self.metagraph.axons[uid])
+        if not ping_response.is_success:
+            forward_event['success'] = False
+            bt.logging.debug(f'Ping failed on uid: {uid}')
+            await dendrite.close_session()
+            return ping_response
         
         # Build the query
         pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages)]
@@ -169,7 +178,6 @@ async def query_uid(self: object, uid: int, model_state: dict, forward_event: di
         
         # Issue the query and record the start time
         start_query = time.time()
-        dendrite = bt.dendrite(wallet=self.wallet)
         response = await dendrite.forward(self.metagraph.axons[uid], synapse, timeout=60, deserialize=False)
         await dendrite.close_session()
         
