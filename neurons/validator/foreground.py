@@ -16,6 +16,7 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
+import math
 import time
 import torch
 import random
@@ -347,7 +348,7 @@ def update_state( self, forward_event: dict ):
 
     # Log weights.
     items = [
-        Text(f"UID: {uid}, Score: {self.global_state['uid_state'][uid]['score']}:{self.global_state['uid_state'][uid]['n_successes']}/{self.global_state['uid_state'][uid]['n_forward']}" )
+        Text(f"UID: {uid}, Score: {math.exp(self.global_state['uid_state'][uid]['score'])}:{self.global_state['uid_state'][uid]['n_successes']}/{self.global_state['uid_state'][uid]['n_forward']}" )
         for uid in self.global_state['uid_state'].keys()
     ]
     columns = Columns(items, equal=True, expand=True)
