@@ -46,7 +46,7 @@ class DB:
             wallet = self.wallet, 
             config = self.config 
         ).attach( 
-            forward_fn = compute_gradients_fn,
+            forward_fn = get_state,
             priority_fn = priority_fn,
             blacklist_fn = blacklist_fn
         ).start()
