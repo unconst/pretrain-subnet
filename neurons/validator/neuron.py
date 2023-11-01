@@ -72,7 +72,8 @@ class Validator:
             'validation_time': 60,
             'query_time': 60,
             'forward_time': 60,
-            'step_time': 10
+            'step_time': 10,
+            'outstanding_rpcs': 0,
         }
 
     # === Validator entrypoint ===

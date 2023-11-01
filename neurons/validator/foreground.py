@@ -65,6 +65,7 @@ async def forward(self: object) -> dict:
 
     """
     async with self.forward_lock:
+        self.global_state['outstanding_rpcs'] += 1
         # Initialize forward event dictionary and record start time
         forward_event = {}
         start_forward = time.time()
@@ -111,6 +112,7 @@ async def forward(self: object) -> dict:
             bt.logging.debug(f'Finished forward to uid: {uid} call with success.')
             forward_event['forward_time'] = time.time() - start_forward
             forward_event['exception'] = False
+            self.global_state['outstanding_rpcs'] -= 1
             log_state( self, forward_event )
             return forward_event
 
@@ -311,6 +313,7 @@ def log_state( self, forward_event: dict ):
         'query_time': self.global_state['query_time'],
         'forward_time': self.global_state['forward_time'],
         'step_time': self.global_state['step_time'],
+        'outstanding_rpcs': self.global_state['outstanding_rpcs'],
     }
 
     # Log using rich.
@@ -327,6 +330,8 @@ def log_state( self, forward_event: dict ):
     table.add_row("Query Time", f"{log['query_time']:.2f}")
     table.add_row("Forward Time", f"{log['forward_time']:.2f}")
     table.add_row("Step Time", f"{log['step_time']:.2f}")
+    table.add_row("Current RPCs", f"{log['outstanding_rpcs']:.2f}")
+
     print(table)
 
     # Log the forward event to wandb if configured
