@@ -89,20 +89,10 @@ async def forward(self: object) -> dict:
                 # Check if we should validate this batch.
                 if random.random() < self.config.validate_probability:
                     # Validate against local computation
-                    mse_score = await validate_gradients(self, grads_dict, begin_model_state, forward_event)
-                    update_score(self, uid, mse_score, forward_event)
-                    
-                # If not validating we still need to update the score.
-                else:
-                    # We converge to their current score.
-                    update_score( self, uid, self.scores[uid] if uid in self.scores else 1, forward_event )
+                    forward_event['mse_score'] = await validate_gradients(self, grads_dict, begin_model_state, forward_event)
 
                 # Apply received gradients to local model
                 await step_with_gradients(self, grads_dict, forward_event)
-
-            else:
-                # Update score negatively for failure
-                update_score(self, uid, -10, forward_event)
 
         # Log and record exceptions
         except Exception as e:
@@ -115,7 +105,7 @@ async def forward(self: object) -> dict:
             forward_event['forward_time'] = time.time() - start_forward
             forward_event['exception'] = False
             self.global_state['outstanding_rpcs'] -= 1
-            log_state( self, forward_event )
+            update_state( self, forward_event )
             return forward_event
 
 
@@ -135,22 +125,6 @@ def next_uid_to_query( self: object ) -> int:
         raise Exception('No available uids.')
     uid = random.choice(self.available_uids)
     return uid
-
-# === Update UID score ===
-def update_score(self: object, uid: int, score: float, forward_event: dict):
-    """
-        Updates the score of a given UID using a moving average formula.
-        The weighting factor is determined by the alpha value from the         
-        Args:
-            uid (int): The UID whose score is to be updated.
-            score (float): The new score to be considered for the update.                                    
-    """
-    # Update the score using a moving average formula
-    self.scores[ uid ] = self.config.alpha * self.scores[uid] + ( 1 - self.config.alpha ) * score if uid in self.scores else self.config.alpha * score
-    # Update the forward_event dictionary with the new and current scores
-    bt.logging.debug( f'Updated score for uid: {uid} with score: {score} to {self.scores[ uid ]}' )
-    forward_event['score'] = score
-    forward_event['current_score'] = self.scores[ uid ]
 
 # === Query uid ===
 async def query_uid(self: object, uid: int, model_state: dict, forward_event: dict ):
@@ -285,7 +259,33 @@ async def step_with_gradients(self: object, grads_dict: dict, forward_event: dic
         forward_event['step_time'] = time.time() - start_step
 
 
-def log_state( self, forward_event: dict ):
+def update_state( self, forward_event: dict ):
+
+    # Update miner score.
+    uid = forward_event['uid']
+    previous_score = self.global_state['uid_scores'][uid] if uid in self.global_state['uid_scores'] else -1
+    
+    if 'mse_score' in forward_event:
+        # The miner gradients were scored on the forward.
+        # the score for the miner is updated based on a moving average of their mse score.
+        new_score = forward_event['mse_score'] 
+
+    elif forward_event['success']:
+        # The miner gradients were not scored on the forward.
+        # But the response was a success. The moving average stays steady.
+        new_score = previous_score   
+
+    else:
+        # And the response was not a success, so the miner is penalized.
+        new_score = -10
+
+    # Update the score for this miner in the global state.
+    self.global_state['uid_scores'][ uid ] = self.config.alpha * previous_score + ( 1 - self.config.alpha ) * new_score 
+
+    # Update miner success rate and query count.
+    if forward_event['success']:
+        self.global_state['uid_successes'][uid] = self.global_state['uid_successes'][uid] + 1 if uid in self.global_state['uid_successes'] else 1
+    self.global_state['uid_queries'][uid] = self.global_state['uid_queries'][uid] + 1 if uid in self.global_state['uid_queries'] else 1
 
     # Log the forward event to the console
     self.global_state['n_steps'] += 1
@@ -300,6 +300,7 @@ def log_state( self, forward_event: dict ):
     self.global_state['query_time'] = forward_event['query_time'] if 'query_time' in forward_event else self.global_state['query_time']
     self.global_state['forward_time'] = forward_event['forward_time'] if 'forward_time' in forward_event else self.global_state['forward_time']
     self.global_state['step_time'] = forward_event['step_time'] if 'step_time' in forward_event else self.global_state['step_time']
+
 
     # Create a log dictionary
     log = {

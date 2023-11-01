@@ -74,6 +74,9 @@ class Validator:
             'forward_time': 60,
             'step_time': 10,
             'outstanding_rpcs': 0,
+            'uid_scores': {},
+            'uid_successes': {},
+            'uid_queries': {}
         }
 
     # === Validator entrypoint ===
