@@ -50,14 +50,17 @@ btcli s recycle_register --wallet.name my_wallet --wallet.hotkey validator
 ```
 ---
 
-# Auto-updat-running
+## Local Subtensor
 
+Your node will run better if you are connecting to a local Bittensor chain entrypoint node rather than using Opentensor's. 
+We recommend running a local node as follows and passing the ```--subtensor.network local``` flag to your running miners/validators. 
+To install and run a local subtensor node follow the commands below with Docker and Docker-Compose previously installed.
 ```bash
-echo '* * * * * git -C <path to pretrain-subnet repo> pull' >> /etc/crontab
-pm2 start neurons/validator/run.py --name sn9_validator --interpreter python3 --watch -- --wallet.name my_wallet --wallet.hotkey validator --logging.debug --device cuda:1 
-pm2 start neurons/miner/run.py --name sn9_miner_1 --interpreter python3 --watch -- --wallet.name my_wallet --wallet.hotkey miner1 --logging.debug --device cuda:2 
-pm2 start neurons/miner/run.py --name sn9_miner_2 --interpreter python3 --watch -- --wallet.name my_wallet --wallet.hotkey miner2 --logging.debug --device cuda:3 
+git clone https://github.com/opentensor/subtensor.git
+cd subtensor
+docker compose up --detach
 ```
+
 
 ---
 
@@ -82,12 +85,15 @@ Miners produce gradients using their local machines. You can run a miner like so
 #
 # To use wandb pass 
 #    --wandb.on
+#
+# To run connect to your local subtensor entrypoint
+#   --subtensor.network local 
 
 # Run first miner
-python neurons/miner/run.py --wallet.name my_wallet --wallet.hotkey miner1 --device cuda:1 --logging.debug --axon.port 9091 --wandb.on
+python neurons/miner/run.py --wallet.name my_wallet --wallet.hotkey miner1 --device cuda:1 --logging.debug --axon.port 9091 --wandb.on --subtensor.network local
 
 # Run your second miner
-python neurons/miner/run.py --wallet.name my_wallet --wallet.hotkey miner2 --device cuda:2 --logging.debug --axon.port 9092 --wandb.on
+python neurons/miner/run.py --wallet.name my_wallet --wallet.hotkey miner2 --device cuda:2 --logging.debug --axon.port 9092 --wandb.on --subtensor.network local
 ```
 
 Validators train a GPT2 model over the network and validate the gradients produced by the miners.
@@ -108,8 +114,22 @@ You can run your validator/trainer like so.
 # To use wandb pass 
 #    --wandb.on
 #
+# To run connect to your local subtensor entrypoint
+#   --subtensor.network local 
+
 # Run the validator
-python neurons/validator/run.py --wallet.name my_wallet --wallet.hotkey validator --logging.debug --device cuda:3 --wandb.on
+python neurons/validator/run.py --wallet.name my_wallet --wallet.hotkey validator --logging.debug --device cuda:3 --wandb.on --subtensor.network local
+```
+
+---
+
+# Auto-update PM2 + CRON
+
+```bash
+echo '* * * * * git -C <path to pretrain-subnet repo> pull' >> /etc/crontab
+pm2 start neurons/validator/run.py --name sn9_validator --interpreter python3 --watch -- --wallet.name my_wallet --wallet.hotkey validator --logging.debug --device cuda:1  --subtensor.network local
+pm2 start neurons/miner/run.py --name sn9_miner_1 --interpreter python3 --watch -- --wallet.name my_wallet --wallet.hotkey miner1 --logging.debug --device cuda:2  --subtensor.network local
+pm2 start neurons/miner/run.py --name sn9_miner_2 --interpreter python3 --watch -- --wallet.name my_wallet --wallet.hotkey miner2 --logging.debug --device cuda:3  --subtensor.network local
 ```
 
 ---
