@@ -92,7 +92,7 @@ async def forward(self: object) -> dict:
                 # If not validating we still need to update the score.
                 else:
                     # We converge to their current score.
-                    update_score( self, uid, self.score[uid], forward_event )
+                    update_score( self, uid, self.scores[uid], forward_event )
 
                 # Apply received gradients to local model
                 await step_with_gradients(self, grads_dict, forward_event)
