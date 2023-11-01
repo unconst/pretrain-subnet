@@ -80,6 +80,7 @@ class Validator:
             'last_query': time.time(),
             'query_time': 60,
             'uid_state': {},
+            'n_steps': 0,
         }
 
         # === Axon Callbacks ===
