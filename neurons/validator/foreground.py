@@ -288,6 +288,8 @@ def update_state( self, forward_event: dict ):
     # Update miner success rate and query count.
     if forward_event['success']:
         self.global_state['uid_successes'][uid] = self.global_state['uid_successes'][uid] + 1 if uid in self.global_state['uid_successes'] else 1
+    else:
+        self.global_state['uid_successes'][uid] = self.global_state['uid_successes'][uid] + 0 if uid in self.global_state['uid_successes'] else 0
     self.global_state['uid_queries'][uid] = self.global_state['uid_queries'][uid] + 1 if uid in self.global_state['uid_queries'] else 1
 
     # Log the forward event to the console
