@@ -22,16 +22,12 @@ import pretrain
 
 # === Blacklist ===
 async def blacklist( self, synapse: pretrain.protocol.GetState ) -> typing.Tuple[bool, str]:
-    # Locks requests to only allowing max_concurrent_forward_requests at a time.
-    # After the blacklist the full synapse is pulled into memory so we want to limit
-    # the number here.
-    async with self.global_forward_lock:
-        # Check if the hotkey is in the metagraph.
-        if synapse.dendrite.hotkey not in self.metagraph.hotkeys:
-                # Allow query through.
-                return True, "Unrecognized hotkey"
-        # Blacklist query.
-        return False, "Hotkey recognized!"
+    # Check if the hotkey is in the metagraph.
+    if synapse.dendrite.hotkey not in self.metagraph.hotkeys:
+            # Allow query through.
+            return True, "Unrecognized hotkey"
+    # Blacklist query.
+    return False, "Hotkey recognized!"
 
 # === Priority ===
 async def priority( self, synapse: pretrain.protocol.GetState ) -> float:
