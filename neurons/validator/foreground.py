@@ -24,7 +24,10 @@ import pretrain
 import traceback
 import bittensor as bt
 from rich import print
+from rich.text import Text
+from rich.panel import Panel
 from rich.table import Table
+from rich.columns import Columns
 
 from helpers import compute_gradients_on_model
 from helpers import mse_gradients
@@ -319,7 +322,7 @@ def update_state( self, forward_event: dict ):
         'outstanding_rpcs': self.global_state['outstanding_rpcs'],
     }
 
-    # Log using rich.
+    # Log State
     table = Table()
     table.add_column("Metric", style="bold magenta")
     table.add_column("Value", style="bold green")
@@ -336,6 +339,15 @@ def update_state( self, forward_event: dict ):
     table.add_row("Current RPCs", f"{log['outstanding_rpcs']:.2f}")
 
     print(table)
+
+    # Log weights.
+    items = [
+        Text(f"UID: {uid}, Score: {self.global_state['uid_scores'][ uid ]}:{self.global_state['uid_successes'][ uid ]}/{n_q}" )
+        for uid, n_q in enumerate(self.global_state['uid_queries'])
+    ]
+    columns = Columns(items, equal=True, expand=True)
+    panel = Panel(columns, title="Scores")
+    print( panel )
 
     # Log the forward event to wandb if configured
     if self.wandb:
