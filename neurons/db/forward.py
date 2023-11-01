@@ -46,12 +46,23 @@ async def priority( self, synapse: pretrain.protocol.ComputeGradients ) -> float
     prirority = float(self.metagraph.S[caller_uid]) 
     return prirority
 
-# === Forward ===
+# === Forward Get State ===
 async def get_state( self, synapse: pretrain.protocol.GetState ) -> pretrain.protocol.GetState:
     synapse.serialize( state_dict = self.model.state_dict() )
     return synapse
 
-# === Forward ===
+# === Forward Apply Grads ===
 async def apply_grads( self, synapse: pretrain.protocol.ApplyGrads ) -> pretrain.protocol.ApplyGrads:
-    synapse.serialize( state_dict = self.model.state_dict() )
+
+    grads_dict = synapse.deserialize()
+    self.model.zero_grad()
+    for name_j, param_j in self.model.named_parameters():
+        if name_j in grads_dict and grads_dict[name_j] is not None:
+            param_j.grad = param_j.grad + grads_dict[name_j].to('cpu') if param_j.grad is not None else grads_dict[name_j].to('cpu')
+
+    self.optimizer.step()
+    self.model.zero_grad()
+
+    # Empty state and respond.
+    synapse.serialize( state_dict = {} )
     return synapse
