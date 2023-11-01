@@ -89,7 +89,7 @@ async def background_loop( self: object ):
             self.weights = compute_weights( self )
 
             # Set weights every 10 minutes    
-            if self.background_step % 10 == 0:
+            if self.background_step % 3 == 0:
                 bt.logging.success('Setting weights on chain.')
                 pretty_print_weights( self )
                 set_weights( self )
