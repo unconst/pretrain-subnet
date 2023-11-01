@@ -38,5 +38,5 @@ async def priority( self, synapse: pretrain.protocol.GetState ) -> float:
 
 # === Forward ===
 async def get_state( self, synapse: pretrain.protocol.GetState ) -> pretrain.protocol.GetState:
-    synapse.serialize( state_dict = self.best_model.state_dict() )
+    synapse.serialize( state_dict = self.best_model_state )
     return synapse
