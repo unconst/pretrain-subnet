@@ -37,9 +37,9 @@ class DB:
         self.wandb = init_wandb( self, type = 'miner', uid = self.uid )
 
         # === Axon Callbacks ===
-        async def priority_fn( synapse: pretrain.protocol.ComputeGradients ) -> float: return await priority( self, synapse )
-        async def blacklist_fn( synapse: pretrain.protocol.ComputeGradients ) -> typing.Tuple[bool, str]: return await blacklist( self, synapse )
-        async def compute_gradients_fn( synapse: pretrain.protocol.ComputeGradients ) -> pretrain.protocol.ComputeGradients: return await compute_gradients( self, synapse )
+        async def priority_fn( synapse: pretrain.protocol.GetState ) -> float: return await priority( self, synapse )
+        async def blacklist_fn( synapse: pretrain.protocol.GetState ) -> typing.Tuple[bool, str]: return await blacklist( self, synapse )
+        async def get_state( synapse: pretrain.protocol.GetState ) -> pretrain.protocol.GetState: return await get_state( self, synapse )
 
         # === Axon ===
         self.axon = bt.axon( 
