@@ -1,8 +1,12 @@
 import helpers
+import typing
 import pretrain
 import bittensor as bt
 
 from helpers import init_wandb
+from forward import priority
+from forward import blacklist
+from forward import compute_gradients
 
 class DB:
 
@@ -29,14 +33,6 @@ class DB:
 
         # === Init wandb ===
         self.wandb = init_wandb( self, type = 'miner', uid = self.uid )
-
-        # === Locks ===
-        # Limits GPU usage to 1 request at a time for space considerations. In practice, we would
-        # shuttle multiple requests across multiple machines.
-        self.gpu_lock = asyncio.Lock() 
-        # Limits the number of queries that can pass the header checks in the blacklist.
-        # Increasing this number allow for the miner to download more requests concurrently.
-        self.global_forward_lock = asyncio.Semaphore( self.config.max_concurrent_forward_requests ) 
 
         # === Axon Callbacks ===
         async def priority_fn( synapse: pretrain.protocol.ComputeGradients ) -> float: return await priority( self, synapse )
