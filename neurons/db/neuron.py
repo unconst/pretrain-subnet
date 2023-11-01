@@ -41,10 +41,18 @@ class DB:
         async def blacklist_fn( synapse: pretrain.protocol.GetState ) -> typing.Tuple[bool, str]: return await blacklist( self, synapse )
         async def get_state( synapse: pretrain.protocol.GetState ) -> pretrain.protocol.GetState: return await get_state( self, synapse )
 
+        async def priority_fn( synapse: pretrain.protocol.ApplyGrads ) -> float: return await priority( self, synapse )
+        async def blacklist_fn( synapse: pretrain.protocol.ApplyGrads ) -> typing.Tuple[bool, str]: return await blacklist( self, synapse )
+        async def apply_grads( synapse: pretrain.protocol.ApplyGrads ) -> pretrain.protocol.ApplyGrads: return await apply_grads( self, synapse )
+
         # === Axon ===
         self.axon = bt.axon( 
             wallet = self.wallet, 
             config = self.config 
+        ).attach( 
+            forward_fn = get_state,
+            priority_fn = priority_fn,
+            blacklist_fn = blacklist_fn
         ).attach( 
             forward_fn = get_state,
             priority_fn = priority_fn,

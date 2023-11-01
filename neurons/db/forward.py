@@ -50,3 +50,8 @@ async def priority( self, synapse: pretrain.protocol.ComputeGradients ) -> float
 async def get_state( self, synapse: pretrain.protocol.GetState ) -> pretrain.protocol.GetState:
     synapse.serialize( state_dict = self.model.state_dict() )
     return synapse
+
+# === Forward ===
+async def apply_grads( self, synapse: pretrain.protocol.ApplyGrads ) -> pretrain.protocol.ApplyGrads:
+    synapse.serialize( state_dict = self.model.state_dict() )
+    return synapse
