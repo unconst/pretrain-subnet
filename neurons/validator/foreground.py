@@ -30,242 +30,87 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.columns import Columns
 
-from helpers import compute_gradients_on_model
-from helpers import mse_gradients
+async def run_eval_on_state( self, eval_state ) -> float:
+
+    # Load the eval state into the model.
+    eval_model = pretrain.model.get_model().to( self.config.device )
+    eval_model.load_state_dict( eval_state )
+    eval_model.zero_grad()
+    eval_model.train()
+
+    # Set up dataloader
+    random_pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages)]
+    loader = pretrain.dataset.SubsetFalconLoader(
+        batch_size = 3,
+        sequence_length = 512,
+        pages = random_pages
+    )
+    torch.backends.cudnn.benchmark = True
+
+    # Run eval
+    n_batches = 0
+    average_loss = 0.0
+    for i, batch in enumerate( loader ):
+        inputs = batch.to( eval_model.device )
+        outputs = eval_model( inputs, labels=inputs )
+        outputs.loss.backward()
+        average_loss += outputs.loss.detach().item()
+        torch.cuda.empty_cache()
+        bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
+
+    # Return average loss on batch.
+    return average_loss / n_batches
 
 # === Training loop ===
-async def foreground_loop(self: object):
-    """
-        Initiates a training loop that continuously performs forward passes,
-        logs the events, and updates the global state asynchronously.
+async def foreground_loop(self: object):    
 
-        This method starts a validator training loop that concurrently handles
-        forward calls, ensuring controlled concurrency using a lock. For each iteration,
-        a task is created for a forward pass, the global state is updated, and the event
-        is logged to wandb if configured. A short wait is introduced before proceeding
-        to the next iteration to manage the rate of task creation.
-    """
-    # Log the initiation of the training loop
-    bt.logging.debug('Starting validator training loop.')
-    
     while True:
-        # Create a task for a forward pass
-        asyncio.create_task(forward(self))
-                        
-        # Introduce a short wait before the next iteration
-        await asyncio.sleep(1)
 
-# === Forward Function ===
-async def forward(self: object) -> dict:
-    """
-        Perform a forward pass through a randomly selected miner axon,
-        compute gradients both locally and through a request to the miner,
-        compare them to score the miner, and then apply the received gradients
-        to the local model.
-
-    Returns:
-        dict: A dictionary containing details of the forward event, including
-                any exceptions that may have occurred.
-
-    """
-    async with self.forward_lock:
-        self.global_state['outstanding_rpcs'] += 1
-        # Initialize forward event dictionary and record start time
         forward_event = {}
-        start_forward = time.time()
-        bt.logging.debug(f'Starting forward call')
 
-        # Get uid to query
-        uid = next_uid_to_query(self)
+        # Get uid from serving online miner.
+        available_uids = [ uid.item() for uid in self.metagraph.uids if self.metagraph.axons[uid].is_serving and (self.metagraph.block.item() - self.metagraph.last_update[uid] < 1000) ]
+        if len( available_uids ) == 0:
+            raise Exception('No available uids.')
+        uid = random.choice( available_uids )
         forward_event['uid'] = uid
 
-        try:
-            # Query the miner
-            begin_model_state = self.model.state_dict()
-            response = await query_uid(self, uid, begin_model_state, forward_event)
-
-            # Check for successful response
-            if response.is_success:
-                
-                # Deserialize gradients from response
-                grads_dict = response.deserialize()
-
-                # Check if we should validate this batch.
-                if random.random() < self.config.validate_probability:
-                    # Validate against local computation
-                    forward_event['mse_score'] = await validate_gradients(self, grads_dict, begin_model_state, forward_event)
-
-                # Apply received gradients to local model
-                await step_with_gradients(self, grads_dict, forward_event)
-
-        # Log and record exceptions
-        except Exception as e:
-            bt.logging.error(f'Caught exception during forward with error:: {e} traceback:{traceback.format_exc()}')
-            forward_event['exception'] = True
-
-        # Log success and return forward event details
-        finally:
-            bt.logging.debug(f'Finished forward to uid: {uid}')
-            forward_event['forward_time'] = time.time() - start_forward
-            forward_event['exception'] = False
-            self.global_state['outstanding_rpcs'] -= 1
-            update_state( self, forward_event )
-            return forward_event
-
-
-# === Returns next uid to query ===
-def next_uid_to_query( self: object ) -> int:
-    """
-        Get the next miner UID to query from the available set of UIDs where
-        availability is determined based on whether the corresponding axon is serving.
-        In case there are no available UIDs, an exception is raised.        
-        Returns:
-            int: The next UID to query.
-        Raises:
-            Exception: If there are no available UIDs.
-    """
-    self.available_uids = [ uid.item() for uid in self.metagraph.uids if self.metagraph.axons[uid].is_serving and (self.metagraph.block.item() - self.metagraph.last_update[uid] < 1000) ]
-    if len(self.available_uids) == 0:
-        raise Exception('No available uids.')
-    uid = random.choice(self.available_uids)
-    return uid
-
-# === Query uid ===
-async def query_uid(self: object, uid: int, model_state: dict, forward_event: dict ):
-    """
-        Asynchronously query a specified UID with a given model state and log the event.
-        A random page is selected as argument for the query.
-        Args:
-            uid (int): The UID to be queried.
-            model_state (dict): The state dictionary of the model to be used in the query.
-            forward_event (dict): A dictionary to which the event details will be added.
-        Returns:
-            response: The response object returned from the query.
-    """
-    # === Lock total concurrent forward calls per uid ===
-    async with self.per_uid_locks[uid]:
-
-        # First ping the miner to see if it is online.
-        dendrite = bt.dendrite(wallet=self.wallet)
-        ping_response = await dendrite.forward(self.metagraph.axons[uid])
-        if not ping_response.is_success:
-            forward_event['success'] = False
-            bt.logging.debug(f'Ping failed on uid: {uid}')
-            await dendrite.close_session()
-            return ping_response
-        bt.logging.debug(f'Ping succeeded on uid: {uid} now making foward query.')
-
-        # Build the query
-        pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages)]
-        synapse = pretrain.protocol.ComputeGradients(
-            batch_size=self.config.batch_size,
-            sequence_length=self.config.sequence_length,
-            pages=pages
-        )
-        synapse.serialize(state_dict=model_state)
-        
-        # Issue the query and record the start time
+        # Build dendrite and query random miner.
         start_query = time.time()
-        response = await dendrite.forward(self.metagraph.axons[uid], synapse, timeout=360, deserialize=False)
-        await dendrite.close_session()
-        
-        # Log and record the result of the query
-        forward_event['pages'] = pages
+        dendrite = bt.dendrite(wallet=self.wallet)
+        synapse = pretrain.protocol.GetState()
+        response = await dendrite.forward( self.metagraph.axons[uid], synapse, timeout=360, deserialize=False )
+        await dendrite.close_session()        
         forward_event['query_time'] = time.time() - start_query
-        
+
+        # Response was a failure.
         if not response.is_success:
-            # Log and record a failed query
-            bt.logging.error(f'Forward query to {uid} a failure with error: {response.dendrite.status_code}:{response.dendrite.status_message}')
             forward_event['success'] = False
+            forward_event['better'] = False
+            forward_event['score'] = -1
+
         else:
-            # Log and record a successful query
-            forward_event['success'] = True
-            bt.logging.debug(f'Forward query to {uid} a success with process time: {response.axon.process_time }s')
-        
-        # Return the response object
-        return response
+            # Get model state and run random eval.
+            eval_state = response.deserialize()
+            eval_loss = run_eval_on_state( self, eval_state )
+            forward_event['eval_loss'] = eval_loss
 
-async def validate_gradients(self: object, grads_dict: dict, model_state: dict, forward_event: dict):
-    """
-    Asynchronously validate the gradients received from a query by recomputing them locally.
-    It computes the Mean Squared Error (MSE) between the received gradients and the locally computed gradients. 
-    Args:
-        grads_dict (dict): The gradients dictionary received from a query.
-        model_state (dict): The state dictionary of the model to be used for local gradient computation.
-        forward_event (dict): A dictionary to which the event details will be added.
-    Returns:
-        float: The negative MSE score between the received gradients and the locally computed gradients.
-    """
-    # Deserialize the gradients from the response
-    uid = forward_event['uid']
-    bt.logging.debug(f'Validating gradients from uid: {uid}')
-    start_validate = time.time()
-    
-    # Recompute the gradients using the local model state
-    async with self.gpu_lock:
-        # Using GPU, create local gradient replicas.
-        # This deallocates all the GPU memory used in the following code block.
-        with torch.cuda.device(self.config.device):
-            # Put eval model on the GPU
-            eval_model = pretrain.model.get_model()
-            eval_model.load_state_dict(model_state)
-            eval_model.to(self.config.device)
+            if eval_loss < self.best_average_loss:
+                self.best_model_state = eval_state
+                forward_event['success'] = True
+                forward_event['better'] = True
+                forward_event['score'] = 1
 
-            # Compute local gradients on the model
-            local_grads, loss, n_tokens, n_examples, n_batches = compute_gradients_on_model(
-                model=eval_model,
-                batch_size=self.config.batch_size,
-                sequence_length=self.config.sequence_length,
-                pages=forward_event['pages']
-            )
+            else:
+                forward_event['success'] = True
+                forward_event['better'] = False
+                forward_event['score'] = 0
 
-            # Delete eval model as a safety check
-            del eval_model
-    
-    # Compute the Mean Squared Error between the received and locally computed gradients
-    mse_score = -mse_gradients(local_grads, grads_dict)
-    
-    # Log and record the result of the gradient validation
-    forward_event['validation_loss'] = loss
-    forward_event['validation_time'] = time.time() - start_validate
-    
-    # Return the negative MSE score
-    return mse_score
+        update_global_state( self, forward_event )
 
-async def step_with_gradients(self: object, grads_dict: dict, forward_event: dict ):
-    """
-        Asynchronously apply the gradients received from a query to the local model.
-        his method takes the gradients from a specified uid contained in the
-        grads_dict, and applies them to the local model using the configured optimizer.
-    
-        Args:
-            grads_dict (dict): The gradients dictionary received from a query.
-            forward_event (dict): A dictionary to which the event details will be added.
-    """
-    # Log the initiation of applying gradients
-    uid = forward_event['uid']
-    bt.logging.debug(f'Applying gradients from: {uid}')
-    start_step = time.time()
-    
-    async with self.model_lock:
-        # Accumulate grads on local model
-        self.model.to('cpu')
-        for name_j, param_j in self.model.named_parameters():
-            if name_j in grads_dict and grads_dict[name_j] is not None:
-                param_j.grad = param_j.grad + grads_dict[name_j].to('cpu') if param_j.grad is not None else grads_dict[name_j].to('cpu')
+def update_global_state( self, forward_event: dict ):
 
-        # Take a step using the optimizer to update model parameters
-        self.optimizer.step()
-        bt.logging.debug(f'Applied step.')
-
-        # Zero out the gradients to free up memory and avoid accidental accumulation in the next iteration
-        self.model.zero_grad()
-        forward_event['step_time'] = time.time() - start_step
-
-
-def update_state( self, forward_event: dict ):
-
-    # Update miner score.
+    # Update score for uid.
     uid = forward_event['uid']
     if uid not in self.global_state['uid_state']:
         self.global_state['uid_state'][uid] = {
@@ -273,80 +118,12 @@ def update_state( self, forward_event: dict ):
             'n_successes': 0,
             'n_forward': 0,
         }
-    
-    if 'mse_score' in forward_event:
-        # The miner gradients were scored on the forward.
-        # the score for the miner is updated based on a moving average of their mse score.
-        new_score = forward_event['mse_score'] 
-
-    elif forward_event['success']:
-        # The miner gradients were not scored on the forward.
-        # But the response was a success. The moving average stays steady.
-        new_score = self.global_state['uid_state'][uid]['score']   
-
-    else:
-        # And the response was not a success, so the miner is penalized.
-        new_score = -10
-
-    # Update the score for this miner in the global state.
-    self.global_state['uid_state'][uid]['score'] = self.config.alpha * self.global_state['uid_state'][uid]['score'] + ( 1 - self.config.alpha ) * new_score 
-
-    # Update miner success rate and query count.
+    self.global_state['uid_state'][uid]['score'] = self.config.alpha * self.global_state['uid_state'][uid]['score'] + ( 1 - self.config.alpha ) * forward_event['score'] 
     self.global_state['uid_state'][uid]['n_forward'] += + 1
     if forward_event['success']:
         self.global_state['uid_state'][uid]['n_successes'] += + 1 
 
-    # Log the forward event to the console
-    self.global_state['n_steps'] += 1
-    self.global_state['n_successes'] += 1 if 'success' in forward_event and forward_event['success'] else 0
-    self.global_state['n_failures'] += 1 if 'success' in forward_event and not forward_event['success'] else 0
-    self.global_state['n_exceptions'] += 1 if 'exception' in forward_event and forward_event['exception'] else 0
-    self.global_state['n_pages'] += len(forward_event['pages']) if 'pages' in forward_event else 0
-    self.global_state['steps_per_second'] = 1 / (time.time() - self.global_state['last_query'])
-    self.global_state['last_query'] = time.time()
-    self.global_state['validation_loss'] = forward_event['validation_loss'] if 'validation_loss' in forward_event else self.global_state['validation_loss']
-    self.global_state['validation_time'] = forward_event['validation_time'] if 'validation_time' in forward_event else self.global_state['validation_time']
-    self.global_state['query_time'] = forward_event['query_time'] if 'query_time' in forward_event else self.global_state['query_time']
-    self.global_state['forward_time'] = forward_event['forward_time'] if 'forward_time' in forward_event else self.global_state['forward_time']
-    self.global_state['step_time'] = forward_event['step_time'] if 'step_time' in forward_event else self.global_state['step_time']
-
-
-    # Create a log dictionary
-    log = {
-        'uid': forward_event['uid'],
-        'n_steps': self.global_state['n_steps'],
-        'n_successes': self.global_state['n_successes'],
-        'n_exceptions': self.global_state['n_exceptions'],
-        'n_failures': self.global_state['n_failures'],
-        'n_pages': self.global_state['n_pages'],
-        'steps_per_second': self.global_state['steps_per_second'],
-        'validation_time': self.global_state['validation_time'],
-        'validation_loss': self.global_state['validation_loss'],
-        'query_time': self.global_state['query_time'],
-        'forward_time': self.global_state['forward_time'],
-        'step_time': self.global_state['step_time'],
-        'outstanding_rpcs': self.global_state['outstanding_rpcs'],
-    }
-
-    # Log State
-    table = Table()
-    table.add_column("Metric", style="bold magenta")
-    table.add_column("Value", style="bold green")
-    table.add_row("Steps", str(log['n_steps']))
-    table.add_row("Successes", str(log['n_successes']))
-    table.add_row("Exceptions", str(log['n_exceptions']))
-    table.add_row("Failures", str(log['n_failures']))
-    table.add_row("Pages", str(log['n_pages']))
-    table.add_row("Steps Per Second", f"{log['steps_per_second']:.2f}")
-    table.add_row("Validation Time", f"{log['validation_time']:.2f}")
-    table.add_row("Query Time", f"{log['query_time']:.2f}")
-    table.add_row("Forward Time", f"{log['forward_time']:.2f}")
-    table.add_row("Step Time", f"{log['step_time']:.2f}")
-    table.add_row("Current RPCs", f"{log['outstanding_rpcs']:.2f}")
-
-    print(table)
-
-    # Log weights.
+    # Log UID state
     items = [
         Text(f"UID: {uid}, Score: {math.exp(self.global_state['uid_state'][uid]['score'])}:{self.global_state['uid_state'][uid]['n_successes']}/{self.global_state['uid_state'][uid]['n_forward']}" )
         for uid in self.global_state['uid_state'].keys()
@@ -355,9 +132,44 @@ def update_state( self, forward_event: dict ):
     panel = Panel(columns, title="Scores")
     print( panel )
 
+    # Log the forward event to the console
+    self.global_state['n_steps'] += 1
+    self.global_state['n_successes'] += 1 if 'success' in forward_event and forward_event['success'] else 0
+    self.global_state['n_failures'] += 1 if 'success' in forward_event and not forward_event['success'] else 0
+    self.global_state['steps_per_second'] = 1 / (time.time() - self.global_state['last_query'])
+    self.global_state['last_query'] = time.time()
+    self.global_state['eval_loss'] = forward_event['eval_loss'] if 'eval_loss' in forward_event else self.global_state['eval_loss']
+    self.global_state['query_time'] = forward_event['query_time'] if 'query_time' in forward_event else self.global_state['query_time']
+
+    # Create a log dictionary
+    log = {
+        'uid': forward_event['uid'],
+        'n_steps': self.global_state['n_steps'],
+        'n_successes': self.global_state['n_successes'],
+        'n_failures': self.global_state['n_failures'],
+        'steps_per_second': self.global_state['steps_per_second'],
+        'eval_loss': self.global_state['eval_loss'],
+        'query_time': self.global_state['query_time'],
+    }
+
+    # Log State
+    table = Table()
+    table.add_column("Metric", style="bold magenta")
+    table.add_column("Value", style="bold green")
+    table.add_row("Steps", str(log['n_steps']))
+    table.add_row("Successes", str(log['n_successes']))
+    table.add_row("Failures", str(log['n_failures']))
+    table.add_row("Steps Per Second", f"{log['steps_per_second']:.2f}")
+    table.add_row("Query Time", f"{log['query_time']:.2f}")
+    table.add_row("Eval Loss", f"{log['eval_loss']:.2f}")
+    print(table)
+
+
     # Log the forward event to wandb if configured
     if self.wandb:
         self.wandb.log( log )
+
+
 
 
 

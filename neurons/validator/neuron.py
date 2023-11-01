@@ -16,19 +16,40 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
+import math
 import time
 import torch
 import wandb
+import typing
 import asyncio
 import traceback
 import bittensor as bt
 from transformers import AdamW
 
-# import this repo
 import pretrain
-from helpers import init_wandb
 from background import background_loop
 from foreground import foreground_loop
+
+from forward import priority
+from forward import blacklist
+from forward import get_state
+
+def init_wandb( self: object, type: str, uid: int, reinit=False ):
+    """Starts a new wandb run."""
+    if self.config.wandb.on:
+        tags = [ type, f'uid:{uid}', self.wallet.hotkey.ss58_address, pretrain.__version__, str(pretrain.__spec_version__), f'netuid_{pretrain.NETUID}']
+        return wandb.init(
+            anonymous = "allow",
+            reinit = reinit,
+            project = self.config.wandb.project_name,
+            entity = self.config.wandb.entity,
+            config = self.config,
+            mode = "offline" if self.config.wandb.offline else "online",
+            dir = self.config.full_path,
+            tags=tags,
+        )
+    else:
+        return None
 
 class Validator:
 
@@ -47,38 +68,45 @@ class Validator:
         
         # === Init wandb ===
         self.wandb = init_wandb( self, type = 'validator', uid = self.uid )
-
-        # === Training objects ===
-        self.scores = {}
-        self.model = pretrain.model.get_model().to( self.config.device )
-        self.optimizer = torch.optim.AdamW( self.model.parameters(), lr = self.config.learning_rate )
     
-        # === Locks ===
-        self.gpu_lock = asyncio.Lock()
-        self.model_lock = asyncio.Lock()
-        self.forward_lock = asyncio.BoundedSemaphore( self.config.max_concurrent_forward if not self.config.sync else 1 )
-        self.per_uid_locks = { i: asyncio.BoundedSemaphore( self.config.max_concurrent_forward_per_uid ) for i in range(256) }
-
         # === State ===
+        self.best_average_loss = math.inf
+        self.best_model_state = pretrain.model.get_model().to( self.config.device ).state_dict()
         self.global_state = {
             'n_successes': 0,
             'n_failures': 0,
             'n_exceptions': 0,
-            'n_pages': 0.0,
-            'n_steps': 0,
             'steps_per_second': 0.0,
             'last_query': time.time(),
-            'validation_loss': 10,
-            'validation_time': 60,
             'query_time': 60,
-            'forward_time': 60,
-            'step_time': 10,
-            'outstanding_rpcs': 0,
             'uid_state': {},
         }
 
+        # === Axon Callbacks ===
+        async def priority_fn( synapse: pretrain.protocol.GetState ) -> float: return await priority( self, synapse )
+        async def blacklist_fn( synapse: pretrain.protocol.GetState ) -> typing.Tuple[bool, str]: return await blacklist( self, synapse )
+        async def get_state( synapse: pretrain.protocol.GetState ) -> pretrain.protocol.GetState: return await get_state( self, synapse )
+
+        # === Axon ===
+        self.axon = bt.axon( 
+            wallet = self.wallet, 
+            config = self.config 
+        ).attach( 
+            forward_fn = get_state,
+            priority_fn = priority_fn,
+            blacklist_fn = blacklist_fn
+        ).start()
+        bt.logging.info(f"Served Axon {self.axon} on network: on network: {self.config.subtensor.chain_endpoint} with netuid: {pretrain.NETUID}")
+
+
     # === Validator entrypoint ===
     def run( self ):
+
+        # === Start up axon===
+        self.axon.start().serve( 
+            subtensor = self.subtensor,
+            netuid = pretrain.NETUID,
+        )
 
         # === Main loop ===
         async def main_loop():

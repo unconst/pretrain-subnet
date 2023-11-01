@@ -17,17 +17,11 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-import time
 import typing
 import pretrain
-from rich import print
-from rich.table import Table
-import bittensor as bt
-
-from helpers import compute_gradients_on_model
 
 # === Blacklist ===
-async def blacklist( self, synapse: pretrain.protocol.ComputeGradients ) -> typing.Tuple[bool, str]:
+async def blacklist( self, synapse: pretrain.protocol.GetState ) -> typing.Tuple[bool, str]:
     # Locks requests to only allowing max_concurrent_forward_requests at a time.
     # After the blacklist the full synapse is pulled into memory so we want to limit
     # the number here.
@@ -40,29 +34,13 @@ async def blacklist( self, synapse: pretrain.protocol.ComputeGradients ) -> typi
         return False, "Hotkey recognized!"
 
 # === Priority ===
-async def priority( self, synapse: pretrain.protocol.ComputeGradients ) -> float:
+async def priority( self, synapse: pretrain.protocol.GetState ) -> float:
     # Priority is stake based.
     caller_uid = self.metagraph.hotkeys.index( synapse.dendrite.hotkey )  
     prirority = float(self.metagraph.S[caller_uid]) 
     return prirority
 
-# === Forward Get State ===
+# === Forward ===
 async def get_state( self, synapse: pretrain.protocol.GetState ) -> pretrain.protocol.GetState:
-    synapse.serialize( state_dict = self.model.state_dict() )
-    return synapse
-
-# === Forward Apply Grads ===
-async def apply_grads( self, synapse: pretrain.protocol.ApplyGrads ) -> pretrain.protocol.ApplyGrads:
-
-    grads_dict = synapse.deserialize()
-    self.model.zero_grad()
-    for name_j, param_j in self.model.named_parameters():
-        if name_j in grads_dict and grads_dict[name_j] is not None:
-            param_j.grad = param_j.grad + grads_dict[name_j].to('cpu') if param_j.grad is not None else grads_dict[name_j].to('cpu')
-
-    self.optimizer.step()
-    self.model.zero_grad()
-
-    # Empty state and respond.
-    synapse.serialize( state_dict = {} )
+    synapse.serialize( state_dict = self.best_model.state_dict() )
     return synapse

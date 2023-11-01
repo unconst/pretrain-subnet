@@ -16,7 +16,9 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
+import math
 import time
+import wandb
 import typing
 import asyncio
 import pretrain
@@ -26,7 +28,24 @@ from helpers import init_wandb
 
 from forward import priority
 from forward import blacklist
-from forward import compute_gradients
+from forward import get_state
+
+def init_wandb( self: object, type: str, uid: int, reinit=False ):
+    """Starts a new wandb run."""
+    if self.config.wandb.on:
+        tags = [ type, f'uid:{uid}', self.wallet.hotkey.ss58_address, pretrain.__version__, str(pretrain.__spec_version__), f'netuid_{pretrain.NETUID}']
+        return wandb.init(
+            anonymous = "allow",
+            reinit = reinit,
+            project = self.config.wandb.project_name,
+            entity = self.config.wandb.entity,
+            config = self.config,
+            mode = "offline" if self.config.wandb.offline else "online",
+            dir = self.config.full_path,
+            tags=tags,
+        )
+    else:
+        return None
 
 class Miner:
 
@@ -43,7 +62,7 @@ class Miner:
 
         # === Bittensor objects ===
         self.wallet = bt.wallet( config = self.config ) 
-        self.subtensor = bt.subtensor( config = self.config)
+        self.subtensor = bt.subtensor( config = self.config )
         self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
         if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys: raise Exception("You are not registered. Use `btcli s recycle_register` to register.")
         self.uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
@@ -55,47 +74,26 @@ class Miner:
         # === Init wandb ===
         self.wandb = init_wandb( self, type = 'miner', uid = self.uid )
 
-        # === Locks ===
-        # Limits GPU usage to 1 request at a time for space considerations. In practice, we would
-        # shuttle multiple requests across multiple machines.
-        self.gpu_lock = asyncio.Lock() 
-        # Limits the number of queries that can pass the header checks in the blacklist.
-        # Increasing this number allow for the miner to download more requests concurrently.
-        self.global_forward_lock = asyncio.Semaphore( self.config.max_concurrent_forward_requests ) 
+        # === Init model ===
+        self.best_average_loss = math.inf
+        self.best_model_state = pretrain.model.get_model().to( self.config.device ).state_dict()
 
         # === Axon Callbacks ===
-        async def priority_fn( synapse: pretrain.protocol.ComputeGradients ) -> float: return await priority( self, synapse )
-        async def blacklist_fn( synapse: pretrain.protocol.ComputeGradients ) -> typing.Tuple[bool, str]: return await blacklist( self, synapse )
-        async def compute_gradients_fn( synapse: pretrain.protocol.ComputeGradients ) -> pretrain.protocol.ComputeGradients: return await compute_gradients( self, synapse )
+        async def priority_fn( synapse: pretrain.protocol.GetState ) -> float: return await priority( self, synapse )
+        async def blacklist_fn( synapse: pretrain.protocol.GetState ) -> typing.Tuple[bool, str]: return await blacklist( self, synapse )
+        async def get_state( synapse: pretrain.protocol.GetState ) -> pretrain.protocol.GetState: return await get_state( self, synapse )
 
         # === Axon ===
         self.axon = bt.axon( 
             wallet = self.wallet, 
             config = self.config 
         ).attach( 
-            forward_fn = compute_gradients_fn,
+            forward_fn = get_state,
             priority_fn = priority_fn,
             blacklist_fn = blacklist_fn
         ).start()
         bt.logging.info(f"Served Axon {self.axon} on network: on network: {self.config.subtensor.chain_endpoint} with netuid: {pretrain.NETUID}")
 
-
-        # === State ===
-        self.global_state = {
-            'n_successes': 0,
-            'n_failures': 0,
-            'n_exceptions': 0,
-            'n_pages': 0.0,
-            'n_steps': 0,
-            'steps_per_second': 0.0,
-            'last_query': time.time(),
-            'n_tokens': 0,
-            'n_examples': 0,
-            'n_batches': 0,
-            'loss': 0.0,
-            'forward_time': 60,
-            'call_time': 60,
-        }
 
     # === Miner entrypoint ===
     def run(self):
