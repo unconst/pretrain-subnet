@@ -1,4 +1,6 @@
+import time
 import helpers
+import traceback
 import typing
 import pretrain
 import bittensor as bt
@@ -49,3 +51,35 @@ class DB:
             blacklist_fn = blacklist_fn
         ).start()
         bt.logging.info(f"Served Axon {self.axon} on network: on network: {self.config.subtensor.chain_endpoint} with netuid: {pretrain.NETUID}")
+
+    # === Miner entrypoint ===
+    def run(self):
+
+        # === Start up axon===
+        self.axon.start().serve( 
+            subtensor = self.subtensor,
+            netuid = pretrain.NETUID,
+        )
+
+        # === Global Loop ===
+        bt.logging.info(f"Starting main loop")
+        self.block = 0
+        while True:
+            try: 
+
+                # Resync the metagraph.
+                self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
+                self.block = self.metagraph.block.item()
+                time.sleep( bt.__blocktime__ )
+                self.block += 1
+
+            # If someone intentionally stops the miner, it'll safely terminate operations.
+            except KeyboardInterrupt:
+                self.axon.stop()
+                bt.logging.success("Miner killed by keyboard interrupt.")
+                break
+
+            # In case of unforeseen errors, the miner will log the error and continue operations.
+            except Exception as e:
+                bt.logging.error(traceback.format_exc())
+                continue
