@@ -29,6 +29,7 @@ from transformers import AdamW
 import pretrain
 from background import background_loop
 from foreground import foreground_loop
+from foreground import train_loop
 
 from forward import priority
 from forward import blacklist
@@ -114,7 +115,7 @@ class Validator:
         async def main_loop():
             bt.logging.success( 'Starting validator main loop.' )
             asyncio.create_task( background_loop( self ) )
-            await asyncio.sleep( 5 )
+            asyncio.create_task( train_loop( self ) )
             asyncio.run( foreground_loop( self ) )
 
         # === Start ===
