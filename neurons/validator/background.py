@@ -75,22 +75,22 @@ async def background_loop( self: object ):
 
     # === Getting availble ===
     bt.logging.success( 'Starting validator background loop.' )
-    self.block = 0
+    self.background_step = 0
     while True:
 
         try:
             # Wait for one block.
             bt.logging.debug("Background ideling...")
-            await asyncio.sleep( bt.__blocktime__ )
+            await asyncio.sleep( 60 ) 
+            self.background_step += 1
 
             # Resync the metagraph.
             self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
-            self.block = self.metagraph.block.item()
             self.weights = compute_weights( self )
             pretty_print_weights( self )
 
             # Set weights every 50 blocks.    
-            if self.block % 50 == 0:
+            if self.background_step % 50 == 0:
                 bt.logging.success('Setting weights on chain.')
                 set_weights( self )
     
