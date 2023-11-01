@@ -36,6 +36,10 @@ class DB:
         # === Init wandb ===
         self.wandb = init_wandb( self, type = 'miner', uid = self.uid )
 
+        # === Model ===
+        self.model = pretrain.model.get_model()
+        self.model = self.model.to( self.config.device )
+
         # === Axon Callbacks ===
         async def get_priority_fn( synapse: pretrain.protocol.GetState ) -> float: return await priority( self, synapse )
         async def get_blacklist_fn( synapse: pretrain.protocol.GetState ) -> typing.Tuple[bool, str]: return await blacklist( self, synapse )
