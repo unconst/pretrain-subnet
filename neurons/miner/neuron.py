@@ -82,7 +82,7 @@ class Miner:
 
         # === Init model ===
         self.model = pretrain.model.get_model().to( self.config.device )
-        self.optimizer = torch.optim.AdamW( self.model.parameters(), lr = self.config.learning_rate, eps = self.config.adam_epsilon )
+        self.optimizer = torch.optim.AdamW( self.model.parameters(), lr = 0.001 )
 
         # === Axon Callbacks ===
         async def priority_fn( synapse: pretrain.protocol.GetState ) -> float: return await priority( self, synapse )
