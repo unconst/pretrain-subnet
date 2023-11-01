@@ -104,7 +104,7 @@ async def forward(self: object) -> dict:
 
         # Log success and return forward event details
         finally:
-            bt.logging.debug(f'Finished forward to uid: {uid} call with success.')
+            bt.logging.debug(f'Finished forward to uid: {uid}')
             forward_event['forward_time'] = time.time() - start_forward
             forward_event['exception'] = False
             self.global_state['outstanding_rpcs'] -= 1
