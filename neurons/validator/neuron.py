@@ -81,6 +81,7 @@ class Validator:
             'query_time': 60,
             'uid_state': {},
             'n_steps': 0,
+            'eval_loss': self.best_average_loss
         }
 
         # === Axon Callbacks ===
