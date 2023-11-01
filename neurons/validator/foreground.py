@@ -20,9 +20,7 @@ import math
 import time
 import torch
 import random
-import asyncio
 import pretrain
-import traceback
 import bittensor as bt
 from rich import print
 from rich.text import Text
@@ -69,7 +67,8 @@ async def foreground_loop(self: object):
         forward_event = {}
 
         # Get uid from serving online miner.
-        available_uids = [ uid.item() for uid in self.metagraph.uids if self.metagraph.axons[uid].is_serving and (self.metagraph.block.item() - self.metagraph.last_update[uid] < 1000) ]
+        # available_uids = [ uid.item() for uid in self.metagraph.uids if self.metagraph.axons[uid].is_serving and (self.metagraph.block.item() - self.metagraph.last_update[uid] < 1000) ]
+        available_uids = [230]
         if len( available_uids ) == 0:
             raise Exception('No available uids.')
         uid = random.choice( available_uids )
