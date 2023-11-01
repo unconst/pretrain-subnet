@@ -29,7 +29,7 @@ from transformers import AdamW
 import pretrain
 from background import background_loop
 from foreground import foreground_loop
-from foreground import train_loop
+from train import train_loop
 
 from forward import priority
 from forward import blacklist
