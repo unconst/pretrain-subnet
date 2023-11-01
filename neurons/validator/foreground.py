@@ -53,6 +53,7 @@ async def run_eval_on_state( self, eval_state ) -> float:
         outputs = eval_model( inputs, labels=inputs )
         outputs.loss.backward()
         average_loss += outputs.loss.detach().item()
+        n_batches += 1
         torch.cuda.empty_cache()
         bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
 
