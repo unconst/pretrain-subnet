@@ -87,11 +87,11 @@ async def background_loop( self: object ):
             # Resync the metagraph.
             self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
             self.weights = compute_weights( self )
-            pretty_print_weights( self )
 
             # Set weights every 10 minutes    
             if self.background_step % 10 == 0:
                 bt.logging.success('Setting weights on chain.')
+                pretty_print_weights( self )
                 set_weights( self )
     
         except Exception as e:
