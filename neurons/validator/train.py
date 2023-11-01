@@ -26,7 +26,7 @@ import bittensor as bt
 # === Train loop ===
 async def train_loop( self ):
     while True:
-        loss = train( self )
+        loss = await train( self )
         if loss < self.best_average_loss:
             self.best_average_loss = loss
             self.best_model_state = self.model.state_dict()
