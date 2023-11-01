@@ -266,7 +266,12 @@ def update_state( self, forward_event: dict ):
 
     # Update miner score.
     uid = forward_event['uid']
-    previous_score = self.global_state['uid_scores'][uid] if uid in self.global_state['uid_scores'] else -1
+    if uid not in self.global_state['uid_state']:
+        self.global_state['uid_state'][uid] = {
+            'score': -1,
+            'n_successes': 0,
+            'n_forward': 0,
+        }
     
     if 'mse_score' in forward_event:
         # The miner gradients were scored on the forward.
@@ -276,21 +281,19 @@ def update_state( self, forward_event: dict ):
     elif forward_event['success']:
         # The miner gradients were not scored on the forward.
         # But the response was a success. The moving average stays steady.
-        new_score = previous_score   
+        new_score = self.global_state['uid_state'][uid]['score']   
 
     else:
         # And the response was not a success, so the miner is penalized.
         new_score = -10
 
     # Update the score for this miner in the global state.
-    self.global_state['uid_scores'][ uid ] = self.config.alpha * previous_score + ( 1 - self.config.alpha ) * new_score 
+    self.global_state['uid_state'][uid]['score'] = self.config.alpha * self.global_state['uid_state'][uid]['score'] + ( 1 - self.config.alpha ) * new_score 
 
     # Update miner success rate and query count.
+    self.global_state['uid_state'][uid]['n_forward'] += + 1
     if forward_event['success']:
-        self.global_state['uid_successes'][uid] = self.global_state['uid_successes'][uid] + 1 if uid in self.global_state['uid_successes'] else 1
-    else:
-        self.global_state['uid_successes'][uid] = self.global_state['uid_successes'][uid] + 0 if uid in self.global_state['uid_successes'] else 0
-    self.global_state['uid_queries'][uid] = self.global_state['uid_queries'][uid] + 1 if uid in self.global_state['uid_queries'] else 1
+        self.global_state['uid_state'][uid]['n_successes'] += + 1 
 
     # Log the forward event to the console
     self.global_state['n_steps'] += 1
@@ -344,8 +347,8 @@ def update_state( self, forward_event: dict ):
 
     # Log weights.
     items = [
-        Text(f"UID: {uid}, Score: {self.global_state['uid_scores'][ uid ]}:{self.global_state['uid_successes'][ uid ]}/{n_q}" )
-        for uid, n_q in enumerate(self.global_state['uid_queries'])
+        Text(f"UID: {uid}, Score: {self.global_state['uid_state'][uid]['score']}:{self.global_state['uid_state'][uid]['n_successes']}/{self.global_state['uid_state'][uid]['n_forward']}" )
+        for uid in self.global_state['uid_state'].keys()
     ]
     columns = Columns(items, equal=True, expand=True)
     panel = Panel(columns, title="Scores")
