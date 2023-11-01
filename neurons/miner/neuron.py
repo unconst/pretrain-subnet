@@ -18,8 +18,10 @@
 
 import math
 import time
+import torch
 import wandb
 import typing
+import random
 import asyncio
 import pretrain
 import traceback
@@ -74,9 +76,13 @@ class Miner:
         # === Init wandb ===
         self.wandb = init_wandb( self, type = 'miner', uid = self.uid )
 
-        # === Init model ===
+        # === Init model state ===
         self.best_average_loss = math.inf
         self.best_model_state = pretrain.model.get_model().to( self.config.device ).state_dict()
+
+        # === Init model ===
+        self.model = pretrain.model.get_model().to( self.config.device )
+        self.optimizer = torch.optim.AdamW( self.model.parameters(), lr = self.config.learning_rate, eps = self.config.adam_epsilon )
 
         # === Axon Callbacks ===
         async def priority_fn( synapse: pretrain.protocol.GetState ) -> float: return await priority( self, synapse )
@@ -94,6 +100,34 @@ class Miner:
         ).start()
         bt.logging.info(f"Served Axon {self.axon} on network: on network: {self.config.subtensor.chain_endpoint} with netuid: {pretrain.NETUID}")
 
+
+    # === Train ===
+    def train(self):
+        # Get Random page. 
+        random_pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages)]
+        loader = pretrain.dataset.SubsetFalconLoader(
+            batch_size = 3,
+            sequence_length = 512,
+            pages = random_pages
+        )
+        torch.backends.cudnn.benchmark = True
+
+        # Run eval
+        n_batches = 0
+        average_loss = 0.0
+        for i, batch in enumerate( loader ):
+            inputs = batch.to( self.model.device )
+            outputs = self.model( inputs, labels=inputs )
+            outputs.loss.backward()
+            average_loss += outputs.loss.detach().item()
+            n_batches += 1
+            bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
+            self.optimizer.step()
+            self.optimizer.zero_grad()
+            torch.cuda.empty_cache()
+
+        # Return average loss on batch.
+        return average_loss / n_batches
 
     # === Miner entrypoint ===
     def run(self):
@@ -115,18 +149,22 @@ class Miner:
 
         # === Global Loop ===
         bt.logging.info(f"Starting main loop")
-        self.block = 0
+        self.step = 0
         while True:
             try: 
+                # Get Random page. 
+                loss = self.train()
+                if loss < self.best_average_loss:
+                    self.best_average_loss = loss
+                    self.best_model_state = self.model.state_dict()
+                    bt.logging.success(f"New best average loss: {self.best_average_loss}")
 
                 # Resync the metagraph.
                 self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
-                self.block = self.metagraph.block.item()
-                time.sleep( bt.__blocktime__ )
-                self.block += 1
+                self.step += 1
 
                 # Set ping weights every 50 blocks.
-                if self.block % 100 == 0:
+                if self.step % 5 == 0:
                     self.subtensor.set_weights (
                         netuid = pretrain.NETUID,
                         wallet = self.wallet, 

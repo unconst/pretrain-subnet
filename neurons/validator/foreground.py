@@ -95,6 +95,7 @@ async def foreground_loop(self: object):
             forward_event['eval_loss'] = eval_loss
 
             if eval_loss < self.best_average_loss:
+                self.best_average_loss = eval_loss
                 self.best_model_state = eval_state
                 forward_event['success'] = True
                 forward_event['better'] = True
