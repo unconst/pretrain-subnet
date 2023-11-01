@@ -82,14 +82,16 @@ async def forward(self: object) -> dict:
 
             # Check for successful response
             if response.is_success:
+                
+                # Deserialize gradients from response
+                grads_dict = response.deserialize()
 
                 # Check if we should validate this batch.
                 if random.random() < self.config.validate_probability:
-
-                    # Deserialize gradients and validate against local computation
-                    grads_dict = response.deserialize()
+                    # Validate against local computation
                     mse_score = await validate_gradients(self, grads_dict, begin_model_state, forward_event)
                     update_score(self, uid, mse_score, forward_event)
+                    
                 # If not validating we still need to update the score.
                 else:
                     # We converge to their current score.
