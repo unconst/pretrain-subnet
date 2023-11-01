@@ -1,5 +1,8 @@
+import helpers
+import pretrain
 import bittensor as bt
 
+from helpers import init_wandb
 
 class DB:
 
