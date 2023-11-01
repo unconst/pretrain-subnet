@@ -91,7 +91,7 @@ async def foreground_loop(self: object):
         else:
             # Get model state and run random eval.
             eval_state = response.deserialize()
-            eval_loss = run_eval_on_state( self, eval_state )
+            eval_loss = await run_eval_on_state( self, eval_state )
             forward_event['eval_loss'] = eval_loss
 
             if eval_loss < self.best_average_loss:
