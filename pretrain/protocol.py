@@ -37,4 +37,16 @@ class ComputeGradients( bt.Synapse ):
 
     def deserialize( self ) -> typing.Dict[str, torch.Tensor ]:
         return { key: value.deserialize() for key, value in self.state_dict.items() if value != None }
+    
+
+# --- GetState Protocol.
+class GetState( bt.Synapse ):
+        
+    state_dict: typing.Optional[ typing.Dict[ str, bt.Tensor ] ] = None
+
+    def serialize( self, state_dict: typing.Dict[str, torch.Tensor ] ):
+        self.state_dict = { key: bt.Tensor.serialize( value ) for key, value in state_dict.items() if value != None }
+
+    def deserialize( self ) -> typing.Dict[str, torch.Tensor ]:
+        return { key: value.deserialize() for key, value in self.state_dict.items() if value != None }
 
