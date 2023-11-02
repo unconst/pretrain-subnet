@@ -25,8 +25,8 @@ import bittensor as bt
 # === Config ===
 def get_config():
     parser = argparse.ArgumentParser()
-    parser.add_argument( "--model_path", type = str, help="Run name.", required=True )
-    parser.add_argument( "--device", type = str, help="Device name.", required=True )
+    parser.add_argument( "--model_path", type = 'str', help="Run name.", default='~/model.pth' )
+    parser.add_argument( "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
     config = bt.config(parser)
     return config
 
