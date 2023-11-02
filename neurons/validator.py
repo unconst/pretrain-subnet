@@ -33,8 +33,8 @@ def get_config():
     bt.axon.add_args(parser)
     config = bt.config(parser)
     return config
-config = get_config()
 
+config = get_config()
 wallet = bt.wallet( config = config )
 subtensor = bt.subtensor( config = config )
 dendrite = bt.dendrite( wallet = wallet )
@@ -46,6 +46,7 @@ while True:
 
     api = wandb.Api( timeout = 100 )
 
+    # Pull random batches from Falcon Dataset
     random_pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages)]
     loader = pretrain.dataset.SubsetFalconLoader(
         batch_size = 3,
@@ -53,11 +54,14 @@ while True:
         pages = random_pages
     )
 
+    # Init vars
     best_average_loss = None
     best_uid = None
     best_uid_run = None
     metagraph = subtensor.metagraph( pretrain.NETUID )
     uids = metagraph.uids
+
+    # Iterate through all uids and evaluate the loss of their model weights against the random batches
     for uid in uids:
         loss_dict[uid] = {}
         axon = metagraph.axon[uid]
@@ -65,8 +69,8 @@ while True:
         run_name = dendrite.query( axon, pretrain.GetRun() ).run_name
         run = api.run(f"opentensor-dev/openpretraining/{run_name}")
         loss_dict["uid"]["run_name"] = run
-        loss_dict["uid"]["timestamp"] = run.created_at
 
+        # Hotkey of run must match that of the sending hotkey
         hotkey = run.config.get('hotkey')
         loss_dict["uid"]["hotkey"] = hotkey
         if hotkey != metagraph.hotkey[uid]:
@@ -84,7 +88,6 @@ while True:
         model.to( 'cuda' )
 
         # Run eval
-        average_loss = None
         for i, batch in enumerate( loader ):
             try:
                 average_loss = 0
@@ -94,12 +97,20 @@ while True:
                 average_loss += outputs.loss.detach().item()
                 torch.cuda.empty_cache()
                 bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
-                if average_loss < loss_dict["uid"]["loss"]:
-                    loss_dict["uid"]["loss"] = average_loss
+
+                previous_loss = loss_dict["uid"]["loss"]
+                if  previous_loss != None:
+                    if average_loss < previous_loss:
+                        # Update dict with better loss and timestamp
+                        loss_dict["uid"]["loss"] = average_loss
+                        loss_dict["uid"]["timestamp"] = run.created_at
+
             except Exception as e:
                 bt.logging.exception(f"Error in loss calc of uid {uid} \n {e}")
 
 
+            # Clear weights from disk
+            
     # Get best average loss and best uid
     # Best uid if tie on loss is based on timestamp of run upload
     try:
