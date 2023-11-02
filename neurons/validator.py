@@ -86,7 +86,7 @@ while True:
         
         # Download the model weights
         artifact_name = "model.pth"
-        bt.logging.info(f"downloading weights to {artifact_name}")
+        bt.logging.info(f"downloading weights from {artifact_name}")
 
         run.file(artifact_name).download(replace=True)
 
@@ -108,10 +108,11 @@ while True:
                 average_loss += outputs.loss.detach().item()
                 torch.cuda.empty_cache()
                 bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
+
             except Exception as e:
                 bt.logging.exception(f"Error in loss calc of uid {uid} \n {e}")
 
-
+        bt.logging.info(f"average_loss = {average_loss}")
         previous_loss = loss_dict[uid]["loss"]
         if previous_loss == None:
             loss_dict[uid]["loss"] = average_loss
@@ -147,7 +148,7 @@ while True:
                     best_timestamp = uid_timestamp
 
 
-    bt.logging.info(f"uid {best_uid} has  best loss of {uid_loss} and timestamp {uid_timestamp}")
+    bt.logging.info(f"uid {best_uid} has  best loss of {best_average_loss} and timestamp {best_timestamp}")
 
     if best_uid != None:
         weights = torch.zeros_like( metagraph.S )
