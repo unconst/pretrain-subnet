@@ -60,7 +60,7 @@ wand =  wandb.init(
 
 model_path = os.path.expanduser( config.model_path )
 timestamp = os.path.getmtime( model_path )
-model = pretrain.models.get_model( config.model )
+model = pretrain.model.get_model( config.model )
 model_weights = torch.load( model_path )
 model.load_state_dict( model_weights )
 
