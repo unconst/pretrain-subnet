@@ -81,7 +81,7 @@ while True:
         # Hotkey of run must match that of the sending hotkey
         hotkey = run.config.get('hotkey')
         loss_dict[uid]["hotkey"] = hotkey
-        if hotkey != metagraph.hotkey[uid]:
+        if hotkey != metagraph.hotkeys[uid]:
             raise ValueError("Hotkey mismatch")
         
         # Download the model weights
