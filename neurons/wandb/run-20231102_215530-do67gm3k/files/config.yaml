@@ -60,7 +60,7 @@ hotkey:
   value: 5EZGRiRtTuxipeSq1vgwZgkwu4kdj7Lh1U6Yu7ZerRMQkE19
 run_name:
   desc: null
-  value: 237-PLL0LK2PM6
+  value: 237-QNFMYDG25O
 _wandb:
   desc: null
   value:
@@ -70,7 +70,7 @@ _wandb:
     huggingface_version: 4.35.0
     is_jupyter_run: false
     is_kaggle_kernel: false
-    start_time: 1698959466.559277
+    start_time: 1698962130.769348
     t:
       1:
       - 1

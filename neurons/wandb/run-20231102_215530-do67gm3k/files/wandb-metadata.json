@@ -1,0 +1,207 @@
+{
+    "os": "Linux-6.1.38-59.109.amzn2023.x86_64-x86_64-with-glibc2.34",
+    "python": "3.9.10",
+    "heartbeatAt": "2023-11-02T21:55:31.095079",
+    "startedAt": "2023-11-02T21:55:30.762401",
+    "docker": null,
+    "cuda": null,
+    "args": [
+        "--wallet.name",
+        "2",
+        "--wallet.hotkey",
+        "1",
+        "--subtensor.network",
+        "local"
+    ],
+    "state": "running",
+    "program": "/home/ec2-user/pretrain-subnet/neurons/miner.py",
+    "codePathLocal": "miner.py",
+    "codePath": "neurons/miner.py",
+    "git": {
+        "remote": "https://github.com/unconst/pretrain-subnet",
+        "commit": "1e2e244612a735f9f403678b6599c4fa1ecb06cf"
+    },
+    "email": "surcyf@gmail.com",
+    "root": "/home/ec2-user/pretrain-subnet",
+    "host": "ip-172-31-46-82.ca-central-1.compute.internal",
+    "username": "ec2-user",
+    "executable": "/home/ec2-user/anaconda3/envs/bit2/bin/python3",
+    "cpu_count": 16,
+    "cpu_count_logical": 32,
+    "cpu_freq": {
+        "current": 3433.7986875000006,
+        "min": 0.0,
+        "max": 0.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 3498.103,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3499.674,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3489.748,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2899.95,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2899.95,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3499.963,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2899.95,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3507.508,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3484.418,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3500.863,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3500.849,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3443.502,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3470.251,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3500.204,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3484.448,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3501.354,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3497.55,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3499.456,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3496.082,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3425.297,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3500.157,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3500.884,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3499.845,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3499.629,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3500.446,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3505.875,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3495.183,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3483.93,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3442.133,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3499.968,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3453.744,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 3500.644,
+            "min": 0.0,
+            "max": 0.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 499.9257621765137,
+            "used": 127.39772415161133
+        }
+    },
+    "memory": {
+        "total": 247.71762084960938
+    }
+}

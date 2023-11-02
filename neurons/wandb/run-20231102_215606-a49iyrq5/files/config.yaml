@@ -6,6 +6,7 @@ __is_set:
     wallet.name: true
     wallet.hotkey: true
     subtensor.network: true
+    logging.trace: true
 model_path:
   desc: null
   value: ~/model.pth
@@ -21,7 +22,7 @@ logging:
   value:
     __is_set: {}
     debug: false
-    trace: false
+    trace: true
     record_log: false
     logging_dir: ~/.bittensor/miners
 wallet:
@@ -60,7 +61,7 @@ hotkey:
   value: 5EZGRiRtTuxipeSq1vgwZgkwu4kdj7Lh1U6Yu7ZerRMQkE19
 run_name:
   desc: null
-  value: 237-PLL0LK2PM6
+  value: 237-BQH9XSLBHZ
 _wandb:
   desc: null
   value:
@@ -70,7 +71,7 @@ _wandb:
     huggingface_version: 4.35.0
     is_jupyter_run: false
     is_kaggle_kernel: false
-    start_time: 1698959466.559277
+    start_time: 1698962166.926191
     t:
       1:
       - 1
@@ -87,7 +88,6 @@ _wandb:
       - 71
       - 105
       3:
-      - 2
       - 3
       - 13
       - 16

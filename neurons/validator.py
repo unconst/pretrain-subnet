@@ -95,7 +95,7 @@ while True:
         
         # Download the model weights
         try:
-            artifact_name = "~/model.pth"
+            artifact_name = "model.pth"
             bt.logging.info(f"downloading weights from {artifact_name}")
 
             run.file(artifact_name).download(replace=True)
