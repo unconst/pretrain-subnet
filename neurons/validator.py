@@ -65,7 +65,7 @@ while True:
     for uid in available_uids:
         bt.logging.info(f"starting loop on uid {uid}")
 
-        loss_dict[uid] = {}
+        loss_dict[uid] = {'loss': None, 'timestamp': None, 'run_id': None, 'hotkey': None }
         axon = metagraph.axons[uid]
         response = dendrite.query( axon, pretrain.protocol.GetRun(), timeout=1 )
         if not response.is_success:
