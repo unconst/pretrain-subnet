@@ -98,13 +98,13 @@ while True:
 
     new_timestamp = os.path.getmtime( model_path )
     if new_timestamp != timestamp:
-        model = pretrain.models.get_model( config.model )
+        model = pretrain.model.get_model()
         model_weights = torch.load( model_path )
         model.load_state_dict( model_weights )
         wandb.save( model_path )
         bt.logging.success( f'Found newer model at {model_path}' )
 
-    time.sleep( 1 )
+    time.sleep( 10 )
 
 wandb.finish()
 
