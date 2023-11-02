@@ -48,7 +48,7 @@ if wallet.hotkey.ss58_address not in metagraph.hotkeys: raise Exception("You are
 # === Init wandb ===
 config.uid = metagraph.hotkeys.index( wallet.hotkey.ss58_address )
 config.hotkey = wallet.hotkey.ss58_address
-run_name = f'u:{config.uid}' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
+run_name = f'u:{config.uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
 wand =  wandb.init(
     name = run_name,
     anonymous = "allow",
