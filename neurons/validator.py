@@ -34,6 +34,7 @@ def get_config():
     return config
 
 config = get_config()
+bt.logging( config = config )
 wallet = bt.wallet( config = config )
 subtensor = bt.subtensor( config = config )
 dendrite = bt.dendrite( wallet = wallet )
@@ -75,11 +76,11 @@ while True:
         run_id = response.run_id
         bt.logging.info(f"got run name {run_id} from uid {uid}")
         run = api.run(f"opentensor-dev/openpretraining/{run_id}")
-        loss_dict["uid"]["run_id"] = run
+        loss_dict[uid]["run_id"] = run
 
         # Hotkey of run must match that of the sending hotkey
         hotkey = run.config.get('hotkey')
-        loss_dict["uid"]["hotkey"] = hotkey
+        loss_dict[uid]["hotkey"] = hotkey
         if hotkey != metagraph.hotkey[uid]:
             raise ValueError("Hotkey mismatch")
         
@@ -109,7 +110,7 @@ while True:
                 torch.cuda.empty_cache()
                 bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
 
-                previous_loss = loss_dict["uid"]["loss"]
+                previous_loss = loss_dict[uid]["loss"]
                 if previous_loss != None:
                     bt.logging.info(f"previous loss is {previous_loss}, new loss is {average_loss}")
 
@@ -117,8 +118,8 @@ while True:
                         bt.logging.info(f"updating loss dict because found better loss")
 
                         # Update dict with better loss and timestamp
-                        loss_dict["uid"]["loss"] = average_loss
-                        loss_dict["uid"]["timestamp"] = run.created_at
+                        loss_dict[uid]["loss"] = average_loss
+                        loss_dict[uid]["timestamp"] = run.created_at
 
             except Exception as e:
                 bt.logging.exception(f"Error in loss calc of uid {uid} \n {e}")
