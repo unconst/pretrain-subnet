@@ -107,7 +107,6 @@ while True:
         else:
             weights = torch.ones_like( metagraph.S )
 
-        
         subtensor.set_weights(
             netuid = pretrain.NETUID,
             wallet = wallet,
