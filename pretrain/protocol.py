@@ -20,4 +20,4 @@ import typing
 import bittensor as bt
 
 class GetRun( bt.Synapse ):        
-    run_name: typing.Optional[ str ] = None
+    run_id: typing.Optional[ str ] = None

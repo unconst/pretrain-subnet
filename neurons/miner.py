@@ -54,7 +54,7 @@ run_name = f'{my_uid}-' + ''.join(random.choice( string.ascii_uppercase + string
 config.uid = my_uid
 config.hotkey = wallet.hotkey.ss58_address
 config.run_name = run_name
-wand =  wandb.init(
+wandb_run =  wandb.init(
     name = run_name,
     anonymous = "allow",
     reinit = False,
@@ -75,7 +75,7 @@ wandb.save( model_path )
 bt.logging.success( f'Saved weights to wandb' )
 
 def get_run( synapse: pretrain.protocol.GetRun ) -> pretrain.protocol.GetRun:
-    synapse.run_name = config.run_name
+    synapse.run_id = wandb_run.run.id
     return synapse
 
 # === Axon ===

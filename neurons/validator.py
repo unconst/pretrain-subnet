@@ -72,10 +72,10 @@ while True:
             bt.logging.info(f"failed response from uid {uid}")
             continue
 
-        run_name = response.run_name
-        bt.logging.info(f"got run name {run_name} from uid {uid}")
-        run = api.run(f"opentensor-dev/openpretraining/{run_name}")
-        loss_dict["uid"]["run_name"] = run
+        run_id = response.run_id
+        bt.logging.info(f"got run name {run_id} from uid {uid}")
+        run = api.run(f"opentensor-dev/openpretraining/{run_id}")
+        loss_dict["uid"]["run_id"] = run
 
         # Hotkey of run must match that of the sending hotkey
         hotkey = run.config.get('hotkey')
