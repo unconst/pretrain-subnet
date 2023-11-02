@@ -42,7 +42,7 @@ model.to( config.device )
 
 optimizer = torch.optim.AdamW( model.parameters(), lr=0.00001, weight_decay=0.01 )
 
-for step in range( 10 ): 
+while True: 
     loader = pretrain.dataset.SubsetFalconLoader( batch_size=3, sequence_length=512, pages= [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages)] )
     for i, batch in enumerate( loader ):
         inputs = batch.to( model.device )
@@ -52,5 +52,5 @@ for step in range( 10 ):
         optimizer.step()
         bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
 
-bt.logging.success( f'Saving model to {model_path}' )
-torch.save( model.state_dict(), model_path )
+    bt.logging.success( f'Saving model to {model_path}' )
+    torch.save( model.state_dict(), model_path )
