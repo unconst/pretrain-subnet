@@ -76,7 +76,7 @@ wandb.save( model_path )
 bt.logging.success( f'Saved weights to wandb' )
 
 def get_run( synapse: pretrain.protocol.GetRun ) -> pretrain.protocol.GetRun:
-    synapse.run_id = wandb_run.run.id
+    synapse.run_id = wandb_run.id
     return synapse
 
 # === Axon ===
@@ -129,7 +129,7 @@ while True:
                 wait_for_inclusion=False,
             )
     except KeyboardInterrupt:
-        wandb.finish()
+        wandb_run.finish()
         break
 
     except Exception as e:
