@@ -68,7 +68,7 @@ while True:
         axon = metagraph.axons[uid]
         
         response = dendrite.query( axon, pretrain.protocol.GetRun() )
-        if ! response.is_success:
+        if not response.is_success:
             bt.logging.info(f"failed response from uid {uid}")
             continue
         run = api.run(f"opentensor-dev/openpretraining/{run_name}")
