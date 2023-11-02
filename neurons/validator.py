@@ -26,7 +26,6 @@ import bittensor as bt
 
 def get_config():
     parser = argparse.ArgumentParser()
-    parser.add_argument( "--model_path", type = str, help="Run name.", required=True )
     bt.subtensor.add_args(parser)
     bt.logging.add_args(parser)
     bt.wallet.add_args(parser)
@@ -110,7 +109,7 @@ while True:
 
 
             # Clear weights from disk
-            
+
     # Get best average loss and best uid
     # Best uid if tie on loss is based on timestamp of run upload
     try:
