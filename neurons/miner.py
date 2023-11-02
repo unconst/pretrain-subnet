@@ -106,6 +106,7 @@ while True:
 
     time.sleep( 1 )
 
+wandb.finish()
 
 
 
