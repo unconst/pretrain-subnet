@@ -16,7 +16,7 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-
+import os
 import torch
 import argparse
 import pretrain
@@ -29,8 +29,10 @@ def get_config():
     parser.add_argument( "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
     config = bt.config(parser)
     return config
-
 config = get_config()
+
+model_path = os.path.expanduser(config.model_path)
+
 model = pretrain.model.get_model()
 model.zero_grad()
 model.train()
@@ -47,4 +49,4 @@ for i, batch in enumerate( loader ):
     optimizer.step()
     bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
 
-torch.save( model.state_dict(), config.model_path )
+torch.save( model.state_dict(), model_path )
