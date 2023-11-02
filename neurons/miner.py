@@ -40,6 +40,7 @@ def get_config():
 config = get_config()
 
 # === Bittensor objects ===
+bt.logging( config = config )
 bt.logging.success( config )
 wallet = bt.wallet( config = config ) 
 subtensor = bt.subtensor( config = config )
@@ -52,6 +53,7 @@ bt.logging.success( f'You are registered with address: {wallet.hotkey.ss58_addre
 run_name = f'u:{my_uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
 config.uid = my_uid
 config.hotkey = wallet.hotkey.ss58_address
+config.run_name = run_name
 wand =  wandb.init(
     name = run_name,
     anonymous = "allow",
