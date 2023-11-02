@@ -97,7 +97,7 @@ while True:
                 if average_loss < loss_dict["uid"]["loss"]:
                     loss_dict["uid"]["loss"] = average_loss
             except Exception as e:
-                bt.logging.exception(f"Error in loss calc of {uid} \n {e}")
+                bt.logging.exception(f"Error in loss calc of uid {uid} \n {e}")
 
 
     # Get best average loss and best uid
