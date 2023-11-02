@@ -16,18 +16,8 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-# --- Imports
-import torch
 import typing
 import bittensor as bt
 
-# --- GetState Protocol.
-class GetState( bt.Synapse ):
-        
-    state_dict: typing.Optional[ typing.Dict[ str, bt.Tensor ] ] = None
-
-    def serialize( self, state_dict: typing.Dict[str, torch.Tensor ] ):
-        self.state_dict = { key: bt.Tensor.serialize( value ) for key, value in state_dict.items() if value != None }
-
-    def deserialize( self ) -> typing.Dict[str, torch.Tensor ]:
-        return { key: value.deserialize() for key, value in self.state_dict.items() if value != None }
+class GetRun( bt.Synapse ):        
+    run_name: typing.Optional[ str ] = None
