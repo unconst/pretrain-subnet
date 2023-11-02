@@ -61,6 +61,7 @@ while True:
         sequence_length = 512,
         pages = random_pages
     )
+    data_list = list(loader)
 
     # Init vars
     best_average_loss = None
@@ -94,7 +95,7 @@ while True:
         
         # Download the model weights
         try:
-            artifact_name = "model.pth"
+            artifact_name = "~/model.pth"
             bt.logging.info(f"downloading weights from {artifact_name}")
 
             run.file(artifact_name).download(replace=True)
@@ -116,9 +117,9 @@ while True:
         bt.logging.info(f"starting eval loop on uid {uid}")
         average_loss = 0
         num_batches = 0
-        for i, batch in enumerate(loader):
+
+        for i, batch in enumerate(data_list):
             try:
-                bt.logging.info(f"Processing batch {i}")
                 inputs = batch.to(model.device)
                 outputs = model(inputs, labels=inputs)
                 loss = outputs.loss.detach().item()
@@ -175,6 +176,7 @@ while True:
     else:
         weights = torch.ones_like( metagraph.S )
 
+    bt.logging.info(f"setting weights... Scores = {weights}")
     subtensor.set_weights(
         netuid = pretrain.NETUID,
         wallet = wallet,
