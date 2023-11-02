@@ -103,31 +103,32 @@ subtensor.set_weights (
     weights = [1.0], 
     wait_for_inclusion=False,
 )
-while True:
-    bt.logging.success( f'Waiting for updated on {model_path}' )
+try:
+    while True:
+        bt.logging.success( f'Waiting for updated on {model_path}' )
 
-    new_timestamp = os.path.getmtime( model_path )
-    if new_timestamp != timestamp:
-        model = pretrain.model.get_model()
-        model_weights = torch.load( model_path )
-        model.load_state_dict( model_weights )
-        wandb.save( model_path )
-        timestamp = new_timestamp
-        bt.logging.success( f'Found newer model at {model_path}' )
+        new_timestamp = os.path.getmtime( model_path )
+        if new_timestamp != timestamp:
+            model = pretrain.model.get_model()
+            model_weights = torch.load( model_path )
+            model.load_state_dict( model_weights )
+            wandb.save( model_path )
+            timestamp = new_timestamp
+            bt.logging.success( f'Found newer model at {model_path}' )
 
-    time.sleep( 10 )
-    step += 1
+        time.sleep( 10 )
+        step += 1
 
-    if step % 100 == 0:
-        subtensor.set_weights (
-            netuid = pretrain.NETUID,
-            wallet = wallet, 
-            uids = [my_uid], 
-            weights = [1.0], 
-            wait_for_inclusion=False,
-        )
-
-wandb.finish()
+        if step % 100 == 0:
+            subtensor.set_weights (
+                netuid = pretrain.NETUID,
+                wallet = wallet, 
+                uids = [my_uid], 
+                weights = [1.0], 
+                wait_for_inclusion=False,
+            )
+except KeyboardInterrupt:
+    wandb.finish()
 
 
 
