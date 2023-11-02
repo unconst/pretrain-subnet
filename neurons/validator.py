@@ -62,7 +62,7 @@ while True:
 
     # Iterate through all uids and evaluate the loss of their model weights against the random batches
     available_uids = [ uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving ]
-    for uid in uids:
+    for uid in available_uids:
         bt.logging.info(f"starting loop on uid {uid}")
 
         loss_dict[uid] = {}
