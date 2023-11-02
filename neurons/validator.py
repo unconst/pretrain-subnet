@@ -77,7 +77,7 @@ while True:
 
         loss_dict[uid] = {'loss': None, 'timestamp': None, 'run_id': None, 'hotkey': None }
         axon = metagraph.axons[uid]
-        response = dendrite.query( axon, pretrain.protocol.GetRun(), timeout=1 )
+        response = dendrite.query( axon, pretrain.protocol.GetUrl(), timeout=1 )
         if not response.is_success:
             bt.logging.info(f"failed response from uid {uid}")
             continue

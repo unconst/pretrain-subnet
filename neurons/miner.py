@@ -16,9 +16,12 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
+# pip install huggingface_hub
+# install git-lfs
+# huggingface-cli login with personal access token
+
 import os
 import time
-import wandb
 import torch
 import string
 import random
@@ -26,6 +29,7 @@ import argparse
 import pretrain
 import traceback
 import bittensor as bt
+from huggingface_hub import HfApi, HfFolder, Repository
 
 # === Config ===
 def get_config():
@@ -51,33 +55,44 @@ my_uid = metagraph.hotkeys.index( wallet.hotkey.ss58_address )
 bt.logging.success( f'You are registered with address: {wallet.hotkey.ss58_address} and uid: {my_uid}' )
 
 
-# === Init wandb ===
-run_name = f'{my_uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
-config.uid = my_uid
-config.hotkey = wallet.hotkey.ss58_address
-config.run_name = run_name
-wandb_run =  wandb.init(
-    name = run_name,
-    anonymous = "allow",
-    reinit = False,
-    project = 'openpretraining',
-    entity = 'opentensor-dev',
-    config = config,
-)
-bt.logging.success( f'Started wandb run' )
+# === Authenticate to Hugging Face ===
+api = HfApi()
+user = api.whoami(HfFolder.get_token())
+username = user['name']
 
-model_path = os.path.expanduser( config.model_path )
+# === Prepare Hugging Face repository ===
+model_name = "pretraining_model"
+repo_name = f"{username}/{model_name}"
+repo_url = api.create_repo(repo_name, private=False, exist_ok=True) 
+repo_local_path = os.path.join(os.getcwd(), model_name)
+
+repo = Repository(local_dir=repo_local_path, clone_from=repo_url)
+print(f"Cloned repository {repo_name} to {repo_local_path}")
+
+model_path = os.path.join(repo_local_path, "model.bin")
 timestamp = os.path.getmtime( model_path )
 model = pretrain.model.get_model( )
 model_weights = torch.load( model_path )
 model.load_state_dict( model_weights )
 bt.logging.success( f'Loaded model from: {model_path}' )
 
-wandb.save( model_path )
-bt.logging.success( f'Saved weights to wandb' )
+def save_model(model, model_path):
+    # Save the model to the local directory
+    torch.save(model.state_dict(), model_path)
+    print(f"Saved model to {model_path}")
+    
+    # Using the Repository object to manage files and versions
+    repo.git_add(model_path)
+    repo.git_commit(f"Update model at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    repo.git_push()
+    print(f"Pushed model to Hugging Face Hub at {repo_url}")
 
-def get_run( synapse: pretrain.protocol.GetRun ) -> pretrain.protocol.GetRun:
-    synapse.run_id = wandb_run.id
+model_path = os.path.join(repo_local_path, "model.bin")
+save_model(model, model_path) 
+
+
+def get_run( synapse: pretrain.protocol.GetUrl ) -> pretrain.protocol.GetUrl:
+    synapse.huggingface_url = repo_url
     return synapse
 
 # === Axon ===
@@ -112,11 +127,11 @@ while True:
         new_timestamp = os.path.getmtime( model_path )
         if new_timestamp != timestamp:
             model = pretrain.model.get_model()
-            model_weights = torch.load( model_path )
-            model.load_state_dict( model_weights )
-            wandb.save( model_path )
+            model_weights = torch.load(model_path)
+            model.load_state_dict(model_weights)
+            save_model(model, model_path)
             timestamp = new_timestamp
-            bt.logging.success( f'Found newer model at {model_path}' )
+            print(f"Found newer model at {model_path}")
 
         time.sleep( 10 )
         step += 1
@@ -129,9 +144,6 @@ while True:
                 weights = [1.0], 
                 wait_for_inclusion=False,
             )
-    except KeyboardInterrupt:
-        wandb_run.finish()
-        break
 
     except Exception as e:
         bt.logging.error( traceback.format_exc() )
