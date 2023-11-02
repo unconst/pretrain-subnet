@@ -66,8 +66,11 @@ while True:
 
         loss_dict[uid] = {}
         axon = metagraph.axons[uid]
-
-        run_name = dendrite.query( axon, pretrain.GetRun() ).run_name
+        
+        response = dendrite.query( axon, pretrain.protocol.GetRun() )
+        if ! response.is_success:
+            bt.logging.info(f"failed response from uid {uid}")
+            continue
         run = api.run(f"opentensor-dev/openpretraining/{run_name}")
         loss_dict["uid"]["run_name"] = run
 
