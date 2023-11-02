@@ -50,7 +50,7 @@ my_uid = metagraph.hotkeys.index( wallet.hotkey.ss58_address )
 bt.logging.success( f'You are registered with address: {wallet.hotkey.ss58_address} and uid: {my_uid}' )
 
 # === Init wandb ===
-run_name = f'u:{my_uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
+run_name = f'{my_uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
 config.uid = my_uid
 config.hotkey = wallet.hotkey.ss58_address
 config.run_name = run_name
