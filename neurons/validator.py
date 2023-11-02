@@ -61,12 +61,12 @@ while True:
     uids = metagraph.uids
 
     # Iterate through all uids and evaluate the loss of their model weights against the random batches
+    available_uids = [ uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving ]
     for uid in uids:
         bt.logging.info(f"starting loop on uid {uid}")
 
         loss_dict[uid] = {}
         axon = metagraph.axons[uid]
-        available_uids = [ uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving ]
         response = dendrite.query( axon, pretrain.protocol.GetRun(), timeout=1 )
         if not response.is_success:
             bt.logging.info(f"failed response from uid {uid}")
