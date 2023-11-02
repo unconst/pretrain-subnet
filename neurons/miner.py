@@ -24,6 +24,7 @@ import string
 import random
 import argparse
 import pretrain
+import traceback
 import bittensor as bt
 
 # === Config ===
@@ -103,8 +104,8 @@ subtensor.set_weights (
     weights = [1.0], 
     wait_for_inclusion=False,
 )
-try:
-    while True:
+while True:
+    try:
         bt.logging.success( f'Waiting for updated on {model_path}' )
 
         new_timestamp = os.path.getmtime( model_path )
@@ -127,9 +128,13 @@ try:
                 weights = [1.0], 
                 wait_for_inclusion=False,
             )
-except KeyboardInterrupt:
-    wandb.finish()
+    except KeyboardInterrupt:
+        wandb.finish()
+        break
 
+    except Exception as e:
+        bt.logging.error( traceback.format_exc() )
+        continue
 
 
 
