@@ -27,6 +27,7 @@ def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument( "--model_path", type = str, help="Run name.", default='~/model.pth' )
     parser.add_argument( "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
+    bt.logging.add_args( parser )
     config = bt.config(parser)
     return config
 config = get_config()
@@ -49,4 +50,5 @@ for i, batch in enumerate( loader ):
     optimizer.step()
     bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
 
+bt.logging.success( f'Saving model to {model_path}' )
 torch.save( model.state_dict(), model_path )
