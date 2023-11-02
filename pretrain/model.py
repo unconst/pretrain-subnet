@@ -18,10 +18,11 @@
 # DEALINGS IN THE SOFTWARE.
 
 from transformers import GPT2LMHeadModel, GPT2Config
+from transformers import GPT2Tokenizer, GPT2LMHeadModel
 
+model_name = 'distilgpt2'
 # --- Model Arch
 def get_model():
-    return GPT2LMHeadModel( GPT2Config(
-        n_layer = 12, 
-        n_head = 12,
-    ))
+    tokenizer = GPT2Tokenizer.from_pretrained(model_name)
+    model = GPT2LMHeadModel.from_pretrained(model_name)
+    return model
