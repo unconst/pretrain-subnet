@@ -73,6 +73,7 @@ while True:
             continue
 
         run_name = response.run_name
+        bt.logging.info(f"got run name {run_name} from uid {uid}")
         run = api.run(f"opentensor-dev/openpretraining/{run_name}")
         loss_dict["uid"]["run_name"] = run
 
