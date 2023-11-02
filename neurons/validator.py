@@ -108,26 +108,32 @@ while True:
                 average_loss += outputs.loss.detach().item()
                 torch.cuda.empty_cache()
                 bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
-
-                previous_loss = loss_dict[uid]["loss"]
-                if previous_loss != None:
-                    bt.logging.info(f"previous loss is {previous_loss}, new loss is {average_loss}")
-
-                    if average_loss < previous_loss:
-                        bt.logging.info(f"updating loss dict because found better loss")
-
-                        # Update dict with better loss and timestamp
-                        loss_dict[uid]["loss"] = average_loss
-                        loss_dict[uid]["timestamp"] = run.created_at
-
             except Exception as e:
                 bt.logging.exception(f"Error in loss calc of uid {uid} \n {e}")
 
 
-            # Clear weights from disk
+        previous_loss = loss_dict[uid]["loss"]
+        if previous_loss == None:
+            loss_dict[uid]["loss"] = average_loss
+            loss_dict[uid]["timestamp"] = run.created_at
+        else:
+            if average_loss < previous_loss:
+                # Update dict with better loss and timestamp
+                loss_dict[uid]["loss"] = average_loss
+                loss_dict[uid]["timestamp"] = run.created_at
 
     # Get best average loss and best uid
     # Best uid if tie on loss is based on timestamp of run upload
+    best_average_loss = None
+    best_timestamp = None
+    best_uid = None
+    for uid in loss_dict.keys():
+        uid_loss = loss_dict[uid]['loss']
+        uid_timestamp = loss_dict[uid]['timestamp']
+        if uid_loss == None: continue
+
+
+        bt.logging.info(f"uid {uid} has loss {loss_dict[uid]['loss']} and timestamp {loss_dict[uid]['timestamp']}")
     try:
         best_average_loss = min(loss_dict[uid]['loss'] for uid in loss_dict if loss_dict[uid]['loss'] is not None)
         uids_with_best_average_loss = [uid for uid, values in loss_dict.items() if values['loss'] == best_average_loss]
