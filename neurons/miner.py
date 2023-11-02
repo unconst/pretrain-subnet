@@ -93,6 +93,14 @@ bt.logging.success( f'Served Axon.' )
 
 
 # === Run ===
+step = 1
+subtensor.set_weights (
+    netuid = pretrain.NETUID,
+    wallet = wallet, 
+    uids = [my_uid], 
+    weights = [1.0], 
+    wait_for_inclusion=False,
+)
 while True:
     bt.logging.success( f'Waiting for updated on {model_path}' )
 
@@ -106,6 +114,16 @@ while True:
         bt.logging.success( f'Found newer model at {model_path}' )
 
     time.sleep( 10 )
+    step += 1
+
+    if step % 100 == 0:
+        subtensor.set_weights (
+            netuid = pretrain.NETUID,
+            wallet = wallet, 
+            uids = [my_uid], 
+            weights = [1.0], 
+            wait_for_inclusion=False,
+        )
 
 wandb.finish()
 
