@@ -40,6 +40,7 @@ subtensor = bt.subtensor( config = config )
 dendrite = bt.dendrite( wallet = wallet )
 metagraph = subtensor.metagraph( pretrain.NETUID )
 torch.backends.cudnn.benchmark = True
+loss_dict = {}
 
 while True:
 
@@ -55,13 +56,19 @@ while True:
     best_average_loss = None
     best_uid = None
     best_uid_run = None
-    for uid in metagraph.uids:
-
+    metagraph = subtensor.metagraph( pretrain.NETUID )
+    uids = metagraph.uids
+    for uid in uids:
+        loss_dict[uid] = {}
         axon = metagraph.axon[uid]
+
         run_name = dendrite.query( axon, pretrain.GetRun() ).run_name
-        run = api.run("opentensor-dev/openpretraining/{run_name}")
+        run = api.run(f"opentensor-dev/openpretraining/{run_name}")
+        loss_dict["uid"]["run_name"] = run
+        loss_dict["uid"]["timestamp"] = run.created_at
 
         hotkey = run.config.get('hotkey')
+        loss_dict["uid"]["hotkey"] = hotkey
         if hotkey != metagraph.hotkey[uid]:
             raise ValueError("Hotkey mismatch")
         
@@ -77,44 +84,55 @@ while True:
         model.to( 'cuda' )
 
         # Run eval
-        average_loss = 0.0
+        average_loss = None
         for i, batch in enumerate( loader ):
-            inputs = batch.to( model.device )
-            outputs = model( inputs, labels=inputs )
-            outputs.loss.backward()
-            average_loss += outputs.loss.detach().item()
-            torch.cuda.empty_cache()
-            bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
+            try:
+                average_loss = 0
+                inputs = batch.to( model.device )
+                outputs = model( inputs, labels=inputs )
+                outputs.loss.backward()
+                average_loss += outputs.loss.detach().item()
+                torch.cuda.empty_cache()
+                bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
+                if average_loss < loss_dict["uid"]["loss"]:
+                    loss_dict["uid"]["loss"] = average_loss
+            except Exception as e:
+                bt.logging.exception(f"Error in loss calc of {uid} \n {e}")
 
-        # Get best average loss and best uid
-        # ties broken on timestamp.
-        best_average_loss = average_loss
-        best_uid = uid
-        best_uid_run = run
-        if average_loss < best_average_loss:
-            best_average_loss = average_loss
-            best_uid = uid
-            best_uid_run = run
-        elif average_loss == best_average_loss:
-            if run.created_at <= best_uid_run.created_at:
-                best_average_loss = average_loss
-                best_uid = uid
-                best_uid_run = run
 
-        if best_uid != None:
-            weights = torch.zeros_like( metagraph.S )
-            weights[best_uid] = 1
+    # Get best average loss and best uid
+    # Best uid if tie on loss is based on timestamp of run upload
+    try:
+        best_average_loss = min(loss_dict[uid]['loss'] for uid in loss_dict if loss_dict[uid]['loss'] is not None)
+        uids_with_best_average_loss = [uid for uid, values in loss_dict.items() if values['loss'] == best_average_loss]
+        
+        if len(uids_with_best_average_loss) > 1:
+            # Assuming each uid has a 'timestamp' key
+            best_uid = min(uids_with_best_average_loss, key=lambda uid: loss_dict[uid]['timestamp'])
+        
+        elif len(uids_with_best_average_loss) == 1:
+            best_uid = uids_with_best_average_loss[0]
+        
         else:
-            weights = torch.ones_like( metagraph.S )
+            best_uid = None
 
-        subtensor.set_weights(
-            netuid = pretrain.NETUID,
-            wallet = wallet,
-            uids = metagraph.uids,
-            weights = weights,
-            wait_for_inclusion=False,
-        )
-        metagraph = subtensor.metagraph( pretrain.NETUID )
+    except ValueError:
+        best_uid = None
+        bt.logging.error("All loss None! Setting all scores to 0.")
+
+    if best_uid != None:
+        weights = torch.zeros_like( metagraph.S )
+        weights[best_uid] = 1
+    else:
+        weights = torch.ones_like( metagraph.S )
+
+    subtensor.set_weights(
+        netuid = pretrain.NETUID,
+        wallet = wallet,
+        uids = metagraph.uids,
+        weights = weights,
+        wait_for_inclusion=False,
+    )
     
 
 
