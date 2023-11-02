@@ -67,7 +67,7 @@ while True:
         loss_dict[uid] = {}
         axon = metagraph.axons[uid]
         available_uids = [ uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving ]
-        response = dendrite.query( axon, pretrain.protocol.GetRun() )
+        response = dendrite.query( axon, pretrain.protocol.GetRun(), timeout=1 )
         if not response.is_success:
             bt.logging.info(f"failed response from uid {uid}")
             continue
