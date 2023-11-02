@@ -86,14 +86,18 @@ while True:
             raise ValueError("Hotkey mismatch")
         
         # Download the model weights
-        artifact_name = "model.pth"
-        bt.logging.info(f"downloading weights from {artifact_name}")
+        try:
+            artifact_name = "model.pth"
+            bt.logging.info(f"downloading weights from {artifact_name}")
 
-        run.file(artifact_name).download(replace=True)
+            run.file(artifact_name).download(replace=True)
 
-        model = pretrain.model.get_model()
-        model_weights = torch.load(artifact_name)
-        model.load_state_dict(model_weights)
+            model = pretrain.model.get_model()
+            model_weights = torch.load(artifact_name)
+            model.load_state_dict(model_weights)
+        except Exception as e:
+            bt.logging.error(f"Error in downloading weights of uid {uid} \n {e}")
+            continue
         model.zero_grad()
         model.train()
         model.to( config.device )
