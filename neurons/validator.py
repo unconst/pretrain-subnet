@@ -85,7 +85,7 @@ while True:
             raise ValueError("Hotkey mismatch")
         
         # Download the model weights
-        artifact_name = "model_weights.pth"
+        artifact_name = "model.pth"
         bt.logging.info(f"downloading weights to {artifact_name}")
 
         run.file(artifact_name).download(replace=True)
