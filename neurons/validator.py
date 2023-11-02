@@ -101,7 +101,6 @@ while True:
         bt.logging.info(f"starting eval loop on uid {uid}")
         for i, batch in enumerate( loader ):
             try:
-                bt.logging.info(f"eval on batch: {batch}")
                 average_loss = 0
                 inputs = batch.to( model.device )
                 outputs = model( inputs, labels=inputs )
