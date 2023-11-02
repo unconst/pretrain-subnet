@@ -29,7 +29,7 @@ import bittensor as bt
 # === Config ===
 def get_config():
     parser = argparse.ArgumentParser()
-    parser.add_argument( "--model_path", type = 'str', help="Run name.", required=True )
+    parser.add_argument( "--model_path", type = str, help="Run name.", default='~/model.pth' )
     bt.subtensor.add_args(parser)
     bt.logging.add_args(parser)
     bt.wallet.add_args(parser)
@@ -58,9 +58,10 @@ wand =  wandb.init(
     config = config,
 )
 
-timestamp = os.path.getmtime(config.model_path)
+model_path = os.path.expanduser( config.model_path )
+timestamp = os.path.getmtime( model_path )
 model = pretrain.models.get_model( config.model )
-model_weights = torch.load(config.model_path)
+model_weights = torch.load( model_path )
 model.load_state_dict( model_weights )
 
 def get_run( synapse: pretrain.protocol.GetRun ) -> pretrain.protocol.GetRun:
@@ -82,10 +83,10 @@ axon.start().serve(
 
 # === Run ===
 while True:
-    new_timestamp = os.path.getmtime(config.model_path)
+    new_timestamp = os.path.getmtime( model_path )
     if new_timestamp != timestamp:
         model = pretrain.models.get_model( config.model )
-        model_weights = torch.load(config.model_path)
+        model_weights = torch.load( model_path )
         model.load_state_dict( model_weights )
         wandb.save("model_weights.pth")
     time.sleep( 1 )
