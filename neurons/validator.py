@@ -131,26 +131,23 @@ while True:
         uid_loss = loss_dict[uid]['loss']
         uid_timestamp = loss_dict[uid]['timestamp']
         if uid_loss == None: continue
-
-
-        bt.logging.info(f"uid {uid} has loss {loss_dict[uid]['loss']} and timestamp {loss_dict[uid]['timestamp']}")
-    try:
-        best_average_loss = min(loss_dict[uid]['loss'] for uid in loss_dict if loss_dict[uid]['loss'] is not None)
-        uids_with_best_average_loss = [uid for uid, values in loss_dict.items() if values['loss'] == best_average_loss]
-        
-        if len(uids_with_best_average_loss) > 1:
-            # Assuming each uid has a 'timestamp' key
-            best_uid = min(uids_with_best_average_loss, key=lambda uid: loss_dict[uid]['timestamp'])
-        
-        elif len(uids_with_best_average_loss) == 1:
-            best_uid = uids_with_best_average_loss[0]
-        
+        if best_average_loss == None:
+            best_average_loss = uid_loss
+            best_uid = uid
+            best_timestamp = uid_timestamp
         else:
-            best_uid = None
+            if uid_loss < best_average_loss:
+                best_average_loss = uid_loss
+                best_uid = uid
+                best_timestamp = uid_timestamp
+            elif uid_loss == best_average_loss:
+                if uid_timestamp < best_timestamp:
+                    best_average_loss = uid_loss
+                    best_uid = uid
+                    best_timestamp = uid_timestamp
 
-    except ValueError:
-        best_uid = None
-        bt.logging.error("All loss None! Setting all scores to 0.")
+
+    bt.logging.info(f"uid {best_uid} has  best loss of {uid_loss} and timestamp {uid_timestamp}")
 
     if best_uid != None:
         weights = torch.zeros_like( metagraph.S )
