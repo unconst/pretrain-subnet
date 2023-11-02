@@ -110,7 +110,7 @@ while True:
                 bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
 
             except Exception as e:
-                bt.logging.exception(f"Error in loss calc of uid {uid} \n {e}")
+                bt.logging.error(f"Error in loss calc of uid {uid} \n {e}")
 
         bt.logging.info(f"average_loss = {average_loss}")
         previous_loss = loss_dict[uid]["loss"]
