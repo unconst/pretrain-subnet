@@ -18,7 +18,6 @@
 
 import os
 import torch
-import random
 import argparse
 import pretrain
 import bittensor as bt
@@ -40,11 +39,12 @@ model.zero_grad()
 model.train()
 model.to( config.device )
 
-optimizer = torch.optim.AdamW( model.parameters(), lr=0.00001, weight_decay=0.01 )
+optimizer = torch.optim.AdamW( model.parameters(), lr=0.000001, weight_decay=0.01 )
+loader = pretrain.dataset.SubsetFalconLoader( batch_size=3, sequence_length=512, pages=[1, 2, 3, 4, 5] )
 
-while True: 
-    loader = pretrain.dataset.SubsetFalconLoader( batch_size=3, sequence_length=512, pages= [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages)] )
-    for i, batch in enumerate( loader ):
+num_epochs = 5 
+for epoch in range(num_epochs):
+    for i, batch in enumerate(loader):
         inputs = batch.to( model.device )
         outputs = model( inputs, labels=inputs )
         outputs.loss.backward()
@@ -52,5 +52,5 @@ while True:
         optimizer.step()
         bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
 
-    bt.logging.success( f'Saving model to {model_path}' )
-    torch.save( model.state_dict(), model_path )
+bt.logging.success( f'Saving model to {model_path}' )
+torch.save( model.state_dict(), model_path )

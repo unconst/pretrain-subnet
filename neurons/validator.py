@@ -16,6 +16,13 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
+
+# TODO: change wandb api to huggingface api, need to change both miner upload and validator pull
+# determine step time to decrease load for apis, concern= rate limits
+# fix bug of not always using the lowest loss for weights
+# keep score of loss per batch 
+# avoid sampling 
+
 import wandb
 import torch
 import random
@@ -93,7 +100,10 @@ while True:
             run.file(artifact_name).download(replace=True)
 
             model = pretrain.model.get_model()
-            model_weights = torch.load(artifact_name)
+            # model_weights = torch.load(artifact_name)
+            # CPU option 
+            model_weights = torch.load(artifact_name, map_location=torch.device('cpu'))
+
             model.load_state_dict(model_weights)
         except Exception as e:
             bt.logging.error(f"Error in downloading weights of uid {uid} \n {e}")
@@ -104,21 +114,25 @@ while True:
 
         # Run eval
         bt.logging.info(f"starting eval loop on uid {uid}")
-        for i, batch in enumerate( loader ):
+        average_loss = 0
+        num_batches = 0
+        for i, batch in enumerate(loader):
             try:
-                average_loss = 0
-                inputs = batch.to( model.device )
-                outputs = model( inputs, labels=inputs )
-                outputs.loss.backward()
-                average_loss += outputs.loss.detach().item()
-                torch.cuda.empty_cache()
-                bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
+                bt.logging.info(f"Processing batch {i}")
+                inputs = batch.to(model.device)
+                outputs = model(inputs, labels=inputs)
+                loss = outputs.loss.detach().item()
+                average_loss += loss
+                num_batches += 1
+                bt.logging.success(f'Acc: step: {i} loss: {loss}')
 
             except Exception as e:
                 bt.logging.error(f"Error in loss calc of uid {uid} \n {e}")
 
+        average_loss /= max(num_batches, 1)
         bt.logging.info(f"average_loss = {average_loss}")
         previous_loss = loss_dict[uid]["loss"]
+
         if previous_loss == None:
             loss_dict[uid]["loss"] = average_loss
             loss_dict[uid]["timestamp"] = run.created_at
