@@ -102,6 +102,7 @@ while True:
         model_weights = torch.load( model_path )
         model.load_state_dict( model_weights )
         wandb.save( model_path )
+        timestamp = new_timestamp
         bt.logging.success( f'Found newer model at {model_path}' )
 
     time.sleep( 10 )
