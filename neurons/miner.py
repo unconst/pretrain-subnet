@@ -40,15 +40,18 @@ def get_config():
 config = get_config()
 
 # === Bittensor objects ===
+bt.logging.success( config )
 wallet = bt.wallet( config = config ) 
 subtensor = bt.subtensor( config = config )
 metagraph = subtensor.metagraph( pretrain.NETUID )
 if wallet.hotkey.ss58_address not in metagraph.hotkeys: raise Exception("You are not registered. Use `btcli s recycle_register` to register.")
+my_uid = metagraph.hotkeys.index( wallet.hotkey.ss58_address )
+bt.logging.success( f'You are registered with address: {wallet.hotkey.ss58_address} and uid: {my_uid}' )
 
 # === Init wandb ===
-config.uid = metagraph.hotkeys.index( wallet.hotkey.ss58_address )
+run_name = f'u:{my_uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
+config.uid = my_uid
 config.hotkey = wallet.hotkey.ss58_address
-run_name = f'u:{config.uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
 wand =  wandb.init(
     name = run_name,
     anonymous = "allow",
@@ -57,12 +60,17 @@ wand =  wandb.init(
     entity = 'opentensor-dev',
     config = config,
 )
+bt.logging.success( f'Started wandb run' )
 
 model_path = os.path.expanduser( config.model_path )
 timestamp = os.path.getmtime( model_path )
 model = pretrain.model.get_model( )
 model_weights = torch.load( model_path )
 model.load_state_dict( model_weights )
+bt.logging.success( f'Loaded model from: {model_path}' )
+
+wandb.save( model_path )
+bt.logging.success( f'Saved weights to wandb' )
 
 def get_run( synapse: pretrain.protocol.GetRun ) -> pretrain.protocol.GetRun:
     synapse.run_name = config.run_name
@@ -75,20 +83,27 @@ axon = bt.axon(
 ).attach( 
     forward_fn = get_run,
 ).start()
+bt.logging.success( f'Started axon.' )
 
 axon.start().serve( 
     subtensor = subtensor,
     netuid = pretrain.NETUID,
 )
+bt.logging.success( f'Served Axon.' )
+
 
 # === Run ===
 while True:
+    bt.logging.success( f'Waiting for updated on {model_path}' )
+
     new_timestamp = os.path.getmtime( model_path )
     if new_timestamp != timestamp:
         model = pretrain.models.get_model( config.model )
         model_weights = torch.load( model_path )
         model.load_state_dict( model_weights )
-        wandb.save("model_weights.pth")
+        wandb.save( model_path )
+        bt.logging.success( f'Found newer model at {model_path}' )
+
     time.sleep( 1 )
 
 
