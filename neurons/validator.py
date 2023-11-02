@@ -1,4 +1,3 @@
-
 # The MIT License (MIT)
 # Copyright © 2023 Yuma Rao
 # Copyright © 2023 const
@@ -18,6 +17,10 @@
 # DEALINGS IN THE SOFTWARE.
 
 import wandb
-api = wandb.Api()
-runs = api.runs('openpretraining')
-run_names = [run.name for run in runs]
+
+while True:
+
+    # Get all wanbd runs on openpretraining.
+    api = wandb.Api()
+    runs = api.runs('openpretraining')
+    run_names = [run.name for run in runs]
