@@ -42,7 +42,7 @@ torch.backends.cudnn.benchmark = True
 loss_dict = {}
 
 while True:
-
+    bt.logging.info("starting validator")
     api = wandb.Api( timeout = 100 )
 
     # Pull random batches from Falcon Dataset
