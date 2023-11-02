@@ -15,3 +15,83 @@
 # THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
+
+import os
+import time
+import wandb
+import torch
+import string
+import random
+import argparse
+import pretrain
+import bittensor as bt
+
+# === Config ===
+def get_config():
+    parser = argparse.ArgumentParser()
+    parser.add_argument( "--model_path", type = 'str', help="Run name.", required=True )
+    bt.subtensor.add_args(parser)
+    bt.logging.add_args(parser)
+    bt.wallet.add_args(parser)
+    bt.axon.add_args(parser)
+    config = bt.config(parser)
+    return config
+
+config = get_config()
+
+# === Bittensor objects ===
+wallet = bt.wallet( config = config ) 
+subtensor = bt.subtensor( config = config )
+metagraph = subtensor.metagraph( pretrain.NETUID )
+if wallet.hotkey.ss58_address not in metagraph.hotkeys: raise Exception("You are not registered. Use `btcli s recycle_register` to register.")
+
+# === Init wandb ===
+run_name = ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
+config.uid = metagraph.hotkeys.index( wallet.hotkey.ss58_address )
+config.hotkey = wallet.hotkey.ss58_address
+wand =  wandb.init(
+    name = run_name,
+    anonymous = "allow",
+    reinit = False,
+    project = 'openpretraining',
+    entity = 'opentensor-dev',
+    config = config,
+)
+
+timestamp = os.path.getmtime(config.model_path)
+model = pretrain.models.get_model( config.model )
+model_weights = torch.load(config.model_path)
+model.load_state_dict( model_weights )
+
+def get_run( synapse: pretrain.protocol.GetRun ) -> pretrain.protocol.GetRun:
+    synapse.run_name = config.run_name
+    return synapse
+
+# === Axon ===
+axon = bt.axon( 
+    wallet = wallet, 
+    config = config 
+).attach( 
+    forward_fn = get_run,
+).start()
+
+axon.start().serve( 
+    subtensor = subtensor,
+    netuid = pretrain.NETUID,
+)
+
+# === Run ===
+while True:
+    new_timestamp = os.path.getmtime(config.model_path)
+    if new_timestamp != timestamp:
+        model = pretrain.models.get_model( config.model )
+        model_weights = torch.load(config.model_path)
+        model.load_state_dict( model_weights )
+        wandb.save("model_weights.pth")
+    time.sleep( 1 )
+
+
+
+
+
+
