@@ -71,6 +71,8 @@ while True:
         if not response.is_success:
             bt.logging.info(f"failed response from uid {uid}")
             continue
+            
+        run_name = response.run_name
         run = api.run(f"opentensor-dev/openpretraining/{run_name}")
         loss_dict["uid"]["run_name"] = run
 
