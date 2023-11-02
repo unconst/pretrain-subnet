@@ -62,8 +62,10 @@ while True:
 
     # Iterate through all uids and evaluate the loss of their model weights against the random batches
     for uid in uids:
+        bt.logging.info(f"starting loop on uid {uid}")
+
         loss_dict[uid] = {}
-        axon = metagraph.axon[uid]
+        axon = metagraph.axons[uid]
 
         run_name = dendrite.query( axon, pretrain.GetRun() ).run_name
         run = api.run(f"opentensor-dev/openpretraining/{run_name}")
@@ -77,6 +79,8 @@ while True:
         
         # Download the model weights
         artifact_name = "model_weights.pth"
+        bt.logging.info(f"downloading weights to {artifact_name}")
+
         run.file(artifact_name).download(replace=True)
 
         model = pretrain.model.get_model()
@@ -87,8 +91,10 @@ while True:
         model.to( 'cuda' )
 
         # Run eval
+        bt.logging.info(f"starting eval loop on uid {uid}")
         for i, batch in enumerate( loader ):
             try:
+                bt.logging.info(f"eval on batch: {batch}")
                 average_loss = 0
                 inputs = batch.to( model.device )
                 outputs = model( inputs, labels=inputs )
@@ -98,8 +104,12 @@ while True:
                 bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
 
                 previous_loss = loss_dict["uid"]["loss"]
-                if  previous_loss != None:
+                if previous_loss != None:
+                    bt.logging.info(f"previous loss is {previous_loss}, new loss is {average_loss}")
+
                     if average_loss < previous_loss:
+                        bt.logging.info(f"updating loss dict because found better loss")
+
                         # Update dict with better loss and timestamp
                         loss_dict["uid"]["loss"] = average_loss
                         loss_dict["uid"]["timestamp"] = run.created_at
