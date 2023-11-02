@@ -26,6 +26,7 @@ import bittensor as bt
 
 def get_config():
     parser = argparse.ArgumentParser()
+    parser.add_argument( "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
     bt.subtensor.add_args(parser)
     bt.logging.add_args(parser)
     bt.wallet.add_args(parser)
@@ -95,7 +96,7 @@ while True:
         model.load_state_dict(model_weights)
         model.zero_grad()
         model.train()
-        model.to( 'cuda' )
+        model.to( config.device )
 
         # Run eval
         bt.logging.info(f"starting eval loop on uid {uid}")
