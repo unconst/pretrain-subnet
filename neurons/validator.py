@@ -96,7 +96,7 @@ def get_available_uids( metagraph ) -> typing.List[int]:
     available_uids = [ uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving and (metagraph.block.item() - metagraph.last_update[uid] < 500)]
     return available_uids   
 
-def compute_eval_on_model( model, batches: typing.List[torch.Tensor], device ):
+def compute_eval_on_model( model: torch.nn.Module, batches: typing.List[torch.Tensor], device ):
     """ Computes the average loss of a model on a list of batches.
         Args:
             model (:obj:`nn.Module`): The model to evaluate.
@@ -162,10 +162,6 @@ def update_state_for_uid( uid: int, response: pretrain.protocol.GetRun ) -> typi
 
     # === Check if model is already up to date ===
     model_file = run.file( ARTIFACT_NAME )
-    bt.logging.debug(f"{model_file.updatedAt}")
-    bt.logging.debug(f"{datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S')}")
-    bt.logging.debug(f"{datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp()}")
-    bt.logging.debug(f"{int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())}")
     model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
     if model_timestamp == miner_state['model_timestamp']:
         raise Exception("Model is already up to date")
@@ -273,7 +269,9 @@ while True:
     except KeyboardInterrupt:
         bt.logging.info("KeyboardInterrupt caught, gracefully closing the wandb run...")
         if config.wandb.on: wandb_run.finish()
+        exit()
 
     except Exception as e:
         bt.logging.error(f"Error in validator loop \n {e} \n {traceback.format_exc()}")
+
 
