@@ -245,7 +245,7 @@ while True:
         # === Find best ===
         for miner_state in global_state['miners'].values():
             if miner_state['loss'] == None: continue
-            elif miner_state['loss'] < global_state['best_miner_loss'] or 'best_miner_loss' not in global_state:
+            elif 'best_miner_loss' not in global_state or miner_state['loss'] < global_state['best_miner_loss']:
                 global_state['best_miner_uid'] = miner_state['uid']
                 global_state['best_miner_loss'] = miner_state['loss']
 
