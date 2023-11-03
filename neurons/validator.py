@@ -103,6 +103,7 @@ def compute_eval_on_model( model: torch.nn.Module, batches: typing.List[torch.Te
             batches (:obj:`List[torch.Tensor]`): The batches to evaluate on.
             device (:obj:`torch.device`): The device to evaluate on.
     """
+    print (model)
     average_loss = 0
     num_batches = 0
     model.zero_grad()
@@ -122,7 +123,7 @@ def compute_eval_on_model( model: torch.nn.Module, batches: typing.List[torch.Te
     return average_loss / max(num_batches, 1)
 
 
-def update_state_for_uid( uid: int, response: pretrain.protocol.GetRun ) -> typing.Dict:
+def update_state_for_uid( uid: int, response: pretrain.protocol.GetRun, eval_batches ) -> typing.Dict:
     """ Updates the state for a given uid.
         Args:
             uid (:obj:`int`): The uid to update.
@@ -183,7 +184,7 @@ def update_state_for_uid( uid: int, response: pretrain.protocol.GetRun ) -> typi
         raise Exception(f"Error in downloading weights of uid {uid} \n {e} \n {traceback.format_exc()}")
     
     # === Compute eval on model ===
-    loss = compute_eval_on_model( model, random_pages, config.device )
+    loss = compute_eval_on_model( model, eval_batches, config.device )
     miner_state["loss"] = loss
     miner_state["eval_timestamp"] = time.time()
     bt.logging.debug(f"Update Uid: {uid}: loss: {loss}")
@@ -235,7 +236,7 @@ while True:
         for uid, response in zip( avail_uids, get_run_responses ):
             try:    
                 # === Update global state ===
-                global_state[ uid ] = update_state_for_uid( uid, response )
+                global_state[ uid ] = update_state_for_uid( uid, response, eval_batches )
             
             except Exception as e:
                 bt.logging.error(f"Error in state update for uid: {uid} with error: \n {e} \n {traceback.format_exc()}")
