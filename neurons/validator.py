@@ -206,6 +206,7 @@ def log_state( global_state: typing.Dict ):
         'best_miner_loss': global_state['best_miner_loss'],
     }
     for uid, state in global_state.items():
+        print (state)
         log[f'loss-{uid}'] = state['loss']  
     if config.wandb.on:
         wandb_run.log( log )
