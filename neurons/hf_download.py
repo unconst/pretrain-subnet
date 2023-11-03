@@ -2,7 +2,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import os
 import subprocess
 
-model_name = "EleutherAI/gpt-neo-125m"
+model_name = "facebook/opt-125m"
 local_directory = '~/pretrain-subnet/neurons/pretraining_model/5EZGRiRtTuxipeSq1vgwZgkwu4kdj7Lh1U6Yu7ZerRMQkE19'
 
 # Expand the user's home directory

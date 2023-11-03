@@ -102,15 +102,22 @@ while True:
             model_bin_url = f"https://huggingface.co/{huggingface_repo}/resolve/main/{filename}"
             response = requests.get(model_bin_url, stream=True)
             if response.status_code == 200:
-                with open("{filename}", "wb") as f:
+                # Check the response headers or content (first 64 bytes for instance)
+                bt.logging.info(f"Response content type: {response.headers.get('Content-Type')}")
+                bt.logging.info(f"First 64 bytes of the file: {response.content[:64]}")
+                
+                # Ensure you use the filename variable correctly
+                with open(filename, "wb") as f:
                     f.write(response.content)
-                model.load_state_dict(torch.load("{filename}"))
+                
+                # When loading, use the variable directly without quotes
+                model.load_state_dict(torch.load(filename))
             else:
                 bt.logging.error(f"Failed to download model.bin from {model_bin_url}")
             
-            # Load the state dict directly from the downloaded file
-            model = AutoModelForCausalLM.from_pretrained(huggingface_repo)
-            model_state_dict = torch.load("model.bin")
+            # Note: You are loading the model twice, which is redundant.
+
+            # Get repository info
             repo_api_url = f"https://huggingface.co/api/repos/{hotkey}"
             response = requests.get(repo_api_url)
 
@@ -118,7 +125,6 @@ while True:
                 repo_info = response.json()
                 timestamp = repo_info.get('lastModified', None)
                 loss_dict[uid]["timestamp"] = timestamp
-
             else:
                 bt.logging.error(f"Failed to get repo info from {repo_api_url}")
 
