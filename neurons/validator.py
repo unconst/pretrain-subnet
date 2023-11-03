@@ -28,6 +28,7 @@ import random
 import pretrain
 import transformers
 import argparse
+import traceback
 import bittensor as bt
 import requests
 from transformers import AutoModelForPreTraining, AutoConfig, AutoTokenizer, AutoModelForCausalLM, AutoModel
@@ -139,7 +140,7 @@ while True:
                 bt.logging.info(f'Batch {i} loss: {loss}')
                 
             except Exception as e:
-                bt.logging.error(f"Error in loss calc of uid {uid} \n {e}")
+                bt.logging.error(f"Error in loss calc of uid {uid} \n {traceback.format_exc()}")
 
         average_loss /= max(num_batches, 1)
         bt.logging.info(f"average_loss = {average_loss}")
