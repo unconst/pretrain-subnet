@@ -3,13 +3,13 @@ import json
 
 app = Flask(__name__)
 
-@app.route('/loss_dict', methods=['GET'])
-def get_loss_dict():
-    """Endpoint to get the loss_dict."""
+@app.route('/global_state', methods=['GET'])
+def get_global_state():
+    """Endpoint to get the global_state."""
     try:
-        with open('loss_dict.json', 'r') as f:
-            loss_dict = json.load(f)
-        return jsonify(loss_dict)
+        with open('global_state.json', 'r') as f:
+            global_state = json.load(f)
+        return jsonify(global_state)
     except Exception as e:
         return jsonify({"error": str(e)})
 
