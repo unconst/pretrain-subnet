@@ -69,7 +69,8 @@ repo_local_path = os.path.join(os.getcwd(), model_name)
 repo = Repository(local_dir=repo_local_path, clone_from=repo_url)
 print(f"Cloned repository {repo_name} to {repo_local_path}")
 
-model_path = os.path.join(repo_local_path, "model.bin")
+model_path = os.path.join("/home/ec2-user/model.pth")
+
 timestamp = os.path.getmtime( model_path )
 model = pretrain.model.get_model( )
 model_weights = torch.load( model_path )
