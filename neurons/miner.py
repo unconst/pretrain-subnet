@@ -30,6 +30,8 @@ import pretrain
 import traceback
 import bittensor as bt
 from huggingface_hub import HfApi, HfFolder, Repository
+import subprocess
+
 
 # === Config ===
 def get_config():
@@ -62,37 +64,45 @@ username = user['name']
 # === Prepare Hugging Face repository ===
 model_name = f"{wallet.hotkey.ss58_address}"
 repo_name = f"{username}/{model_name}"
-repo_url = api.create_repo(repo_name, private=False, exist_ok=True) 
+repo_url = api.create_repo(repo_name, private=False, exist_ok=True)
 repo_local_path = os.path.expanduser(f"~/pretrain-subnet/neurons/pretraining_model/{model_name}")
 
 repo = Repository(local_dir=repo_local_path, clone_from=repo_url)
 bt.logging.info(f"Cloned repository {repo_name} to {repo_local_path}")
 
+# === Function to get file modification timestamps ===
+def get_all_file_paths_and_timestamps(directory):
+    file_paths_and_timestamps = {}
+    for subdir, dirs, files in os.walk(directory):
+        if '.git' in subdir:
+            continue 
+        for file in files:
+            file_path = os.path.join(subdir, file)
+            file_paths_and_timestamps[file_path] = os.path.getmtime(file_path)
+    return file_paths_and_timestamps
 
-def update_model(model, model_path):
-    # Using the Repository object to manage files and versions
-    repo.git_add(model_path)
-    repo.git_commit(f"Update model at {time.strftime('%Y-%m-%d %H:%M:%S')}")
-    repo.git_push()
-    bt.logging.info(f"Pushed model to Hugging Face Hub at {repo_url}")
+# Initialize the dictionary to store the file modification times
+file_mod_times = get_all_file_paths_and_timestamps(repo_local_path)
 
-def get_url( synapse: pretrain.protocol.GetRepo ) -> pretrain.protocol.GetRepo:
+def give_repo( synapse: pretrain.protocol.GetRepo ) -> pretrain.protocol.GetRepo:
     synapse.huggingface_repo = repo_name
     return synapse
 
-model_path = os.path.expanduser(f"~/pretrain-subnet/neurons/pretraining_model/{model_name}/model.bin")
-timestamp = os.path.getmtime( model_path )
-model = pretrain.model.get_model( )
-model_weights = torch.load( model_path )
-model.load_state_dict( model_weights )
-bt.logging.success( f'Loaded model from: {model_path}' )
+def run_command(command, cwd):
+    result = subprocess.run(command, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, result.args, output=result.stdout, stderr=result.stderr)
+    return result.stdout.strip()
+
+# Initialize the dictionary to store the file modification times
+file_mod_times = get_all_file_paths_and_timestamps(repo_local_path)
 
 # === Axon ===
 axon = bt.axon( 
     wallet = wallet, 
     config = config 
 ).attach( 
-    forward_fn = get_url,
+    forward_fn = give_repo,
 ).start()
 bt.logging.success( f'Started axon.' )
 
@@ -114,16 +124,44 @@ subtensor.set_weights (
 )
 while True:
     try:
-        bt.logging.success( f'Waiting for updated on {model_path}' )
+        # Get the current state of the files
+        current_file_mod_times = get_all_file_paths_and_timestamps(repo_local_path)
+        files_changed = False
 
-        new_timestamp = os.path.getmtime( model_path )
-        if new_timestamp != timestamp:
-            bt.logging.info(f"Found newer model at {model_path}")
-            model = pretrain.model.get_model()
-            model_weights = torch.load(model_path)
-            model.load_state_dict(model_weights)
-            update_model(model, model_path)
-            timestamp = new_timestamp
+        # Check for new or updated files
+        for file_path, current_mod_time in current_file_mod_times.items():
+            if file_path not in file_mod_times or current_mod_time != file_mod_times[file_path]:
+                if '.git' not in file_path:  # Ignore changes in the .git directory
+                    bt.logging.info(f"Detected change in file: {file_path}")
+                    files_changed = True
+                    file_mod_times[file_path] = current_mod_time
+
+        # Check for deleted files
+        deleted_files = [file for file in file_mod_times if file not in current_file_mod_times]
+        if deleted_files:
+            files_changed = True
+            for file_path in deleted_files:
+                if '.git' not in file_path:  # Ignore changes in the .git directory
+                    bt.logging.info(f"Detected deletion of file: {file_path}")
+                    try:
+                        run_command(['git', 'rm', file_path], cwd=repo_local_path)
+                    except subprocess.CalledProcessError as e:
+                        bt.logging.error(f"Failed to remove {file_path}: {e.stderr}")
+                    del file_mod_times[file_path]  # Remove from our tracked files
+
+        # If any file was changed, push to Hugging Face
+        if files_changed:
+            bt.logging.info("Pushing updates to Hugging Face Hub")
+            # No need to iterate over files again, as we've already handled them
+            try:
+                repo.git_commit("Update model files")
+                repo.git_push()
+                bt.logging.info("Pushed updated model to Hugging Face Hub")
+            except EnvironmentError as e:
+                if 'nothing to commit' in str(e):
+                    bt.logging.info("No changes to commit.")
+                else:
+                    raise  # Re-raise the exception if it's not a 'nothing to commit' case
 
         time.sleep( 10 )
         step += 1
@@ -138,7 +176,7 @@ while True:
             )
 
     except Exception as e:
-        bt.logging.error( traceback.format_exc() )
+        bt.logging.error(f"error in main block {traceback.format_exc()}" )
         continue
 
 
