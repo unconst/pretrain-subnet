@@ -23,13 +23,21 @@
 # keep score of loss per batch 
 # avoid sampling 
 
+import json
+import math
+import time
 import wandb
 import torch
+import string
 import random
+import typing
 import pretrain
 import argparse
 import bittensor as bt
+from datetime import datetime
 
+# Global artifact name
+ARTIFACT_NAME:str = "model.pth"
 
 def get_config():
     parser = argparse.ArgumentParser()
@@ -41,6 +49,8 @@ def get_config():
     config = bt.config(parser)
     return config
 
+
+# Build config.
 config = get_config()
 bt.logging( config = config )
 wallet = bt.wallet( config = config )
@@ -48,139 +58,195 @@ subtensor = bt.subtensor( config = config )
 dendrite = bt.dendrite( wallet = wallet )
 metagraph = subtensor.metagraph( pretrain.NETUID )
 torch.backends.cudnn.benchmark = True
-loss_dict = {}
+if wallet.hotkey.ss58_address not in metagraph.hotkeys: raise Exception("You are not registered. Use `btcli s recycle_register` to register.")
+my_uid = metagraph.hotkeys.index( wallet.hotkey.ss58_address )
+bt.logging.success( f'You are registered with address: {wallet.hotkey.ss58_address} and uid: {my_uid}' )
 
-try:
-    wandb.init(project="openpretraining", entity="opentensor-dev")
-    while True:
-        bt.logging.info("starting validator")
-        api = wandb.Api( timeout = 100 )
+# === Init wandb ===
+run_name = f'validator-{my_uid}-' - ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
+config.uid = my_uid
+config.hotkey = wallet.hotkey.ss58_address
+config.run_name = run_name
+wandb_run =  wandb.init(
+    name = run_name,
+    anonymous = "allow",
+    reinit = False,
+    project = 'openpretraining',
+    entity = 'opentensor-dev',
+    config = config,
+)
+bt.logging.success( f'Started wandb run' )
+wandb.init(project="openpretraining", entity="opentensor-dev")
 
-        # Pull random batches from Falcon Dataset
+# === Init vars ===
+api = wandb.Api( timeout = 100 )
+global_state = {}
+
+
+# === Helper functions ===
+def get_available_uids( metagraph ) -> typing.List[int]:
+    """ Returns a list of uids that are available to serve.
+        Args:
+            metagraph (:obj:`bittensor.Metagraph`): The metagraph to pull uids from.
+        Returns:
+            (:obj:`List[int]`): The list of uids that are available to query.
+    """
+    available_uids = [ uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving and (metagraph.block.item() - metagraph.last_update[uid] < 500)]
+    return available_uids   
+
+def compute_eval_on_model( model, batches: typing.List[torch.Tensor], device ):
+    """ Computes the average loss of a model on a list of batches.
+        Args:
+            model (:obj:`nn.Module`): The model to evaluate.
+            batches (:obj:`List[torch.Tensor]`): The batches to evaluate on.
+            device (:obj:`torch.device`): The device to evaluate on.
+    """
+    average_loss = 0
+    num_batches = 0
+    model.zero_grad().eval().to( device )
+    for i, batch in enumerate( batches ):
+        with torch.no_grad():
+            try:
+                inputs = batch.to(model.device)
+                outputs = model(inputs, labels=inputs)
+                loss = outputs.loss.detach().item()
+                average_loss += loss
+                num_batches += 1
+                bt.logging.debug(f'Acc: step: {i} loss: {loss}')
+            except Exception as e:
+                bt.logging.error(f"Error in loss calc: \n {e}")
+    return average_loss / max(num_batches, 1)
+
+
+def update_state_for_uid( uid: int ) -> typing.Dict:
+    """ Updates the state for a given uid.
+        Args:
+            uid (:obj:`int`): The uid to update.
+        Returns:
+            (:obj:`Dict`): The updated state.
+    """
+
+    bt.logging.debug(f"Updating state for uid {uid}")
+
+    # === Get this models state ===
+    miner_state = global_state[ uid ] if uid in global_state else {
+        'run_id': None, # Records the wandb run id of the miner.
+        'model_timestamp': None, # Records the timestamp of the last model update.
+        'eval_timestamp': None, # Records the timestamp of the last eval.
+        'loss': None, # Records the miners loss.
+        'hotkey': None, # Records the miner's hotkey.
+        'uid': None # Records the miner's uid.
+    }
+    miner_state['uid'] = uid
+
+    # === Pass on failed queries ===
+    if not response.is_success: 
+        raise Exception("Miner query failed")
+    
+    # === Get model run === 
+    run_id = response.run_id
+    run = api.run(f"opentensor-dev/openpretraining/{run_id}")
+    miner_state['run_id'] = run_id # Update run id.
+    bt.logging.debug(f"Update Uid: {uid}: Run {run_id}")
+
+    # === Check hotkey match ===
+    hotkey = run.config.get('hotkey')
+    if hotkey != metagraph.hotkeys[uid]:
+        raise Exception("Miner returned invalid hotkey")
+    miner_state['hotkey'] = hotkey # Update miner hotkey.
+    bt.logging.debug(f"Update Uid: {uid}: hotkey {hotkey}")
+
+    # === Check if model is already up to date ===
+    model_file = run.file( ARTIFACT_NAME )
+    model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
+    if model_timestamp == miner_state['timestamp']:
+        raise Exception("Model is already up to date")
+    miner_state['model_timestamp'] = model_timestamp # Update model timestamp.
+    bt.logging.debug(f"Update Uid: {uid}: model_timestamp {model_timestamp}")
+
+    # === Load the model from file ===
+    try:
+        model_file.download( replace = True ) # Replaces the model.pth file in the current directory.
+        model = pretrain.model.get_model()
+        model_weights = torch.load( ARTIFACT_NAME, map_location=torch.device('cpu'))
+        model.load_state_dict(model_weights)
+        bt.logging.debug(f"Update Uid: {uid}: loaded: {ARTIFACT_NAME}")
+
+    except Exception as e:
+        raise Exception(f"Error in downloading weights of uid {uid} \n {e}")
+    
+    # === Compute eval on model ===
+    loss = compute_eval_on_model( model, random_pages, config.device )
+    miner_state["loss"] = loss
+    miner_state["eval_timestamp"] = time.time()
+    bt.logging.debug(f"Update Uid: {uid}: loss: {loss}")
+
+    # Return
+    return miner_state
+
+def log_state( global_state: typing.Dict ):
+    """ Logs the global state to wandb and to screen.
+        Args:
+            global_state (:obj:`Dict`): The global state to log.
+    """
+    # === Write global state to file ===
+    with open('global_state.json', 'w') as f:
+        json.dump(global_state, f)
+
+    # === Log global state to wandb ===
+    log = {
+        'best_miner_uid': global_state['best_miner_uid'],
+        'best_miner_loss': global_state['best_miner_loss'],
+    }
+    for uid in global_state.keys():
+        log[f'loss-{uid}'] = global_state[uid]['loss']  
+    wandb_run.log( log )
+
+    # Log to screen.
+    bt.logging.info(log)
+
+# === Validating loop ===
+while True:
+    bt.logging.success(f"Starting validator loop")
+    try:
+        # === Get next batches ===
         random_pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages)]
-        loader = pretrain.dataset.SubsetFalconLoader(
+        eval_batches = list(pretrain.dataset.SubsetFalconLoader(
             batch_size = 3,
             sequence_length = 512,
             pages = random_pages
-        )
-        data_list = list(loader)
+        ))
 
-        # Init vars
-        best_average_loss = None
-        best_uid = None
-        best_uid_run = None
-        metagraph = subtensor.metagraph( pretrain.NETUID )
-        uids = metagraph.uids
+        # === Get runs ===
+        avail_uids = get_available_uids( metagraph )
+        avail_axons = [ metagraph.axons[uid] for uid in avail_uids]
+        get_run_responses = dendrite.query( avail_axons, pretrain.protocol.GetRun(), timeout=1 )
+        bt.logging.debug(f"Available uid: {avail_uids}")
 
-        # Iterate through all uids and evaluate the loss of their model weights against the random batches
-        available_uids = [ uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving and (metagraph.block.item() - metagraph.last_update[uid] < 500)]
-        for uid in available_uids:
-            bt.logging.info(f"starting loop on uid {uid}")
-
-            loss_dict[uid] = {'loss': None, 'timestamp': None, 'run_id': None, 'hotkey': None }
-            axon = metagraph.axons[uid]
-            response = dendrite.query( axon, pretrain.protocol.GetRun(), timeout=1 )
-            if not response.is_success:
-                bt.logging.info(f"failed response from uid {uid}")
-                continue
-
-            run_id = response.run_id
-            bt.logging.info(f"got run name {run_id} from uid {uid}")
-            run = api.run(f"opentensor-dev/openpretraining/{run_id}")
-            loss_dict[uid]["run_id"] = run
-
-            # Hotkey of run must match that of the sending hotkey
-            hotkey = run.config.get('hotkey')
-            loss_dict[uid]["hotkey"] = hotkey
-            if hotkey != metagraph.hotkeys[uid]:
-                raise ValueError("Hotkey mismatch")
+        # === Get models to update ===
+        for uid, response in zip( avail_uids, get_run_responses ):
+            try:    
+                # === Update global state ===
+                global_state[ uid ] = update_state_for_uid( uid, response )
             
-            # Download the model weights
-            try:
-                artifact_name = "model.pth"
-                bt.logging.info(f"downloading weights from {artifact_name}")
-
-                run.file(artifact_name).download(replace=True)
-
-                model = pretrain.model.get_model()
-                # model_weights = torch.load(artifact_name)
-                # CPU option 
-                model_weights = torch.load(artifact_name, map_location=torch.device('cpu'))
-
-                model.load_state_dict(model_weights)
             except Exception as e:
-                bt.logging.error(f"Error in downloading weights of uid {uid} \n {e}")
+                bt.logging.error(f"Error in state update for uid: {uid} with error: \n {e}")
                 continue
-            model.zero_grad()
-            model.train()
-            model.to( config.device )
 
-            # Run eval
-            bt.logging.info(f"starting eval loop on uid {uid}")
-            average_loss = 0
-            num_batches = 0
+        # === Find best ===
+        best_miner_uid, best_miner_loss = min(global_state.items(), key=lambda x: (x[1]['loss'], x[1]['model_timestamp']))
+        global_state['best_miner_uid'] = uid
+        global_state['best_miner_loss'] = best_miner_loss
 
-            for i, batch in enumerate(data_list):
-                try:
-                    inputs = batch.to(model.device)
-                    outputs = model(inputs, labels=inputs)
-                    loss = outputs.loss.detach().item()
-                    average_loss += loss
-                    num_batches += 1
-                    bt.logging.success(f'Acc: step: {i} loss: {loss}')
+        # === Log state ==
+        log_state( global_state )
 
-                except Exception as e:
-                    bt.logging.error(f"Error in loss calc of uid {uid} \n {e}")
-
-            average_loss /= max(num_batches, 1)
-            bt.logging.info(f"average_loss = {average_loss}")
-            previous_loss = loss_dict[uid]["loss"]
-
-            if previous_loss == None:
-                loss_dict[uid]["loss"] = average_loss
-                loss_dict[uid]["timestamp"] = run.created_at
-            else:
-                if average_loss < previous_loss:
-                    # Update dict with better loss and timestamp
-                    loss_dict[uid]["loss"] = average_loss
-                    loss_dict[uid]["timestamp"] = run.created_at
-
-        # Get best average loss and best uid
-        # Best uid if tie on loss is based on timestamp of run upload
-        best_average_loss = None
-        best_timestamp = None
-        best_uid = None
-        for uid in loss_dict.keys():
-            uid_loss = loss_dict[uid]['loss']
-            uid_timestamp = loss_dict[uid]['timestamp']
-            wandb.log({"uid": uid, "uid_loss": average_loss, "timestamp": loss_dict[uid]["timestamp"]})
-            if uid_loss == None: continue
-            if best_average_loss == None:
-                best_average_loss = uid_loss
-                best_uid = uid
-                best_timestamp = uid_timestamp
-            else:
-                if uid_loss < best_average_loss:
-                    best_average_loss = uid_loss
-                    best_uid = uid
-                    best_timestamp = uid_timestamp
-                elif uid_loss == best_average_loss:
-                    if uid_timestamp < best_timestamp:
-                        best_average_loss = uid_loss
-                        best_uid = uid
-                        best_timestamp = uid_timestamp
-
-
-        bt.logging.info(f"uid {best_uid} has  best loss of {best_average_loss} and timestamp {best_timestamp}")
-        wandb.log({"best_uid": best_uid, "best_average_loss": best_average_loss, "best_timestamp": best_timestamp})
-
-        if best_uid != None:
+        # === Set weights ===
+        if best_miner_uid != None:
             weights = torch.zeros_like( metagraph.S )
-            weights[best_uid] = 1
+            weights[ best_miner_uid ] = 1
         else:
             weights = torch.ones_like( metagraph.S )
-
-        bt.logging.info(f"setting weights... Scores = {weights}")
         subtensor.set_weights(
             netuid = pretrain.NETUID,
             wallet = wallet,
@@ -188,12 +254,17 @@ try:
             weights = weights,
             wait_for_inclusion=False,
         )
+        bt.logging.success(f"Served weights: {weights.tolist()}")
 
-except KeyboardInterrupt:
-    bt.logging.info("KeyboardInterrupt caught, gracefully closing the wandb run...")
-finally:
-    wandb.finish()
-    bt.logging.info("wandb run finished.")
-    
 
+        # === Update state ===
+        metagraph = subtensor.metagraph( pretrain.NETUID )
+        bt.logging.debug(f"Updated metagraph")
+
+    except KeyboardInterrupt:
+        bt.logging.info("KeyboardInterrupt caught, gracefully closing the wandb run...")
+        wandb_run.finish()
+
+    except Exception as e:
+        bt.logging.error(f"Error in validator loop \n {e}")
 
