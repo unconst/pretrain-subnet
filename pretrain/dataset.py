@@ -29,12 +29,10 @@ class SubsetFalconLoader(IterableDataset):
     
     max_pages: int = 968000015
 
-    def __init__(self, batch_size, sequence_length, pages: typing.List[int] ):
+    def __init__(self, batch_size, sequence_length, pages: typing.List[int]):
         self.batch_size = batch_size
         self.sequence_length = sequence_length
         self.num_rows_per_page = 100
-        self.tokenizer = GPT2Tokenizer.from_pretrained(model_name)
-        self.tokenizer.pad_token = self.tokenizer.eos_token
         self.base_url = "https://datasets-server.huggingface.co/rows"
         self.params = {
             "dataset": "tiiuae/falcon-refinedweb",
@@ -42,28 +40,23 @@ class SubsetFalconLoader(IterableDataset):
             "split": "train"
         }
         self.pages = pages
-        self.buffer = []
+        self.texts = []
         for page in tqdm(self.pages):
             self.params["offset"] = page
             self.params["limit"] = self.num_rows_per_page
             response = requests.get(self.base_url, params=self.params)
             for row in response.json()["rows"]:
                 content = row["row"]["content"]
-                self.buffer += self.tokenizer(content)["input_ids"]
-                self.buffer += [self.tokenizer.eos_token_id]
-            
+                self.texts.append(content)
+    
     def __iter__(self):
-        while len(self.buffer) >= self.sequence_length * self.batch_size:
-            batch = []
-            for _ in range(self.batch_size):
-                batch.append(torch.tensor(self.buffer[:self.sequence_length]))
-                self.buffer = self.buffer[self.sequence_length:]
-            yield torch.stack(batch)
-            
-    def __next__(self):
-        batch = []
-        for _ in range(self.batch_size):
-            batch.append(torch.tensor( self.buffer[:self.sequence_length] ))
-            self.buffer = self.buffer[self.sequence_length:]
-        return torch.stack(batch)
+        text_chunks = [
+            self.texts[i:i + self.sequence_length] 
+            for i in range(0, len(self.texts), self.sequence_length)
+        ]
+        for chunk in text_chunks:
+            yield chunk
+
+    def __len__(self):
+        return len(self.texts) // self.sequence_length
             
