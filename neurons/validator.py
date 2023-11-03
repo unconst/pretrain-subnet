@@ -29,7 +29,11 @@ import random
 import pretrain
 import argparse
 import bittensor as bt
+import json
 
+def write_loss_dict_to_file():
+    with open('loss_dict.json', 'w') as f:
+        json.dump(loss_dict, f)
 
 def get_config():
     parser = argparse.ArgumentParser()
@@ -170,7 +174,7 @@ try:
                         best_uid = uid
                         best_timestamp = uid_timestamp
 
-
+        write_loss_dict_to_file()
         bt.logging.info(f"uid {best_uid} has  best loss of {best_average_loss} and timestamp {best_timestamp}")
         wandb.log({"best_uid": best_uid, "best_average_loss": best_average_loss, "best_timestamp": best_timestamp})
 
