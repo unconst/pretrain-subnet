@@ -108,7 +108,7 @@ while True:
             model_class = get_model_class(config)
             if model_class is None:
                 raise ValueError(f"No model class available for model type: {config.model_type}")
-            model = model_class.from_config(config)
+            model = AutoModelForCausalLM.from_pretrained(huggingface_repo)
             tokenizer = AutoTokenizer.from_pretrained(huggingface_repo)
 
             # Load the weights
