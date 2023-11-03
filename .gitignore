@@ -1,4 +1,6 @@
 neurons/pretraining_model/
+neurons/loss_dict.py
+neurons/wandb/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
