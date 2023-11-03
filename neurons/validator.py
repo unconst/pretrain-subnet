@@ -23,6 +23,7 @@
 # keep score of loss per batch 
 # avoid sampling 
 
+import os
 import json
 import math
 import time
@@ -49,6 +50,17 @@ def get_config():
     bt.wallet.add_args(parser)
     bt.axon.add_args(parser)
     config = bt.config(parser)
+    config.full_path = os.path.expanduser(
+        "{}/{}/{}/netuid{}/{}".format(
+            config.logging.logging_dir,
+            config.wallet.name,
+            config.wallet.hotkey,
+            config.netuid,
+            "validator",
+        )
+    )
+    if not os.path.exists(config.full_path):
+        os.makedirs(config.full_path, exist_ok=True)
     return config
 
 
@@ -169,7 +181,7 @@ def optionally_update_miner_model( uid, miner_state ):
     model.load_state_dict(model_weights)
 
     # === Save new model to path ===
-    model_save_path = f'miners/uid{uid}-' + ARTIFACT_NAME 
+    model_save_path = f'{config.full_path}/uid{uid}-' + ARTIFACT_NAME 
     torch.save( model.state_dict(), model_save_path )
     bt.logging.success(f"Saved model to path {model_save_path} for {uid}")
     miner_state['model_path'] = model_save_path
@@ -180,7 +192,7 @@ def log_state( global_state: typing.Dict ):
             global_state (:obj:`Dict`): The global state to log.
     """
     # === Write global state to file ===
-    with open('global_state.json', 'w') as f:
+    with open(f'{config.full_path}/global_state.json', 'w') as f:
         json.dump(global_state, f)
 
     # === Log global state to wandb ===
