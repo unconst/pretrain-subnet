@@ -202,12 +202,12 @@ def log_state( global_state: typing.Dict ):
         json.dump(global_state, f)
 
     # === Log global state to wandb ===
-    log = {
-        'best_miner_uid': global_state['best_miner_uid'],
-        'best_miner_loss': global_state['best_miner_loss'],
-    }
+    log = {}
+    if 'best_miner_uid' in global_state:
+        log['best_miner_uid'] = global_state['best_miner_uid']
+        log['best_miner_loss'] = global_state['best_miner_loss']
     for uid, state in global_state['miners'].items():
-        log[f'loss-{uid}'] = state['loss']  
+        if state['loss'] != None: log[f'loss-{uid}'] = state['loss']  
     if config.wandb.on:
         wandb_run.log( log )
 
@@ -243,17 +243,19 @@ while True:
                 continue
 
         # === Find best ===
-        best_miner_uid, best_miner_loss = min(global_state['miners'].items(), key=lambda x: (x[1]['loss'], x[1]['model_timestamp']))
-        global_state['best_miner_uid'] = uid
-        global_state['best_miner_loss'] = best_miner_loss
+        for miner_state in global_state['miners'].values():
+            if miner_state['loss'] == None: continue
+            elif miner_state['loss'] < global_state['best_miner_loss'] or 'best_miner_loss' not in global_state:
+                global_state['best_miner_uid'] = miner_state['uid']
+                global_state['best_miner_loss'] = miner_state['loss']
 
         # === Log state ==
         log_state( global_state )
 
         # === Set weights ===
-        if best_miner_uid != None:
+        if global_state['best_miner_uid'] != None:
             weights = torch.zeros_like( metagraph.S )
-            weights[ best_miner_uid ] = 1
+            weights[ global_state['best_miner_uid'] ] = 1
         else:
             weights = torch.ones_like( metagraph.S )
         subtensor.set_weights(
