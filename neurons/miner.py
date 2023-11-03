@@ -124,6 +124,7 @@ subtensor.set_weights (
 )
 while True:
     try:
+        bt.logging.info(f"checking for updates...")
         # Get the current state of the files
         current_file_mod_times = get_all_file_paths_and_timestamps(repo_local_path)
         files_changed = False

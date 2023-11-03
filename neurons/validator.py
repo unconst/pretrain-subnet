@@ -29,7 +29,7 @@ import pretrain
 import argparse
 import bittensor as bt
 import requests
-from transformers import AutoModel
+from transformers import AutoModelForPreTraining, AutoConfig, AutoTokenizer
 
 
 def get_config():
@@ -91,22 +91,28 @@ while True:
             raise ValueError("Hotkey mismatch")
         
         try:
-            bt.logging.info(f"downloading weights from {huggingface_repo}")
-            # Construct the URL for the model.bin file
+            bt.logging.info(f"downloading model from {huggingface_repo}")
+            config = AutoConfig.from_pretrained(huggingface_repo)
+            model = AutoModelForPreTraining.from_config(config)
+            tokenizer = AutoTokenizer.from_pretrained(huggingface_repo)
+
+            # Load the weights
             model_bin_url = f"https://huggingface.co/{huggingface_repo}/resolve/main/pytorch_model.bin"
-            
-            # Make a GET request to download the model weights
             response = requests.get(model_bin_url, stream=True)
             if response.status_code == 200:
-                # Save the model.bin file
                 with open("pytorch_model.bin", "wb") as f:
                     f.write(response.content)
+                model.load_state_dict(torch.load("pytorch_model.bin", map_location=config.device))
+            else:
+                bt.logging.error(f"Failed to download model.bin from {model_bin_url}")
+                continue
             
-                # Load the state dict directly from the downloaded file
-                model_state_dict = torch.load("pytorch_model.bin", map_location='cpu')
-
+            # Load the state dict directly from the downloaded file
+            model = AutoModel.from_pretrained(huggingface_repo)
+            model_state_dict = torch.load("model.bin", map_location='cpu')
             repo_api_url = f"https://huggingface.co/api/repos/{hotkey}"
             response = requests.get(repo_api_url)
+
             if response.ok:
                 repo_info = response.json()
                 timestamp = repo_info.get('lastModified', None)
@@ -114,12 +120,14 @@ while True:
 
             else:
                 bt.logging.error(f"Failed to get repo info from {repo_api_url}")
+
         except Exception as e:
             bt.logging.error(f"Error in downloading weights of uid {uid} \n {e}")
             continue
+            
         model.zero_grad()
         model.train()
-        model.to( config.device )
+        model.to(config.device)
 
         # Run eval
         bt.logging.info(f"starting eval loop on uid {uid}")
@@ -128,12 +136,13 @@ while True:
 
         for i, batch in enumerate(data_list):
             try:
-                inputs = batch.to(model.device)
-                outputs = model(inputs, labels=inputs)
+                bt.logging.info(f"starting batch {i}")
+                inputs = tokenizer(batch, return_tensors='pt', padding=True, truncation=True).to(config.device)
+                outputs = model(**inputs, labels=inputs['input_ids'])
                 loss = outputs.loss.detach().item()
                 average_loss += loss
                 num_batches += 1
-                bt.logging.success(f'Acc: step: {i} loss: {loss}')
+                bt.logging.success(f'Batch {i} loss: {loss}')
 
             except Exception as e:
                 bt.logging.error(f"Error in loss calc of uid {uid} \n {e}")
