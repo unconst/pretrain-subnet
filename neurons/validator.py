@@ -23,16 +23,13 @@
 # keep score of loss per batch 
 # avoid sampling 
 
+import wandb
 import torch
 import random
 import pretrain
-import transformers
 import argparse
 import wandb
-import traceback
 import bittensor as bt
-import requests
-from transformers import AutoModelForPreTraining, AutoConfig, AutoTokenizer, AutoModelForCausalLM, AutoModel
 
 wandb.init(project="openpretraining", entity="opentensor-dev")
 
@@ -54,19 +51,16 @@ dendrite = bt.dendrite( wallet = wallet )
 metagraph = subtensor.metagraph( pretrain.NETUID )
 torch.backends.cudnn.benchmark = True
 loss_dict = {}
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = "cpu"
-torch.autograd.set_detect_anomaly(True)
-
 
 while True:
     bt.logging.info("starting validator")
+    api = wandb.Api( timeout = 100 )
 
     # Pull random batches from Falcon Dataset
     random_pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages)]
     loader = pretrain.dataset.SubsetFalconLoader(
-        batch_size = 1,
-        sequence_length = 4,
+        batch_size = 3,
+        sequence_length = 512,
         pages = random_pages
     )
     data_list = list(loader)
@@ -83,79 +77,103 @@ while True:
     for uid in available_uids:
         bt.logging.info(f"starting loop on uid {uid}")
 
-        loss_dict[uid] = {'loss': None, 'timestamp': None, 'huggingface_repo': None, 'hotkey': None }
+        loss_dict[uid] = {'loss': None, 'timestamp': None, 'run_id': None, 'hotkey': None }
         axon = metagraph.axons[uid]
-        response = dendrite.query(axon, pretrain.protocol.GetRepo(), timeout=0.5)
+        response = dendrite.query( axon, pretrain.protocol.GetRun(), timeout=1 )
         if not response.is_success:
             bt.logging.info(f"failed response from uid {uid}")
             continue
 
-        huggingface_repo = response.huggingface_repo
-        bt.logging.info(f"got repo {huggingface_repo} from uid {uid}")
-        loss_dict[uid]["huggingface_repo"] = huggingface_repo
-        hotkey = huggingface_repo.split('/')[-1]
+        run_id = response.run_id
+        bt.logging.info(f"got run name {run_id} from uid {uid}")
+        run = api.run(f"opentensor-dev/openpretraining/{run_id}")
+        loss_dict[uid]["run_id"] = run
 
+        # Hotkey of run must match that of the sending hotkey
+        hotkey = run.config.get('hotkey')
+        loss_dict[uid]["hotkey"] = hotkey
         if hotkey != metagraph.hotkeys[uid]:
             raise ValueError("Hotkey mismatch")
         
+        # Download the model weights
         try:
-            filename = "model.safetensors"
-            bt.logging.info(f"downloading model from {huggingface_repo}")
-            config = AutoConfig.from_pretrained(huggingface_repo)
-            model = AutoModelForCausalLM.from_pretrained(huggingface_repo).to(device)
-            tokenizer = AutoTokenizer.from_pretrained(huggingface_repo)
-            repo_api_url = f"https://huggingface.co/api/repos/{huggingface_repo}"
-            response = requests.get(repo_api_url)
+            artifact_name = "model.pth"
+            bt.logging.info(f"downloading weights from {artifact_name}")
 
-            if response.ok:
-                repo_info = response.json()
-                timestamp = repo_info.get('lastModified', None)
-                loss_dict[uid]["timestamp"] = timestamp
-            else:
-                bt.logging.error(f"Failed to get repo info from {repo_api_url}")
+            run.file(artifact_name).download(replace=True)
 
+            model = pretrain.model.get_model()
+            # model_weights = torch.load(artifact_name)
+            # CPU option 
+            model_weights = torch.load(artifact_name, map_location=torch.device('cpu'))
+
+            model.load_state_dict(model_weights)
         except Exception as e:
             bt.logging.error(f"Error in downloading weights of uid {uid} \n {e}")
             continue
-            
-        torch.cuda.empty_cache()
-        model = model.to(device)
         model.zero_grad()
         model.train()
+        model.to( config.device )
+
+        # Run eval
         bt.logging.info(f"starting eval loop on uid {uid}")
         average_loss = 0
         num_batches = 0
 
-        for i, batch_text in enumerate(loader):
+        for i, batch in enumerate(data_list):
             try:
-                bt.logging.info(f"starting batch {i}")
-                
-                # Now we tokenize the batch of raw text right here
-                inputs = tokenizer(batch_text, return_tensors='pt', padding=True, truncation=True).to(device)
-                inputs = {key: value.to(device) for key, value in inputs.items()}
-                outputs = model(**inputs, labels=inputs['input_ids'])
-                
-                # Extract the loss
-                loss = outputs.loss.item()  # Use `.item()` to get a Python float
+                inputs = batch.to(model.device)
+                outputs = model(inputs, labels=inputs)
+                loss = outputs.loss.detach().item()
                 average_loss += loss
                 num_batches += 1
-                bt.logging.info(f'Batch {i} loss: {loss}')
-                
+                bt.logging.success(f'Acc: step: {i} loss: {loss}')
+
             except Exception as e:
-                bt.logging.error(f"Error in loss calc of uid {uid} \n {traceback.format_exc()}")
+                bt.logging.error(f"Error in loss calc of uid {uid} \n {e}")
 
         average_loss /= max(num_batches, 1)
         bt.logging.info(f"average_loss = {average_loss}")
         wandb.log({"uid": uid, "average_loss": average_loss, "step": i})
-        previous_loss = loss_dict.get(uid, {}).get("loss")
+        previous_loss = loss_dict[uid]["loss"]
 
-        if previous_loss is None or average_loss < previous_loss:
-            loss_dict[uid] = {"loss": average_loss, "timestamp": current_timestamp}
+        if previous_loss == None:
+            loss_dict[uid]["loss"] = average_loss
+            loss_dict[uid]["timestamp"] = run.created_at
+        else:
+            if average_loss < previous_loss:
+                # Update dict with better loss and timestamp
+                loss_dict[uid]["loss"] = average_loss
+                loss_dict[uid]["timestamp"] = run.created_at
 
-    best_uid, best_record = min(loss_dict.items(), key=lambda x: (x[1]['loss'], x[1]['timestamp']))
+    # Get best average loss and best uid
+    # Best uid if tie on loss is based on timestamp of run upload
+    best_average_loss = None
+    best_timestamp = None
+    best_uid = None
+    for uid in loss_dict.keys():
+        uid_loss = loss_dict[uid]['loss']
+        uid_timestamp = loss_dict[uid]['timestamp']
+        if uid_loss == None: continue
+        if best_average_loss == None:
+            best_average_loss = uid_loss
+            best_uid = uid
+            best_timestamp = uid_timestamp
+        else:
+            if uid_loss < best_average_loss:
+                best_average_loss = uid_loss
+                best_uid = uid
+                best_timestamp = uid_timestamp
+            elif uid_loss == best_average_loss:
+                if uid_timestamp < best_timestamp:
+                    best_average_loss = uid_loss
+                    best_uid = uid
+                    best_timestamp = uid_timestamp
+    if previous_loss is None or average_loss < previous_loss:
+        best_uid, best_record = min(loss_dict.items(), key=lambda x: (x[1]['loss'], x[1]['timestamp']))
 
-    best_average_loss = best_record['loss']
-    best_timestamp = best_record['timestamp']
+
+
     bt.logging.info(f"uid {best_uid} has  best loss of {best_average_loss} and timestamp {best_timestamp}")
     wandb.log({"best_uid": best_uid, "best_average_loss": best_average_loss, "best_timestamp": best_timestamp})
 
