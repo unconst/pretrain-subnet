@@ -117,7 +117,7 @@ while True:
             if response.status_code == 200:
                 with open("pytorch_model.bin", "wb") as f:
                     f.write(response.content)
-                model.load_state_dict(torch.load("pytorch_model.bin")
+                model.load_state_dict(torch.load("pytorch_model.bin"))
             else:
                 bt.logging.error(f"Failed to download model.bin from {model_bin_url}")
             
