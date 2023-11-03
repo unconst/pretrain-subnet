@@ -113,6 +113,7 @@ while True:
             bt.logging.error(f"Error in downloading weights of uid {uid} \n {e}")
             continue
             
+        torch.cuda.empty_cache()
         model = model.to(device)
         model.zero_grad()
         model.train()
