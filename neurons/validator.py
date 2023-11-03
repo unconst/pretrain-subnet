@@ -103,7 +103,6 @@ def compute_eval_on_model( model: torch.nn.Module, batches: typing.List[torch.Te
             batches (:obj:`List[torch.Tensor]`): The batches to evaluate on.
             device (:obj:`torch.device`): The device to evaluate on.
     """
-    print (model)
     average_loss = 0
     num_batches = 0
     model.zero_grad()
@@ -206,8 +205,8 @@ def log_state( global_state: typing.Dict ):
         'best_miner_uid': global_state['best_miner_uid'],
         'best_miner_loss': global_state['best_miner_loss'],
     }
-    for uid in global_state.keys():
-        log[f'loss-{uid}'] = global_state[uid]['loss']  
+    for uid, state in global_state.items():
+        log[f'loss-{uid}'] = state['loss']  
     if config.wandb.on:
         wandb_run.log( log )
 
