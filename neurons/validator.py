@@ -139,7 +139,7 @@ def compute_miner_eval( miner_state, batches: typing.List[torch.Tensor], device 
 
     average_loss = average_loss / max(num_batches, 1)
     bt.logging.success(f"Updated model loss: {average_loss} for uid: {uid}")
-    return 
+    return average_loss
 
 
 def optionally_update_miner_model( uid, miner_state ):
