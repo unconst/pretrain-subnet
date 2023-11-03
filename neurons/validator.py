@@ -63,8 +63,8 @@ try:
         # Pull random batches from Falcon Dataset
         random_pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages)]
         loader = pretrain.dataset.SubsetFalconLoader(
-            batch_size = 3,
-            sequence_length = 512,
+            batch_size = pretrain.BATCH_SIZE,
+            sequence_length = pretrain.SEQUENCE_LENGTH,
             pages = random_pages
         )
         data_list = list(loader)
