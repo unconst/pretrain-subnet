@@ -247,7 +247,7 @@ while True:
         log_state( global_state )
 
         # === Set weights ===
-        if global_state['best_miner_uid'] != None:
+        if 'best_miner_uid' in global_state:
             weights = torch.zeros_like( metagraph.S )
             weights[ global_state['best_miner_uid'] ] = 1
         else:
