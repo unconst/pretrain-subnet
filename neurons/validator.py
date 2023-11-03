@@ -31,6 +31,7 @@ import torch
 import string
 import random
 import typing
+import traceback
 import pretrain
 import argparse
 import bittensor as bt
@@ -102,7 +103,9 @@ def compute_eval_on_model( model, batches: typing.List[torch.Tensor], device ):
     """
     average_loss = 0
     num_batches = 0
-    model.zero_grad().eval().to( device )
+    model.zero_grad()
+    model.eval()
+    model.to( device )
     for i, batch in enumerate( batches ):
         with torch.no_grad():
             try:
@@ -172,7 +175,7 @@ def update_state_for_uid( uid: int, response: pretrain.protocol.GetRun ) -> typi
         bt.logging.debug(f"Update Uid: {uid}: loaded: {ARTIFACT_NAME}")
 
     except Exception as e:
-        raise Exception(f"Error in downloading weights of uid {uid} \n {e}")
+        raise Exception(f"Error in downloading weights of uid {uid} \n {e} \n {traceback.format_exc()}")
     
     # === Compute eval on model ===
     loss = compute_eval_on_model( model, random_pages, config.device )
@@ -229,7 +232,7 @@ while True:
                 global_state[ uid ] = update_state_for_uid( uid, response )
             
             except Exception as e:
-                bt.logging.error(f"Error in state update for uid: {uid} with error: \n {e}")
+                bt.logging.error(f"Error in state update for uid: {uid} with error: \n {e} \n {traceback.format_exc()}")
                 continue
 
         # === Find best ===
@@ -265,5 +268,5 @@ while True:
         wandb_run.finish()
 
     except Exception as e:
-        bt.logging.error(f"Error in validator loop \n {e}")
+        bt.logging.error(f"Error in validator loop \n {e} \n {traceback.format_exc()}")
 
