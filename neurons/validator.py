@@ -117,7 +117,7 @@ def compute_eval_on_model( model, batches: typing.List[torch.Tensor], device ):
     return average_loss / max(num_batches, 1)
 
 
-def update_state_for_uid( uid: int ) -> typing.Dict:
+def update_state_for_uid( uid: int, response: pretrain.protocol.GetRun ) -> typing.Dict:
     """ Updates the state for a given uid.
         Args:
             uid (:obj:`int`): The uid to update.
