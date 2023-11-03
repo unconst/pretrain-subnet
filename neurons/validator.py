@@ -135,7 +135,7 @@ while True:
         bt.logging.info(f"average_loss = {average_loss}")
         wandb.log({"uid": uid, "average_loss": average_loss, "step": i})
         previous_loss = loss_dict.get(uid, {}).get("loss")
-        current_timestamp = wandb.run.created_at
+        current_timestamp = run.created_at
 
         if previous_loss is None or average_loss < previous_loss:
             loss_dict[uid] = {"loss": average_loss, "timestamp": current_timestamp}
