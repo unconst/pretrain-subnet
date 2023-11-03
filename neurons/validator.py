@@ -275,6 +275,7 @@ while True:
     except KeyboardInterrupt:
         bt.logging.info("KeyboardInterrupt caught, gracefully closing the wandb run...")
         if config.wandb.on: wandb_run.finish()
+        dendrite.stop()
         exit()
 
     except Exception as e:
