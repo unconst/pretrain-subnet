@@ -154,10 +154,10 @@ def optionally_update_miner_model( uid, miner_state ):
     
     # === Check if the model needs updating ===    
     model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-    miner_state['model_timestamp'] = model_timestamp # Update model timestamp.
     if model_timestamp == miner_state['model_timestamp']:
         bt.logging.debug('Miner model artifact is up to date.')
         return 
+    miner_state['model_timestamp'] = model_timestamp # Update model timestamp.
 
     # === Load the model from file ===
     bt.logging.debug(f"Updating model for: {uid}")
