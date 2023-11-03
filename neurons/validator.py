@@ -102,7 +102,7 @@ while True:
             config = AutoConfig.from_pretrained(huggingface_repo)
             model = AutoModelForCausalLM.from_pretrained(huggingface_repo).to(device)
             tokenizer = AutoTokenizer.from_pretrained(huggingface_repo)
-            repo_api_url = f"https://huggingface.co/api/repos/{hotkey}"
+            repo_api_url = f"https://huggingface.co/api/repos/{huggingface_repo}"
             response = requests.get(repo_api_url)
 
             if response.ok:
