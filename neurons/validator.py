@@ -30,7 +30,7 @@ import transformers
 import argparse
 import bittensor as bt
 import requests
-from transformers import AutoModelForPreTraining, AutoConfig, AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoModelForPreTraining, AutoConfig, AutoTokenizer, AutoModelForCausalLM, AutoModel
 
 
 def get_config():
@@ -112,12 +112,12 @@ while True:
             tokenizer = AutoTokenizer.from_pretrained(huggingface_repo)
 
             # Load the weights
-            model_bin_url = f"https://huggingface.co/{huggingface_repo}/resolve/main/pytorch_model.bin"
+            model_bin_url = f"https://huggingface.co/{huggingface_repo}/resolve/main/model.safetensors"
             response = requests.get(model_bin_url, stream=True)
             if response.status_code == 200:
-                with open("pytorch_model.bin", "wb") as f:
+                with open("model.safetensors", "wb") as f:
                     f.write(response.content)
-                model.load_state_dict(torch.load("pytorch_model.bin"))
+                model.load_state_dict(torch.load("model.safetensors"))
             else:
                 bt.logging.error(f"Failed to download model.bin from {model_bin_url}")
             
