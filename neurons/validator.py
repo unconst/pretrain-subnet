@@ -136,7 +136,10 @@ def compute_miner_eval( miner_state, batches: typing.List[torch.Tensor], device 
                 bt.logging.debug(f'Acc: step: {i} loss: {loss}')
             except Exception as e:
                 bt.logging.error(f"Error in loss calc: \n {e}")
-    return average_loss / max(num_batches, 1)
+
+    average_loss = average_loss / max(num_batches, 1)
+    bt.logging.success(f"Updated model loss: {average_loss} for uid: {uid}")
+    return 
 
 
 def optionally_update_miner_model( uid, miner_state ):
@@ -183,7 +186,7 @@ def optionally_update_miner_model( uid, miner_state ):
     # === Save new model to path ===
     model_save_path = f'{config.full_path}/uid{uid}-' + ARTIFACT_NAME 
     torch.save( model.state_dict(), model_save_path )
-    bt.logging.success(f"Saved model to path {model_save_path} for {uid}")
+    bt.logging.success(f"Saved updated model to path: {model_save_path} for uid: {uid}")
     miner_state['model_path'] = model_save_path
 
 def log_state( global_state: typing.Dict ):
@@ -213,10 +216,10 @@ while True:
     bt.logging.success(f"Starting validator loop")
     try:
         # === Get next batches ===
-        random_pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages)]
+        random_pages = [ random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages) ]
         eval_batches = list(pretrain.dataset.SubsetFalconLoader(
-            batch_size = 3,
-            sequence_length = 512,
+            batch_size = pretrain.batch_size,
+            sequence_length = pretrain.sequence_length,
             pages = random_pages
         ))
 
