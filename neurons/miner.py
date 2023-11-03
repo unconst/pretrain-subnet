@@ -94,6 +94,11 @@ def run_command(command, cwd):
         raise subprocess.CalledProcessError(result.returncode, result.args, output=result.stdout, stderr=result.stderr)
     return result.stdout.strip()
 
+run_command(['git', 'lfs', 'track', "*.safetensors"], cwd=repo_local_path)
+run_command(['git', 'lfs', 'track', "*.bin"], cwd=repo_local_path)
+run_command(['git', 'lfs', 'track', "*.msgpack"], cwd=repo_local_path)
+run_command(['git', 'lfs', 'track', "*.ot"], cwd=repo_local_path)
+
 # Initialize the dictionary to store the file modification times
 file_mod_times = get_all_file_paths_and_timestamps(repo_local_path)
 
@@ -112,7 +117,6 @@ axon.start().serve(
 )
 bt.logging.success( f'Served Axon.' )
 
-
 # === Run ===
 step = 1
 subtensor.set_weights (
@@ -125,7 +129,7 @@ subtensor.set_weights (
 while True:
     try:
         bt.logging.info(f"checking for updates...")
-        run_command(['git', 'lfs', 'track', "*.safetensors"], cwd=repo_local_path)
+        
         current_file_mod_times = get_all_file_paths_and_timestamps(repo_local_path)
         files_changed = False
 
