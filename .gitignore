@@ -4,9 +4,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# miner models
-miners/*
-
 # C extensions
 *.so
 **.ipynb
