@@ -25,7 +25,8 @@ __spec_version__ = (
     + (1 * int(version_split[2]))
 )
 NETUID = 9
-
+BATCH_SIZE = 3
+SEQUENCE_LENGTH = 512
 from . import model as model
 from . import dataset as dataset
 from . import protocol as protocol

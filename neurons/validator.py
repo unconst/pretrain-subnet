@@ -136,6 +136,7 @@ try:
                 except Exception as e:
                     bt.logging.error(f"Error in loss calc of uid {uid} \n {e}")
 
+
             average_loss /= max(num_batches, 1)
             bt.logging.info(f"average_loss = {average_loss}")
             previous_loss = loss_dict[uid]["loss"]
