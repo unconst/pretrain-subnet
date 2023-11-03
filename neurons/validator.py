@@ -84,6 +84,7 @@ if config.wandb.on:
 # === Init vars ===
 api = wandb.Api( timeout = 100 )
 global_state = {}
+global_state['miners'] = {}
 
 # === Helper functions ===
 def get_available_uids( metagraph ) -> typing.List[int]:
@@ -205,8 +206,7 @@ def log_state( global_state: typing.Dict ):
         'best_miner_uid': global_state['best_miner_uid'],
         'best_miner_loss': global_state['best_miner_loss'],
     }
-    for uid, state in global_state.items():
-        print (state)
+    for uid, state in global_state['miners'].items():
         log[f'loss-{uid}'] = state['loss']  
     if config.wandb.on:
         wandb_run.log( log )
@@ -236,7 +236,7 @@ while True:
         for uid, response in zip( avail_uids, get_run_responses ):
             try:    
                 # === Update global state ===
-                global_state[ uid ] = update_state_for_uid( uid, response, eval_batches )
+                global_state['miners'][ uid ] = update_state_for_uid( uid, response, eval_batches )
             
             except Exception as e:
                 bt.logging.error(f"Error in state update for uid: {uid} with error: \n {e} \n {traceback.format_exc()}")
