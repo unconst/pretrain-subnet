@@ -52,6 +52,7 @@ metagraph = subtensor.metagraph( pretrain.NETUID )
 torch.backends.cudnn.benchmark = True
 loss_dict = {}
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+torch.autograd.set_detect_anomaly(True)
 
 
 while True:
