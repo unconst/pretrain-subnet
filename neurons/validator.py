@@ -113,9 +113,6 @@ while True:
             
         model.zero_grad()
         model.train()
-        model.to(config.device)
-
-        # Run eval
         bt.logging.info(f"starting eval loop on uid {uid}")
         average_loss = 0
         num_batches = 0
