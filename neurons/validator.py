@@ -243,6 +243,7 @@ while True:
                 global_state['best_miner_loss'] = miner_state['loss']
 
         # === Log state ==
+        bt.logging.success(global_state)
         log_state( global_state )
 
         # === Set weights ===
