@@ -138,7 +138,7 @@ def optionally_update_miner_model( uid, miner_state ):
     # === Get model run === 
     run_id = response.run_id
     run = api.run(f"opentensor-dev/openpretraining/{run_id}")
-    miner_state['run_id'] = run
+    miner_state['run_id'] = run_id
 
     # === Check hotkey match ===
     hotkey = run.config.get('hotkey')
