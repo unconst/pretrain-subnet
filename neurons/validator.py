@@ -162,6 +162,9 @@ def update_state_for_uid( uid: int, response: pretrain.protocol.GetRun ) -> typi
 
     # === Check if model is already up to date ===
     model_file = run.file( ARTIFACT_NAME )
+    if model_file == None:
+        raise Exception("Miner did not upload a model")
+    bt.logging.debug(f"{datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S')}")
     model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
     if model_timestamp == miner_state['model_timestamp']:
         raise Exception("Model is already up to date")
