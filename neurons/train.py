@@ -28,7 +28,7 @@ def get_config():
     parser.add_argument("--ss58", type=str, help="ss58 of mining hotkey", default=None)
     known_args, _ = parser.parse_known_args()
     ss58 = known_args.ss58
-    default_model_path = f'~/pretrain-subnet/neurons/pretraining_model/{ss58}' if ss58 else '~/pretrain-subnet/neurons/pretraining_model/default'
+    default_model_path = f'~/pretrain-subnet/neurons/pretraining_model/{ss58}/model.bin' if ss58 else '~/pretrain-subnet/neurons/pretraining_model/hotkey/model.bin'
 
     # Now add the model_path argument with the proper default
     parser.add_argument("--model_path", type=str, help="Run name.", default=default_model_path)
@@ -46,7 +46,7 @@ model.train()
 model.to( config.device )
 
 optimizer = torch.optim.AdamW( model.parameters(), lr=0.000001, weight_decay=0.01 )
-loader = pretrain.dataset.SubsetFalconLoader( batch_size=3, sequence_length=512, pages=[1, 2, 3, 4, 5] )
+loader = pretrain.dataset.SubsetFalconLoader( batch_size=3, sequence_length=512, pages=[1] )
 
 num_epochs = 5 
 for epoch in range(num_epochs):

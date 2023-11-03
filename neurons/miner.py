@@ -54,20 +54,19 @@ if wallet.hotkey.ss58_address not in metagraph.hotkeys: raise Exception("You are
 my_uid = metagraph.hotkeys.index( wallet.hotkey.ss58_address )
 bt.logging.success( f'You are registered with address: {wallet.hotkey.ss58_address} and uid: {my_uid}' )
 
-
 # === Authenticate to Hugging Face ===
 api = HfApi()
 user = api.whoami(HfFolder.get_token())
 username = user['name']
 
 # === Prepare Hugging Face repository ===
-model_name = "pretraining_model"
+model_name = f"{wallet.hotkey.ss58_address}"
 repo_name = f"{username}/{model_name}"
 repo_url = api.create_repo(repo_name, private=False, exist_ok=True) 
-repo_local_path = os.path.join(os.getcwd(), model_name)
+repo_local_path = os.path.expanduser(f"~/pretrain-subnet/neurons/pretraining_model/{model_name}")
 
 repo = Repository(local_dir=repo_local_path, clone_from=repo_url)
-print(f"Cloned repository {repo_name} to {repo_local_path}")
+bt.logging.info(f"Cloned repository {repo_name} to {repo_local_path}")
 
 
 def update_model(model, model_path):
@@ -75,13 +74,13 @@ def update_model(model, model_path):
     repo.git_add(model_path)
     repo.git_commit(f"Update model at {time.strftime('%Y-%m-%d %H:%M:%S')}")
     repo.git_push()
-    print(f"Pushed model to Hugging Face Hub at {repo_url}")
+    bt.logging.info(f"Pushed model to Hugging Face Hub at {repo_url}")
 
 def get_url( synapse: pretrain.protocol.GetUrl ) -> pretrain.protocol.GetUrl:
     synapse.huggingface_url = repo_url
     return synapse
 
-model_path = os.path.expanduser(f"~/pretrain-subnet/neurons/pretraining_model/{wallet.hotkey.ss58_address}")
+model_path = os.path.expanduser(f"~/pretrain-subnet/neurons/pretraining_model/{model_name}/model.bin")
 timestamp = os.path.getmtime( model_path )
 model = pretrain.model.get_model( )
 update_model(model, model_path) 
@@ -120,12 +119,12 @@ while True:
 
         new_timestamp = os.path.getmtime( model_path )
         if new_timestamp != timestamp:
+            bt.logging.info(f"Found newer model at {model_path}")
             model = pretrain.model.get_model()
             model_weights = torch.load(model_path)
             model.load_state_dict(model_weights)
             update_model(model, model_path)
             timestamp = new_timestamp
-            print(f"Found newer model at {model_path}")
 
         time.sleep( 10 )
         step += 1
