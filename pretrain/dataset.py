@@ -23,8 +23,6 @@ from tqdm import tqdm
 from torch.utils.data import IterableDataset
 from transformers import GPT2Tokenizer
 
-model_name = 'distilgpt2'
-
 class SubsetFalconLoader(IterableDataset):
     
     max_pages: int = 968000015
