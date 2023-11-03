@@ -60,7 +60,7 @@ while True:
     # Pull random batches from Falcon Dataset
     random_pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages)]
     loader = pretrain.dataset.SubsetFalconLoader(
-        batch_size = 3,
+        batch_size = 1,
         sequence_length = 512,
         pages = random_pages
     )
