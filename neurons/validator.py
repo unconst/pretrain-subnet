@@ -30,7 +30,7 @@ import transformers
 import argparse
 import bittensor as bt
 import requests
-from transformers import AutoModelForPreTraining, AutoConfig, AutoTokenizer
+from transformers import AutoModelForPreTraining, AutoConfig, AutoTokenizer, AutoModelForCausalLM
 
 
 def get_config():
