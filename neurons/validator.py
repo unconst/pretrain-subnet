@@ -26,6 +26,7 @@
 import torch
 import random
 import pretrain
+import transformers
 import argparse
 import bittensor as bt
 import requests
@@ -41,6 +42,17 @@ def get_config():
     bt.axon.add_args(parser)
     config = bt.config(parser)
     return config
+
+def get_model_class(config):
+    model_type = config.model_type
+    try:
+        if hasattr(transformers, f"{model_type}ForPreTraining"):
+            return getattr(transformers, f"{model_type}ForPreTraining")
+        else:
+            return getattr(transformers, f"{model_type}Model")
+    except AttributeError:
+        bt.logging.error(f"No model class found for model type: {model_type}")
+        return None
 
 config = get_config()
 bt.logging( config = config )
@@ -93,7 +105,10 @@ while True:
         try:
             bt.logging.info(f"downloading model from {huggingface_repo}")
             config = AutoConfig.from_pretrained(huggingface_repo)
-            model = AutoModelForPreTraining.from_config(config)
+            model_class = get_model_class(config)
+            if model_class is None:
+                raise ValueError(f"No model class available for model type: {config.model_type}")
+            model = model_class.from_config(config)
             tokenizer = AutoTokenizer.from_pretrained(huggingface_repo)
 
             # Load the weights
@@ -102,10 +117,9 @@ while True:
             if response.status_code == 200:
                 with open("pytorch_model.bin", "wb") as f:
                     f.write(response.content)
-                model.load_state_dict(torch.load("pytorch_model.bin", map_location=config.device))
+                model.load_state_dict(torch.load("pytorch_model.bin", map_location='cpu'))
             else:
                 bt.logging.error(f"Failed to download model.bin from {model_bin_url}")
-                continue
             
             # Load the state dict directly from the downloaded file
             model = AutoModel.from_pretrained(huggingface_repo)

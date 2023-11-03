@@ -19,5 +19,5 @@
 import typing
 import bittensor as bt
 
-class GetUrl( bt.Synapse ):        
-    huggingface_url: typing.Optional[ str ] = None
+class GetRepo( bt.Synapse ):        
+    huggingface_repo: typing.Optional[ str ] = None

@@ -125,7 +125,7 @@ subtensor.set_weights (
 while True:
     try:
         bt.logging.info(f"checking for updates...")
-        # Get the current state of the files
+        run_command(['git', 'lfs', 'track', "*.safetensors"], cwd=repo_local_path)
         current_file_mod_times = get_all_file_paths_and_timestamps(repo_local_path)
         files_changed = False
 
@@ -136,6 +136,7 @@ while True:
                     bt.logging.info(f"Detected change in file: {file_path}")
                     files_changed = True
                     file_mod_times[file_path] = current_mod_time
+                    run_command(['git', 'add', file_path], cwd=repo_local_path) 
 
         # Check for deleted files
         deleted_files = [file for file in file_mod_times if file not in current_file_mod_times]
@@ -149,6 +150,8 @@ while True:
                     except subprocess.CalledProcessError as e:
                         bt.logging.error(f"Failed to remove {file_path}: {e.stderr}")
                     del file_mod_times[file_path]  # Remove from our tracked files
+
+        run_command(['git', 'add', '.gitattributes'], cwd=repo_local_path) 
 
         # If any file was changed, push to Hugging Face
         if files_changed:
