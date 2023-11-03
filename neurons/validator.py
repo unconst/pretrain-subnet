@@ -43,17 +43,6 @@ def get_config():
     config = bt.config(parser)
     return config
 
-# def get_model_class(config):
-#     model_type = config.model_type
-#     try:
-#         if hasattr(transformers, f"{model_type}ForPreTraining"):
-#             return getattr(transformers, f"{model_type}ForPreTraining")
-#         else:
-#             return getattr(transformers, f"{model_type}Model")
-#     except AttributeError:
-#         bt.logging.error(f"No model class found for model type: {model_type}")
-#         return None
-
 config = get_config()
 bt.logging( config = config )
 wallet = bt.wallet( config = config )
@@ -105,19 +94,16 @@ while True:
         try:
             bt.logging.info(f"downloading model from {huggingface_repo}")
             config = AutoConfig.from_pretrained(huggingface_repo)
-            # model_class = get_model_class(config)
-            # if model_class is None:
-            #     raise ValueError(f"No model class available for model type: {config.model_type}")
             model = AutoModelForCausalLM.from_pretrained(huggingface_repo)
             tokenizer = AutoTokenizer.from_pretrained(huggingface_repo)
 
             # Load the weights
-            model_bin_url = f"https://huggingface.co/{huggingface_repo}/resolve/main/model.safetensors"
+            model_bin_url = f"https://huggingface.co/{huggingface_repo}/resolve/main/pytorch_model.bin"
             response = requests.get(model_bin_url, stream=True)
             if response.status_code == 200:
-                with open("model.safetensors", "wb") as f:
+                with open("pytorch_model.bin", "wb") as f:
                     f.write(response.content)
-                model.load_state_dict(torch.load("model.safetensors"))
+                model.load_state_dict(torch.load("pytorch_model.bin"))
             else:
                 bt.logging.error(f"Failed to download model.bin from {model_bin_url}")
             
