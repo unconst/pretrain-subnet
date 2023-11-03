@@ -125,9 +125,7 @@ while True:
                 
                 # Now we tokenize the batch of raw text right here
                 inputs = tokenizer(batch_text, return_tensors='pt', padding=True, truncation=True)
-                inputs = {k: v.to(config.device) for k, v in inputs.items()}  # Send inputs to device
-                
-                # Forward pass, get the outputs from the model
+                inputs = {k: v.to(device) for k, v in inputs.items()} 
                 outputs = model(**inputs, labels=inputs['input_ids'])
                 
                 # Extract the loss
