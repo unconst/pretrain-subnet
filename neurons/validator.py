@@ -120,15 +120,26 @@ while True:
         for i, batch in enumerate(data_list):
             try:
                 bt.logging.info(f"starting batch {i}")
-                inputs = tokenizer(batch, return_tensors='pt', padding=True, truncation=True).to(config.device)
+                
+                # Ensure batch is a list of strings
+                if not all(isinstance(text, str) for text in batch):
+                    raise ValueError("Batch must be a list of strings.")
+                
+                inputs = tokenizer(batch, return_tensors='pt', padding=True, truncation=True)
+                inputs = {k: v.to(config.device) for k, v in inputs.items()}  # Send inputs to device
+                
+                # Forward pass, get the outputs from the model
                 outputs = model(**inputs, labels=inputs['input_ids'])
-                loss = outputs.loss.detach().item()
+                
+                # Extract the loss
+                loss = outputs.loss.item()  # Use `.item()` to get a Python float
                 average_loss += loss
                 num_batches += 1
-                bt.logging.success(f'Batch {i} loss: {loss}')
+                bt.logging.info(f'Batch {i} loss: {loss}')  # Changed from success to info
 
             except Exception as e:
                 bt.logging.error(f"Error in loss calc of uid {uid} \n {e}")
+                continue 
 
         average_loss /= max(num_batches, 1)
         bt.logging.info(f"average_loss = {average_loss}")
