@@ -154,6 +154,8 @@ while True:
 
     best_uid, best_record = min(loss_dict.items(), key=lambda x: (x[1]['loss'], x[1]['timestamp']))
 
+    best_average_loss = best_record['loss']
+    best_timestamp = best_record['timestamp']
     bt.logging.info(f"uid {best_uid} has  best loss of {best_average_loss} and timestamp {best_timestamp}")
     wandb.log({"best_uid": best_uid, "best_average_loss": best_average_loss, "best_timestamp": best_timestamp})
 
