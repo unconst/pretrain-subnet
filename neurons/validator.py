@@ -167,7 +167,7 @@ def optionally_update_miner_model( uid, miner_state ):
     model.load_state_dict(model_weights)
 
     # === Save new model to path ===
-    model_save_path = 'uid{uid}-' + ARTIFACT_NAME 
+    model_save_path = f'uid{uid}-' + ARTIFACT_NAME 
     torch.save( model.state_dict(), model_save_path )
     bt.logging.success(f"Saved model to path {model_save_path} for {uid}")
     miner_state['model_path'] = model_save_path
@@ -226,7 +226,7 @@ while True:
 
                 # === Update model loss ===
                 if miner_state['model_path'] != None:
-                    compute_miner_eval( miner_state, eval_batches, config.device )
+                    miner_state['loss'] = compute_miner_eval( miner_state, eval_batches, config.device )
 
                 # === Update global state ===
                 global_state['miners'][ uid ] = miner_state
