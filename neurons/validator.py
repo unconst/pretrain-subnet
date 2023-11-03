@@ -213,7 +213,7 @@ while True:
             try:    
 
                 # === Get miner state or create ===
-                miner_state = global_state[ uid ] if uid in global_state else {
+                miner_state = global_state['miners'][ uid ] if uid in global_state['miners'] else {
                     'run_id': None, # Records the wandb run id of the miner.
                     'model_timestamp': None, # Records the timestamp of the last model update.
                     'eval_timestamp': None, # Records the timestamp of the last eval.
