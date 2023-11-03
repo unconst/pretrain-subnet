@@ -64,7 +64,7 @@ while True:
     random_pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages)]
     loader = pretrain.dataset.SubsetFalconLoader(
         batch_size = 1,
-        sequence_length = 256,
+        sequence_length = 4,
         pages = random_pages
     )
     data_list = list(loader)
