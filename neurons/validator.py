@@ -124,7 +124,7 @@ while True:
                 bt.logging.info(f"starting batch {i}")
                 
                 # Now we tokenize the batch of raw text right here
-                inputs = tokenizer(batch_text, return_tensors='pt', padding=True, truncation=True)
+                inputs = tokenizer(batch_text, return_tensors='pt', padding=True, truncation=True).to(device)
                 inputs = {k: v.to(device) for k, v in inputs.items()} 
                 outputs = model(**inputs, labels=inputs['input_ids'])
                 
