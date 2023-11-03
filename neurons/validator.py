@@ -33,6 +33,7 @@ import bittensor as bt
 import requests
 from transformers import AutoModelForPreTraining, AutoConfig, AutoTokenizer, AutoModelForCausalLM, AutoModel
 
+wandb.init(project="openpretraining", entity="opentensor-dev")
 
 def get_config():
     parser = argparse.ArgumentParser()
@@ -144,41 +145,16 @@ while True:
 
         average_loss /= max(num_batches, 1)
         bt.logging.info(f"average_loss = {average_loss}")
-        previous_loss = loss_dict[uid]["loss"]
+        wandb.log({"uid": uid, "average_loss": average_loss, "step": i})
+        previous_loss = loss_dict.get(uid, {}).get("loss")
 
-        if previous_loss == None:
-            loss_dict[uid]["loss"] = average_loss
-        else:
-            if average_loss < previous_loss:
-                # Update dict with better loss and timestamp
-                loss_dict[uid]["loss"] = average_loss
+        if previous_loss is None or average_loss < previous_loss:
+            loss_dict[uid] = {"loss": average_loss, "timestamp": current_timestamp}
 
-    # Get best average loss and best uid
-    # Best uid if tie on loss is based on timestamp of run upload
-    best_average_loss = None
-    best_timestamp = None
-    best_uid = None
-    for uid in loss_dict.keys():
-        uid_loss = loss_dict[uid]['loss']
-        uid_timestamp = loss_dict[uid]['timestamp']
-        if uid_loss == None: continue
-        if best_average_loss == None:
-            best_average_loss = uid_loss
-            best_uid = uid
-            best_timestamp = uid_timestamp
-        else:
-            if uid_loss < best_average_loss:
-                best_average_loss = uid_loss
-                best_uid = uid
-                best_timestamp = uid_timestamp
-            elif uid_loss == best_average_loss:
-                if uid_timestamp < best_timestamp:
-                    best_average_loss = uid_loss
-                    best_uid = uid
-                    best_timestamp = uid_timestamp
-
+    best_uid, best_record = min(loss_dict.items(), key=lambda x: (x[1]['loss'], x[1]['timestamp']))
 
     bt.logging.info(f"uid {best_uid} has  best loss of {best_average_loss} and timestamp {best_timestamp}")
+    wandb.log({"best_uid": best_uid, "best_average_loss": best_average_loss, "best_timestamp": best_timestamp})
 
     if best_uid != None:
         weights = torch.zeros_like( metagraph.S )
