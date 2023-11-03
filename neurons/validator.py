@@ -43,6 +43,7 @@ ARTIFACT_NAME:str = "model.pth"
 def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument( "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
+    parser.add_argument( '--wandb.on', action='store_true', help='Turn on wandb logging.' )
     bt.subtensor.add_args(parser)
     bt.logging.add_args(parser)
     bt.wallet.add_args(parser)
@@ -64,20 +65,21 @@ my_uid = metagraph.hotkeys.index( wallet.hotkey.ss58_address )
 bt.logging.success( f'You are registered with address: {wallet.hotkey.ss58_address} and uid: {my_uid}' )
 
 # === Init wandb ===
-run_name = f'validator-{my_uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
-config.uid = my_uid
-config.hotkey = wallet.hotkey.ss58_address
-config.run_name = run_name
-wandb_run =  wandb.init(
-    name = run_name,
-    anonymous = "allow",
-    reinit = False,
-    project = 'openpretraining',
-    entity = 'opentensor-dev',
-    config = config,
-)
-bt.logging.success( f'Started wandb run' )
-wandb.init(project="openpretraining", entity="opentensor-dev")
+if config.wandb.on:
+    run_name = f'validator-{my_uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
+    config.uid = my_uid
+    config.hotkey = wallet.hotkey.ss58_address
+    config.run_name = run_name
+    wandb_run =  wandb.init(
+        name = run_name,
+        anonymous = "allow",
+        reinit = False,
+        project = 'openpretraining',
+        entity = 'opentensor-dev',
+        config = config,
+    )
+    bt.logging.success( f'Started wandb run' )
+    wandb.init(project="openpretraining", entity="opentensor-dev")
 
 # === Init vars ===
 api = wandb.Api( timeout = 100 )
@@ -202,7 +204,8 @@ def log_state( global_state: typing.Dict ):
     }
     for uid in global_state.keys():
         log[f'loss-{uid}'] = global_state[uid]['loss']  
-    wandb_run.log( log )
+    if config.wandb.on:
+        wandb_run.log( log )
 
     # Log to screen.
     bt.logging.info(log)
@@ -265,7 +268,7 @@ while True:
 
     except KeyboardInterrupt:
         bt.logging.info("KeyboardInterrupt caught, gracefully closing the wandb run...")
-        wandb_run.finish()
+        if config.wandb.on: wandb_run.finish()
 
     except Exception as e:
         bt.logging.error(f"Error in validator loop \n {e} \n {traceback.format_exc()}")
