@@ -152,7 +152,7 @@ while True:
     for uid in loss_dict.keys():
         uid_loss = loss_dict[uid]['loss']
         uid_timestamp = loss_dict[uid]['timestamp']
-        wandb.log({"uid": uid, "uid_loss": average_loss, "timestamp": {loss_dict[uid]["timestamp"]})
+        wandb.log({"uid": uid, "uid_loss": average_loss, "timestamp": loss_dict[uid]["timestamp"]})
         if uid_loss == None: continue
         if best_average_loss == None:
             best_average_loss = uid_loss
