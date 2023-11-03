@@ -51,7 +51,8 @@ dendrite = bt.dendrite( wallet = wallet )
 metagraph = subtensor.metagraph( pretrain.NETUID )
 torch.backends.cudnn.benchmark = True
 loss_dict = {}
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = "cpu"
 torch.autograd.set_detect_anomaly(True)
 
 
