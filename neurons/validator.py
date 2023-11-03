@@ -28,6 +28,7 @@ import random
 import pretrain
 import transformers
 import argparse
+import wandb
 import traceback
 import bittensor as bt
 import requests
