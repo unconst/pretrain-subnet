@@ -106,8 +106,8 @@ try:
                 # model_weights = torch.load(artifact_name)
                 # CPU option 
                 model_weights = torch.load(artifact_name, map_location=torch.device('cpu'))
-
                 model.load_state_dict(model_weights)
+
             except Exception as e:
                 bt.logging.error(f"Error in downloading weights of uid {uid} \n {e}")
                 continue
@@ -153,7 +153,7 @@ try:
         for uid in loss_dict.keys():
             uid_loss = loss_dict[uid]['loss']
             uid_timestamp = loss_dict[uid]['timestamp']
-            wandb.log({"uid": uid, "uid_loss": average_loss, "timestamp": loss_dict[uid]["timestamp"]})
+            # wandb.log({"uid": uid, "uid_loss": average_loss, "timestamp": loss_dict[uid]["timestamp"]})
             if uid_loss == None: continue
             if best_average_loss == None:
                 best_average_loss = uid_loss
@@ -179,6 +179,8 @@ try:
             weights[best_uid] = 1
         else:
             weights = torch.ones_like( metagraph.S )
+
+        bt.logging.info(f"here is the loss dict: {loss_dict}")
 
         bt.logging.info(f"setting weights... Scores = {weights}")
         subtensor.set_weights(
