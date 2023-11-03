@@ -96,6 +96,7 @@ if config.wandb.on:
 
 # === Init vars ===
 api = wandb.Api( timeout = 100 )
+wins = {}
 global_state = {}
 global_state['miners'] = {}
 
@@ -205,7 +206,7 @@ def log_state( global_state: typing.Dict ):
         log['best_miner_uid'] = global_state['best_miner_uid']
         log['best_miner_loss'] = global_state['best_miner_loss']
     for uid, state in global_state['miners'].items():
-        if state['loss'] != None: log[f'loss-{uid}'] = sum(state['loss'])/len(state['loss'])  
+        if len(state['losses']) == 0 : log[f'loss-{uid}'] = sum(state['losses'])/len(state['losses'])  
     if config.wandb.on:
         wandb_run.log( log )
 
@@ -239,13 +240,14 @@ while True:
                     'uid': uid, # Records the miner's uid.
                     'model_path': None # Records the path to the miner's model.
                 }
+                miner_state['losses'].append(math.inf)
 
                 # === Optionally update the miner model ===
                 optionally_update_miner_model( uid, miner_state )
 
                 # === Update model loss ===
                 if miner_state['model_path'] != None:
-                    miner_state['loss'].append( compute_miner_eval( miner_state, eval_batches, config.device ) )
+                    miner_state['losses'][-1] = compute_miner_eval( miner_state, eval_batches, config.device )
 
                 # === Update global state ===
                 global_state['miners'][ uid ] = miner_state
@@ -254,6 +256,18 @@ while True:
                 bt.logging.error(f"Error in state update for uid: {uid} with error: \n {e} \n {traceback.format_exc()}")
                 continue
 
+        # === Find best ===
+        for miner_state in global_state['miners'].values():
+            if miner_state['losses'][-1] == None: continue
+            elif 'best_miner_loss' not in global_state or miner_state['losses'][-1] < global_state['best_miner_loss']:
+                global_state['best_miner_uid'] = miner_state['uid']
+                global_state['best_miner_loss'] = miner_state['losses']
+
+        # === Update global state ===
+        if 'best_miner_uid' in global_state:
+            wins[ global_state['best_miner_uid'] ] += 1
+
+
         # === Log state ==
         log_state( global_state )
 
@@ -261,11 +275,9 @@ while True:
         if metagraph.block.item() - last_weights_blocks > config.blocks_till_set_weights:
 
             # === Set weights ===
-            if 'best_miner_uid' in global_state:
-                weights = torch.zeros_like( metagraph.S )
-                weights[ global_state['best_miner_uid'] ] = 1
-            else:
-                weights = torch.ones_like( metagraph.S )
+            weights = torch.zeros_like( metagraph.S )
+            for uid in wins.keys():
+                weights[ uid ] = wins[ uid ] / sum( wins.values() )
             subtensor.set_weights(
                 netuid = pretrain.NETUID,
                 wallet = wallet,
@@ -276,6 +288,7 @@ while True:
             bt.logging.success(f"Served weights: {weights.tolist()}")
 
             last_weights_blocks = metagraph.block.item()
+            wins = {}
 
         # === Update state ===
         metagraph = subtensor.metagraph( pretrain.NETUID )
