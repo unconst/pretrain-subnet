@@ -97,18 +97,22 @@ def get_available_uids( metagraph ) -> typing.List[int]:
     available_uids = [ uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving and (metagraph.block.item() - metagraph.last_update[uid] < 500)]
     return available_uids   
 
-def compute_eval_on_model( model: torch.nn.Module, batches: typing.List[torch.Tensor], device ):
+def compute_miner_eval( miner_state, batches: typing.List[torch.Tensor], device ):
     """ Computes the average loss of a model on a list of batches.
         Args:
-            model (:obj:`nn.Module`): The model to evaluate.
             batches (:obj:`List[torch.Tensor]`): The batches to evaluate on.
             device (:obj:`torch.device`): The device to evaluate on.
     """
-    average_loss = 0
-    num_batches = 0
+    model_save_path = miner_state['model_path']
+    model = pretrain.model.get_model()
+    model_weights = torch.load( model_save_path, map_location=torch.device(device))
+    model.load_state_dict(model_weights)
     model.zero_grad()
     model.eval()
     model.to( device )
+
+    average_loss = 0
+    num_batches = 0
     for i, batch in enumerate( batches ):
         with torch.no_grad():
             try:
@@ -123,74 +127,50 @@ def compute_eval_on_model( model: torch.nn.Module, batches: typing.List[torch.Te
     return average_loss / max(num_batches, 1)
 
 
-def update_state_for_uid( uid: int, response: pretrain.protocol.GetRun, eval_batches ) -> typing.Dict:
-    """ Updates the state for a given uid.
-        Args:
-            uid (:obj:`int`): The uid to update.
-        Returns:
-            (:obj:`Dict`): The updated state.
-    """
+def optionally_update_miner_model( uid, miner_state ):
 
-    bt.logging.debug(f"Updating state for uid {uid}")
-
-    # === Get this models state ===
-    miner_state = global_state[ uid ] if uid in global_state else {
-        'run_id': None, # Records the wandb run id of the miner.
-        'model_timestamp': None, # Records the timestamp of the last model update.
-        'eval_timestamp': None, # Records the timestamp of the last eval.
-        'loss': None, # Records the miners loss.
-        'hotkey': None, # Records the miner's hotkey.
-        'uid': None # Records the miner's uid.
-    }
-    miner_state['uid'] = uid
-
-    # === Pass on failed queries ===
+    # == Get uid's run ==
+    response = dendrite.query( metagraph.axons[uid], pretrain.protocol.GetRun(), timeout=1 )
     if not response.is_success: 
-        raise Exception("Miner query failed")
+        bt.logging.debug('Failed to get miner run')
+        return
     
     # === Get model run === 
     run_id = response.run_id
     run = api.run(f"opentensor-dev/openpretraining/{run_id}")
-    miner_state['run_id'] = run_id # Update run id.
-    bt.logging.debug(f"Update Uid: {uid}: Run {run_id}")
+    miner_state['run_id'] = run
 
     # === Check hotkey match ===
     hotkey = run.config.get('hotkey')
     if hotkey != metagraph.hotkeys[uid]:
-        raise Exception("Miner returned invalid hotkey")
-    miner_state['hotkey'] = hotkey # Update miner hotkey.
-    bt.logging.debug(f"Update Uid: {uid}: hotkey {hotkey}")
+        bt.logging.debug('Hotkey mismatch')
+        return 
 
-    # === Check if model is already up to date ===
+    # === Check if model exist ===
     model_file = run.file( ARTIFACT_NAME )
     if model_file == None:
-        raise Exception("Miner did not upload a model")
-    bt.logging.debug(f"{datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S')}")
+        bt.logging.debug('Miner has no model artifact.')
+        return 
+    
+    # === Check if the model needs updating ===    
     model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-    if model_timestamp == miner_state['model_timestamp']:
-        raise Exception("Model is already up to date")
     miner_state['model_timestamp'] = model_timestamp # Update model timestamp.
-    bt.logging.debug(f"Update Uid: {uid}: model_timestamp {model_timestamp}")
+    if model_timestamp == miner_state['model_timestamp']:
+        bt.logging.debug('Miner model artifact is up to date.')
+        return 
 
     # === Load the model from file ===
-    try:
-        model_file.download( replace = True ) # Replaces the model.pth file in the current directory.
-        model = pretrain.model.get_model()
-        model_weights = torch.load( ARTIFACT_NAME, map_location=torch.device('cpu'))
-        model.load_state_dict(model_weights)
-        bt.logging.debug(f"Update Uid: {uid}: loaded: {ARTIFACT_NAME}")
+    bt.logging.debug(f"Updating model for: {uid}")
+    model_file.download( replace = True ) # Replaces the model.pth file in the current directory.
+    model = pretrain.model.get_model()
+    model_weights = torch.load( ARTIFACT_NAME, map_location=torch.device('cpu'))
+    model.load_state_dict(model_weights)
 
-    except Exception as e:
-        raise Exception(f"Error in downloading weights of uid {uid} \n {e} \n {traceback.format_exc()}")
-    
-    # === Compute eval on model ===
-    loss = compute_eval_on_model( model, eval_batches, config.device )
-    miner_state["loss"] = loss
-    miner_state["eval_timestamp"] = time.time()
-    bt.logging.debug(f"Update Uid: {uid}: loss: {loss}")
-
-    # Return
-    return miner_state
+    # === Save new model to path ===
+    model_save_path = 'uid{uid}-' + ARTIFACT_NAME 
+    torch.save( model.state_dict(), model_save_path )
+    bt.logging.success(f"Saved model to path {model_save_path} for {uid}")
+    miner_state['model_path'] = model_save_path
 
 def log_state( global_state: typing.Dict ):
     """ Logs the global state to wandb and to screen.
@@ -226,17 +206,30 @@ while True:
             pages = random_pages
         ))
 
-        # === Get runs ===
-        avail_uids = get_available_uids( metagraph )
-        avail_axons = [ metagraph.axons[uid] for uid in avail_uids]
-        get_run_responses = dendrite.query( avail_axons, pretrain.protocol.GetRun(), timeout=1 )
-        bt.logging.debug(f"Available uid: {avail_uids}")
-
         # === Get models to update ===
-        for uid, response in zip( avail_uids, get_run_responses ):
+        for uid in get_available_uids( metagraph ):
             try:    
+
+                # === Get miner state or create ===
+                miner_state = global_state[ uid ] if uid in global_state else {
+                    'run_id': None, # Records the wandb run id of the miner.
+                    'model_timestamp': None, # Records the timestamp of the last model update.
+                    'eval_timestamp': None, # Records the timestamp of the last eval.
+                    'loss': None, # Records the miners loss.
+                    'hotkey': metagraph.hotkeys[uid], # Records the miner's hotkey.
+                    'uid': uid, # Records the miner's uid.
+                    'model_path': None # Records the path to the miner's model.
+                }
+
+                # === Optionally update the miner model ===
+                optionally_update_miner_model( uid, miner_state )
+
+                # === Update model loss ===
+                if miner_state['model_path'] != None:
+                    compute_miner_eval( miner_state, eval_batches, config.device )
+
                 # === Update global state ===
-                global_state['miners'][ uid ] = update_state_for_uid( uid, response, eval_batches )
+                global_state['miners'][ uid ] = miner_state
             
             except Exception as e:
                 bt.logging.error(f"Error in state update for uid: {uid} with error: \n {e} \n {traceback.format_exc()}")
@@ -267,7 +260,6 @@ while True:
         )
         bt.logging.success(f"Served weights: {weights.tolist()}")
 
-
         # === Update state ===
         metagraph = subtensor.metagraph( pretrain.NETUID )
         bt.logging.debug(f"Updated metagraph")
@@ -275,7 +267,6 @@ while True:
     except KeyboardInterrupt:
         bt.logging.info("KeyboardInterrupt caught, gracefully closing the wandb run...")
         if config.wandb.on: wandb_run.finish()
-        dendrite.stop()
         exit()
 
     except Exception as e:
