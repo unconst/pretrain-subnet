@@ -91,7 +91,7 @@ try:
             run_id = response.run_id
             bt.logging.info(f"got run name {run_id} from uid {uid}")
             run = api.run(f"opentensor-dev/openpretraining/{run_id}")
-            loss_dict[uid]["run_id"] = run
+            loss_dict[uid]["run_id"] = run_id
 
             # Hotkey of run must match that of the sending hotkey
             hotkey = run.config.get('hotkey')
