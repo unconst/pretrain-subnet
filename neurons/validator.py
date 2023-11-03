@@ -92,23 +92,24 @@ while True:
             raise ValueError("Hotkey mismatch")
         
         try:
+            filename = "model.safetensors"
             bt.logging.info(f"downloading model from {huggingface_repo}")
             config = AutoConfig.from_pretrained(huggingface_repo)
             model = AutoModelForCausalLM.from_pretrained(huggingface_repo)
             tokenizer = AutoTokenizer.from_pretrained(huggingface_repo)
 
             # Load the weights
-            model_bin_url = f"https://huggingface.co/{huggingface_repo}/resolve/main/pytorch_model.bin"
+            model_bin_url = f"https://huggingface.co/{huggingface_repo}/resolve/main/{filename}"
             response = requests.get(model_bin_url, stream=True)
             if response.status_code == 200:
-                with open("pytorch_model.bin", "wb") as f:
+                with open("{filename}", "wb") as f:
                     f.write(response.content)
-                model.load_state_dict(torch.load("pytorch_model.bin"))
+                model.load_state_dict(torch.load("{filename}"))
             else:
                 bt.logging.error(f"Failed to download model.bin from {model_bin_url}")
             
             # Load the state dict directly from the downloaded file
-            model = AutoModel.from_pretrained(huggingface_repo)
+            model = AutoModelForCausalLM.from_pretrained(huggingface_repo)
             model_state_dict = torch.load("model.bin")
             repo_api_url = f"https://huggingface.co/api/repos/{hotkey}"
             response = requests.get(repo_api_url)
