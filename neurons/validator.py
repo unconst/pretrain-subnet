@@ -243,7 +243,7 @@ while True:
                 continue
 
         # === Find best ===
-        best_miner_uid, best_miner_loss = min(global_state.items(), key=lambda x: (x[1]['loss'], x[1]['model_timestamp']))
+        best_miner_uid, best_miner_loss = min(global_state['miners'].items(), key=lambda x: (x[1]['loss'], x[1]['model_timestamp']))
         global_state['best_miner_uid'] = uid
         global_state['best_miner_loss'] = best_miner_loss
 
