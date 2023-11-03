@@ -97,7 +97,7 @@ while True:
             filename = "model.safetensors"
             bt.logging.info(f"downloading model from {huggingface_repo}")
             config = AutoConfig.from_pretrained(huggingface_repo)
-            model = AutoModelForCausalLM.from_pretrained(huggingface_repo)
+            model = AutoModelForCausalLM.from_pretrained(huggingface_repo).to(device)
             tokenizer = AutoTokenizer.from_pretrained(huggingface_repo)
             repo_api_url = f"https://huggingface.co/api/repos/{hotkey}"
             response = requests.get(repo_api_url)
@@ -113,6 +113,7 @@ while True:
             bt.logging.error(f"Error in downloading weights of uid {uid} \n {e}")
             continue
             
+        model = model.to(device)
         model.zero_grad()
         model.train()
         bt.logging.info(f"starting eval loop on uid {uid}")
