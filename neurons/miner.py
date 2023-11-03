@@ -76,14 +76,13 @@ def update_model(model, model_path):
     repo.git_push()
     bt.logging.info(f"Pushed model to Hugging Face Hub at {repo_url}")
 
-def get_url( synapse: pretrain.protocol.GetUrl ) -> pretrain.protocol.GetUrl:
-    synapse.huggingface_url = repo_url
+def get_url( synapse: pretrain.protocol.GetRepo ) -> pretrain.protocol.GetRepo:
+    synapse.huggingface_repo = repo_name
     return synapse
 
 model_path = os.path.expanduser(f"~/pretrain-subnet/neurons/pretraining_model/{model_name}/model.bin")
 timestamp = os.path.getmtime( model_path )
 model = pretrain.model.get_model( )
-update_model(model, model_path) 
 model_weights = torch.load( model_path )
 model.load_state_dict( model_weights )
 bt.logging.success( f'Loaded model from: {model_path}' )

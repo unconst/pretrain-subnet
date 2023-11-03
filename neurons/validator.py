@@ -75,34 +75,43 @@ while True:
     for uid in available_uids:
         bt.logging.info(f"starting loop on uid {uid}")
 
-        loss_dict[uid] = {'loss': None, 'timestamp': None, 'huggingface_url': None, 'hotkey': None }
+        loss_dict[uid] = {'loss': None, 'timestamp': None, 'huggingface_repo': None, 'hotkey': None }
         axon = metagraph.axons[uid]
-        response = dendrite.query(axon, pretrain.protocol.GetUrl(), timeout=1)
+        response = dendrite.query(axon, pretrain.protocol.GetRepo(), timeout=0.5)
         if not response.is_success:
             bt.logging.info(f"failed response from uid {uid}")
             continue
 
-        huggingface_url = response.huggingface_url
-        bt.logging.info(f"got run url {huggingface_url} from uid {uid}")
-        loss_dict[uid]["huggingface_url"] = huggingface_url
-        hotkey = huggingface_url.split('/')[-1]
+        huggingface_repo = response.huggingface_repo
+        bt.logging.info(f"got repo {huggingface_repo} from uid {uid}")
+        loss_dict[uid]["huggingface_repo"] = huggingface_repo
+        hotkey = huggingface_repo.split('/')[-1]
 
         if hotkey != metagraph.hotkeys[uid]:
             raise ValueError("Hotkey mismatch")
         
-        # Download the model weights
         try:
-            bt.logging.info(f"downloading weights from {huggingface_url}")
-            model = AutoModel.from_pretrained(huggingface_url)
-            model_state_dict = model.state_dict()
+            bt.logging.info(f"downloading weights from {huggingface_repo}")
+            # Construct the URL for the model.bin file
+            model_bin_url = f"https://huggingface.co/{huggingface_repo}/resolve/main/pytorch_model.bin"
+            
+            # Make a GET request to download the model weights
+            response = requests.get(model_bin_url, stream=True)
+            if response.status_code == 200:
+                # Save the model.bin file
+                with open("pytorch_model.bin", "wb") as f:
+                    f.write(response.content)
+            
+                # Load the state dict directly from the downloaded file
+                model_state_dict = torch.load("pytorch_model.bin", map_location='cpu')
 
-            # Get the last commit timestamp
-            repo_api_url = f"https://huggingface.co/api/repos/{repo_id}"
+            repo_api_url = f"https://huggingface.co/api/repos/{hotkey}"
             response = requests.get(repo_api_url)
             if response.ok:
                 repo_info = response.json()
                 timestamp = repo_info.get('lastModified', None)
                 loss_dict[uid]["timestamp"] = timestamp
+
             else:
                 bt.logging.error(f"Failed to get repo info from {repo_api_url}")
         except Exception as e:
