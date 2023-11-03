@@ -157,6 +157,8 @@ def optionally_update_miner_model( uid, miner_state ):
     if model_timestamp == miner_state['model_timestamp']:
         bt.logging.debug('Miner model artifact is up to date.')
         return 
+    else: 
+        bt.logging.debug(f"{model_timestamp} != {miner_state['model_timestamp']}")
     miner_state['model_timestamp'] = model_timestamp # Update model timestamp.
 
     # === Load the model from file ===
