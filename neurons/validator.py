@@ -23,12 +23,13 @@
 # keep score of loss per batch 
 # avoid sampling 
 
-import wandb
 import torch
 import random
 import pretrain
 import argparse
 import bittensor as bt
+import requests
+from transformers import AutoModel
 
 
 def get_config():
@@ -52,7 +53,6 @@ loss_dict = {}
 
 while True:
     bt.logging.info("starting validator")
-    api = wandb.Api( timeout = 100 )
 
     # Pull random batches from Falcon Dataset
     random_pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages)]
@@ -75,37 +75,36 @@ while True:
     for uid in available_uids:
         bt.logging.info(f"starting loop on uid {uid}")
 
-        loss_dict[uid] = {'loss': None, 'timestamp': None, 'run_id': None, 'hotkey': None }
+        loss_dict[uid] = {'loss': None, 'timestamp': None, 'huggingface_url': None, 'hotkey': None }
         axon = metagraph.axons[uid]
-        response = dendrite.query( axon, pretrain.protocol.GetUrl(), timeout=1 )
+        response = dendrite.query(axon, pretrain.protocol.GetUrl(), timeout=1)
         if not response.is_success:
             bt.logging.info(f"failed response from uid {uid}")
             continue
 
-        run_id = response.run_id
-        bt.logging.info(f"got run name {run_id} from uid {uid}")
-        run = api.run(f"opentensor-dev/openpretraining/{run_id}")
-        loss_dict[uid]["run_id"] = run
+        huggingface_url = response.huggingface_url
+        bt.logging.info(f"got run url {huggingface_url} from uid {uid}")
+        loss_dict[uid]["huggingface_url"] = huggingface_url
+        hotkey = huggingface_url.split('/')[-1]
 
-        # Hotkey of run must match that of the sending hotkey
-        hotkey = run.config.get('hotkey')
-        loss_dict[uid]["hotkey"] = hotkey
         if hotkey != metagraph.hotkeys[uid]:
             raise ValueError("Hotkey mismatch")
         
         # Download the model weights
         try:
-            artifact_name = "model.pth"
-            bt.logging.info(f"downloading weights from {artifact_name}")
+            bt.logging.info(f"downloading weights from {huggingface_url}")
+            model = AutoModel.from_pretrained(huggingface_url)
+            model_state_dict = model.state_dict()
 
-            run.file(artifact_name).download(replace=True)
-
-            model = pretrain.model.get_model()
-            # model_weights = torch.load(artifact_name)
-            # CPU option 
-            model_weights = torch.load(artifact_name, map_location=torch.device('cpu'))
-
-            model.load_state_dict(model_weights)
+            # Get the last commit timestamp
+            repo_api_url = f"https://huggingface.co/api/repos/{repo_id}"
+            response = requests.get(repo_api_url)
+            if response.ok:
+                repo_info = response.json()
+                timestamp = repo_info.get('lastModified', None)
+                loss_dict[uid]["timestamp"] = timestamp
+            else:
+                bt.logging.error(f"Failed to get repo info from {repo_api_url}")
         except Exception as e:
             bt.logging.error(f"Error in downloading weights of uid {uid} \n {e}")
             continue
@@ -136,12 +135,10 @@ while True:
 
         if previous_loss == None:
             loss_dict[uid]["loss"] = average_loss
-            loss_dict[uid]["timestamp"] = run.created_at
         else:
             if average_loss < previous_loss:
                 # Update dict with better loss and timestamp
                 loss_dict[uid]["loss"] = average_loss
-                loss_dict[uid]["timestamp"] = run.created_at
 
     # Get best average loss and best uid
     # Best uid if tie on loss is based on timestamp of run upload

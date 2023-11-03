@@ -25,7 +25,13 @@ import bittensor as bt
 # === Config ===
 def get_config():
     parser = argparse.ArgumentParser()
-    parser.add_argument( "--model_path", type = str, help="Run name.", default='~/model.pth' )
+    parser.add_argument("--ss58", type=str, help="ss58 of mining hotkey", default=None)
+    known_args, _ = parser.parse_known_args()
+    ss58 = known_args.ss58
+    default_model_path = f'~/pretrain-subnet/neurons/pretraining_model/{ss58}' if ss58 else '~/pretrain-subnet/neurons/pretraining_model/default'
+
+    # Now add the model_path argument with the proper default
+    parser.add_argument("--model_path", type=str, help="Run name.", default=default_model_path)
     parser.add_argument( "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
     bt.logging.add_args( parser )
     config = bt.config(parser)

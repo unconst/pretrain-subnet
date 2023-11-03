@@ -69,39 +69,32 @@ repo_local_path = os.path.join(os.getcwd(), model_name)
 repo = Repository(local_dir=repo_local_path, clone_from=repo_url)
 print(f"Cloned repository {repo_name} to {repo_local_path}")
 
-model_path = os.path.join("/home/ec2-user/model.pth")
 
-timestamp = os.path.getmtime( model_path )
-model = pretrain.model.get_model( )
-model_weights = torch.load( model_path )
-model.load_state_dict( model_weights )
-bt.logging.success( f'Loaded model from: {model_path}' )
-
-def save_model(model, model_path):
-    # Save the model to the local directory
-    torch.save(model.state_dict(), model_path)
-    print(f"Saved model to {model_path}")
-    
+def update_model(model, model_path):
     # Using the Repository object to manage files and versions
     repo.git_add(model_path)
     repo.git_commit(f"Update model at {time.strftime('%Y-%m-%d %H:%M:%S')}")
     repo.git_push()
     print(f"Pushed model to Hugging Face Hub at {repo_url}")
 
-model_path = os.path.join(repo_local_path, "model.bin")
-save_model(model, model_path) 
-
-
-def get_run( synapse: pretrain.protocol.GetUrl ) -> pretrain.protocol.GetUrl:
+def get_url( synapse: pretrain.protocol.GetUrl ) -> pretrain.protocol.GetUrl:
     synapse.huggingface_url = repo_url
     return synapse
+
+model_path = os.path.expanduser(f"~/pretrain-subnet/neurons/pretraining_model/{wallet.hotkey.ss58_address}")
+timestamp = os.path.getmtime( model_path )
+model = pretrain.model.get_model( )
+update_model(model, model_path) 
+model_weights = torch.load( model_path )
+model.load_state_dict( model_weights )
+bt.logging.success( f'Loaded model from: {model_path}' )
 
 # === Axon ===
 axon = bt.axon( 
     wallet = wallet, 
     config = config 
 ).attach( 
-    forward_fn = get_run,
+    forward_fn = get_url,
 ).start()
 bt.logging.success( f'Started axon.' )
 
@@ -130,7 +123,7 @@ while True:
             model = pretrain.model.get_model()
             model_weights = torch.load(model_path)
             model.load_state_dict(model_weights)
-            save_model(model, model_path)
+            update_model(model, model_path)
             timestamp = new_timestamp
             print(f"Found newer model at {model_path}")
 
