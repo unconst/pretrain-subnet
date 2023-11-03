@@ -45,6 +45,7 @@ def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument( "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
     parser.add_argument( '--wandb.on', action='store_true', help='Turn on wandb logging.' )
+    parser.add_argument( '--blocks_till_set_weights', type=int, default=100, help='Number of blocks to wait before setting weights.' )
     bt.subtensor.add_args(parser)
     bt.logging.add_args(parser)
     bt.wallet.add_args(parser)
@@ -204,7 +205,7 @@ def log_state( global_state: typing.Dict ):
         log['best_miner_uid'] = global_state['best_miner_uid']
         log['best_miner_loss'] = global_state['best_miner_loss']
     for uid, state in global_state['miners'].items():
-        if state['loss'] != None: log[f'loss-{uid}'] = state['loss']  
+        if state['loss'] != None: log[f'loss-{uid}'] = sum(state['loss'])/len(state['loss'])  
     if config.wandb.on:
         wandb_run.log( log )
 
@@ -212,6 +213,7 @@ def log_state( global_state: typing.Dict ):
     bt.logging.info(log)
 
 # === Validating loop ===
+last_weights_blocks = metagraph.block.item()
 while True:
     bt.logging.success(f"Starting validator loop")
     try:
@@ -232,7 +234,7 @@ while True:
                     'run_id': None, # Records the wandb run id of the miner.
                     'model_timestamp': None, # Records the timestamp of the last model update.
                     'eval_timestamp': None, # Records the timestamp of the last eval.
-                    'loss': None, # Records the miners loss.
+                    'losses': [], # Records the miners loss.
                     'hotkey': metagraph.hotkeys[uid], # Records the miner's hotkey.
                     'uid': uid, # Records the miner's uid.
                     'model_path': None # Records the path to the miner's model.
@@ -243,7 +245,7 @@ while True:
 
                 # === Update model loss ===
                 if miner_state['model_path'] != None:
-                    miner_state['loss'] = compute_miner_eval( miner_state, eval_batches, config.device )
+                    miner_state['loss'].append( compute_miner_eval( miner_state, eval_batches, config.device ) )
 
                 # === Update global state ===
                 global_state['miners'][ uid ] = miner_state
@@ -252,30 +254,28 @@ while True:
                 bt.logging.error(f"Error in state update for uid: {uid} with error: \n {e} \n {traceback.format_exc()}")
                 continue
 
-        # === Find best ===
-        for miner_state in global_state['miners'].values():
-            if miner_state['loss'] == None: continue
-            elif 'best_miner_loss' not in global_state or miner_state['loss'] < global_state['best_miner_loss']:
-                global_state['best_miner_uid'] = miner_state['uid']
-                global_state['best_miner_loss'] = miner_state['loss']
-
         # === Log state ==
         log_state( global_state )
 
-        # === Set weights ===
-        if 'best_miner_uid' in global_state:
-            weights = torch.zeros_like( metagraph.S )
-            weights[ global_state['best_miner_uid'] ] = 1
-        else:
-            weights = torch.ones_like( metagraph.S )
-        subtensor.set_weights(
-            netuid = pretrain.NETUID,
-            wallet = wallet,
-            uids = metagraph.uids,
-            weights = weights,
-            wait_for_inclusion=False,
-        )
-        bt.logging.success(f"Served weights: {weights.tolist()}")
+        # === Find best miner ===
+        if metagraph.block.item() - last_weights_blocks > config.blocks_till_set_weights:
+
+            # === Set weights ===
+            if 'best_miner_uid' in global_state:
+                weights = torch.zeros_like( metagraph.S )
+                weights[ global_state['best_miner_uid'] ] = 1
+            else:
+                weights = torch.ones_like( metagraph.S )
+            subtensor.set_weights(
+                netuid = pretrain.NETUID,
+                wallet = wallet,
+                uids = metagraph.uids,
+                weights = weights,
+                wait_for_inclusion=False,
+            )
+            bt.logging.success(f"Served weights: {weights.tolist()}")
+
+            last_weights_blocks = metagraph.block.item()
 
         # === Update state ===
         metagraph = subtensor.metagraph( pretrain.NETUID )
