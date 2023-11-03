@@ -97,11 +97,6 @@ while True:
             config = AutoConfig.from_pretrained(huggingface_repo)
             model = AutoModelForCausalLM.from_pretrained(huggingface_repo)
             tokenizer = AutoTokenizer.from_pretrained(huggingface_repo)
-
-            # Load the weights
-            model_bin_url = f"https://huggingface.co/{huggingface_repo}/resolve/main/{filename}"
-            response = requests.get(model_bin_url, stream=True)
-
             repo_api_url = f"https://huggingface.co/api/repos/{hotkey}"
             response = requests.get(repo_api_url)
 
