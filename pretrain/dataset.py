@@ -21,6 +21,7 @@ import requests
 import bittensor as bt
 from torch.utils.data import IterableDataset
 from transformers import GPT2Tokenizer
+from transformers import AutoTokenizer
 
 model_name = 'distilgpt2'
 
@@ -32,7 +33,7 @@ class SubsetFalconLoader(IterableDataset):
         self.batch_size = batch_size
         self.sequence_length = sequence_length
         self.num_rows_per_page = 100
-        self.tokenizer = GPT2Tokenizer.from_pretrained(model_name, truncation=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.base_url = "https://datasets-server.huggingface.co/rows"
         self.params = {
@@ -48,7 +49,7 @@ class SubsetFalconLoader(IterableDataset):
             response = requests.get(self.base_url, params=self.params)
             for row in response.json()["rows"]:
                 content = row["row"]["content"]
-                self.buffer += self.tokenizer(content)["input_ids"]
+                self.buffer += self.tokenizer(content, truncation=True)["input_ids"]
                 self.buffer += [self.tokenizer.eos_token_id]
             
     def __iter__(self):
