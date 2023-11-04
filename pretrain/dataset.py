@@ -22,14 +22,15 @@ import bittensor as bt
 from torch.utils.data import IterableDataset
 from transformers import GPT2Tokenizer
 from transformers import AutoTokenizer
+import time
+import random
 
 model_name = 'distilgpt2'
 
 class SubsetFalconLoader(IterableDataset):
-    
     max_pages: int = 968000015
 
-    def __init__(self, batch_size, sequence_length, pages: typing.List[int] ):
+    def __init__(self, batch_size, sequence_length, pages: typing.List[int]):
         self.batch_size = batch_size
         self.sequence_length = sequence_length
         self.num_rows_per_page = 100
@@ -43,14 +44,33 @@ class SubsetFalconLoader(IterableDataset):
         }
         self.pages = pages
         self.buffer = []
+        self.retry_limit = 5  # Number of retries
+        self.retry_delay = 5  # Seconds to wait between retries
+
         for page in self.pages:
-            self.params["offset"] = page
-            self.params["limit"] = self.num_rows_per_page
-            response = requests.get(self.base_url, params=self.params)
-            for row in response.json()["rows"]:
-                content = row["row"]["content"]
-                self.buffer += self.tokenizer(content, truncation=True)["input_ids"]
-                self.buffer += [self.tokenizer.eos_token_id]
+            self.fetch_data_for_page(page)
+
+    def fetch_data_for_page(self, page):
+        self.params["offset"] = page
+        self.params["limit"] = self.num_rows_per_page
+        attempt = 0
+        while attempt < self.retry_limit:
+            try:
+                response = requests.get(self.base_url, params=self.params)
+                response.raise_for_status()  # This will raise an HTTPError if the HTTP request returned an unsuccessful status code
+                for row in response.json()["rows"]:
+                    content = row["row"]["content"]
+                    self.buffer += self.tokenizer(content, truncation=True)["input_ids"]
+                    self.buffer += [self.tokenizer.eos_token_id]
+                break  # If the request was successful, break out of the retry loop
+            except requests.exceptions.RequestException as e:
+                attempt += 1
+                bt.logging.warn(f"Failed to fetch data, attempt {attempt}/{self.retry_limit}. Reason: {str(e)}")
+                if attempt < self.retry_limit:
+                    time.sleep(self.retry_delay)  # Wait before the next retry
+                else:
+                    bt.logging.error("Maximum retry limit reached. Unable to fetch data.")
+                    raise
             
     def __iter__(self):
         while len(self.buffer) >= self.sequence_length * self.batch_size:
