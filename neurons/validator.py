@@ -208,11 +208,11 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     log = {}
     pbar = tqdm(available, desc="Loss:", leave=False)
     for uid in pbar:
-        losses_per_batch = compute_losses_on_batches( uid, eval_batches, config.device, pbar )
+        losses_per_batch = compute_losses_on_batches(uid, eval_batches, config.device, pbar)
         losses_per_uid_per_batch[uid] = losses_per_batch
         if math.inf not in losses_per_batch:
             average_loss = sum(losses_per_batch) / len(losses_per_batch)
-            average_loss_per_uid[uid] = average_loss
+            average_loss_per_uid[uid] = {"average_loss": average_loss}
             average_loss_per_uid[uid]["pages"] = random_pages
             if average_loss < best_average_loss: best_average_loss = average_loss; best_uid = uid
             log[f"average_loss/{uid}"] = average_loss
