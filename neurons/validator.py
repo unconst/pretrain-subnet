@@ -97,8 +97,8 @@ if config.wandb.on:
 # === Init vars ===
 api = wandb.Api( timeout = 100 )
 wins = {}
-global_state = {}
-global_state['miners'] = {}
+model_paths = {}
+model_timestamps = {}
 
 # === Helper functions ===
 def get_available_uids( metagraph ) -> typing.List[int]:
@@ -110,86 +110,6 @@ def get_available_uids( metagraph ) -> typing.List[int]:
     """
     available_uids = [ uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving and (metagraph.block.item() - metagraph.last_update[uid] < 500)]
     return available_uids   
-
-def compute_miner_eval( miner_state, batches: typing.List[torch.Tensor], device ):
-    """ Computes the average loss of a model on a list of batches.
-        Args:
-            batches (:obj:`List[torch.Tensor]`): The batches to evaluate on.
-            device (:obj:`torch.device`): The device to evaluate on.
-    """
-    model_save_path = miner_state['model_path']
-    model = pretrain.model.get_model()
-    model_weights = torch.load( model_save_path, map_location=torch.device(device))
-    model.load_state_dict(model_weights)
-    model.zero_grad()
-    model.eval()
-    model.to( device )
-
-    average_loss = 0
-    num_batches = 0
-    for i, batch in enumerate( batches ):
-        with torch.no_grad():
-            try:
-                inputs = batch.to(model.device)
-                outputs = model(inputs, labels=inputs)
-                loss = outputs.loss.detach().item()
-                average_loss += loss
-                num_batches += 1
-                bt.logging.debug(f'Acc: step: {i} loss: {loss}')
-            except Exception as e:
-                bt.logging.error(f"Error in loss calc: \n {e}")
-
-    average_loss = average_loss / max(num_batches, 1)
-    bt.logging.success(f"Updated model loss: {average_loss} for uid: {uid}")
-    return average_loss
-
-
-def optionally_update_miner_model( uid, miner_state ):
-
-    # == Get uid's run ==
-    response = dendrite.query( metagraph.axons[uid], pretrain.protocol.GetRun(), timeout=1 )
-    if not response.is_success: 
-        bt.logging.debug('Failed to get miner run')
-        return
-    
-    # === Get model run === 
-    run_id = response.run_id
-    run = api.run(f"opentensor-dev/openpretraining/{run_id}")
-    miner_state['run_id'] = run_id
-
-    # === Check hotkey match ===
-    hotkey = run.config.get('hotkey')
-    if hotkey != metagraph.hotkeys[uid]:
-        bt.logging.debug('Hotkey mismatch')
-        return 
-
-    # === Check if model exist ===
-    model_file = run.file( ARTIFACT_NAME )
-    if model_file == None:
-        bt.logging.debug('Miner has no model artifact.')
-        return 
-    
-    # === Check if the model needs updating ===    
-    model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-    if model_timestamp == miner_state['model_timestamp']:
-        bt.logging.debug('Miner model artifact is up to date.')
-        return 
-    else: 
-        bt.logging.debug(f"{model_timestamp} != {miner_state['model_timestamp']}")
-    miner_state['model_timestamp'] = model_timestamp # Update model timestamp.
-
-    # === Load the model from file ===
-    bt.logging.debug(f"Updating model for: {uid}")
-    model_file.download( replace = True ) # Replaces the model.pth file in the current directory.
-    model = pretrain.model.get_model()
-    model_weights = torch.load( ARTIFACT_NAME, map_location=torch.device('cpu'))
-    model.load_state_dict(model_weights)
-
-    # === Save new model to path ===
-    model_save_path = f'{config.full_path}/uid{uid}-' + ARTIFACT_NAME 
-    torch.save( model.state_dict(), model_save_path )
-    bt.logging.success(f"Saved updated model to path: {model_save_path} for uid: {uid}")
-    miner_state['model_path'] = model_save_path
 
 def log_state( global_state: typing.Dict ):
     """ Logs the global state to wandb and to screen.
@@ -214,35 +134,82 @@ def log_state( global_state: typing.Dict ):
     bt.logging.info(log)
 
 
-def lowest_loss_win_average( global_state ) -> typing.Dict[int, float]:
-    # This will hold the count of lowest losses for each UID
-    lowest_loss_win_percentage = {uid: 0 for uid in global_state['miners'].keys()}
+def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device ):
+    """ Computes the average loss of a model on a list of batches.
+        Args:
+            batches (:obj:`List[torch.Tensor]`): The batches to evaluate on.
+            device (:obj:`torch.device`): The device to evaluate on.
+    """
+    # No model for this uid.
+    if uid not in model_paths: 
+        return [math.inf for _ in range(len(batches))]
 
-    # Assuming all UIDs have the same number of steps in their losses
-    num_steps = len(next(iter(global_state['miners'].values()))['losses'])
+    # === Load model ===
+    model = pretrain.model.get_model()
+    model_weights = torch.load( model_paths[uid], map_location=torch.device(device))
+    model.load_state_dict( model_weights )
+    model.zero_grad()
+    model.eval()
+    model.to( device )
 
-    # Iterate over each step
-    for step in range(num_steps):
-        # Get the loss for each UID at the current step
-        losses_at_step = {uid: global_state['miners'][uid]['losses'][step] for uid in state}
-        # Find the max loss at this step
-        min_loss = min(losses_at_step.values())
-        # Find all UIDs that have this min loss at this step (there can be ties)
-        uids_with_min_loss = [uid for uid, loss in losses_at_step.items() if loss == min_loss]
-        # Increment the count for each UID that has the min loss at this step
-        for uid in uids_with_min_loss:
-            lowest_loss_win_percentage[uid] += 1
+    # === Compute losses ===
+    losses_per_batch = []
+    for i, batch in enumerate( batches ):
+        with torch.no_grad():
+            try:
+                inputs = batch.to(model.device)
+                outputs = model(inputs, labels=inputs)
+                losses_per_batch.append( outputs.loss.detach().item() )
+            except Exception as e:
+                losses_per_batch.appedn( math.inf )
+    return losses_per_batch
 
-    # Average wins.
-    for uid in lowest_loss_win_percentage.keys():
-        lowest_loss_win_percentage[uid] /= num_steps
+def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
 
-    weights = torch.zeros_like( metagraph.S )
-    for uid in lowest_loss_win_percentage.keys():
-        weights[ uid ] = lowest_loss_win_percentage[ uid ]
+    # == Get uid's run ==
+    response = dendrite.query( metagraph.axons[uid], pretrain.protocol.GetRun(), timeout=1 )
+    if not response.is_success: 
+        bt.logging.debug('Failed to get miner run')
+        return
+    
+    # === Get model run === 
+    run_id = response.run_id
+    run = api.run(f"opentensor-dev/openpretraining/{run_id}")
+    if run == None:
+        bt.logging.debug('Failed to get miner run')
+        return
 
-    return weights
+    # === Check hotkey match ===
+    hotkey = run.config.get('hotkey')
+    if hotkey != metagraph.hotkeys[uid]:
+        bt.logging.debug('Hotkey mismatch')
+        return 
 
+    # === Check if model exist ===
+    model_file = run.file( ARTIFACT_NAME )
+    if model_file == None:
+        bt.logging.debug('Miner has no model artifact.')
+        return 
+    
+    # === Check if the model needs updating ===    
+    model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
+    if model_timestamp == model_timestamps['model_timestamp']:
+        bt.logging.debug('Miner model artifact is up to date.')
+        return 
+    model_timestamps[uid] = model_timestamp # Update model timestamp.
+
+    # === Load the model from file ===
+    bt.logging.debug(f"Updating model for: {uid}")
+    model_file.download( replace = True ) # Replaces the model.pth file in the current directory.
+    model = pretrain.model.get_model()
+    model_weights = torch.load( ARTIFACT_NAME, map_location=torch.device('cpu'))
+    model.load_state_dict(model_weights)
+
+    # === Save new model to path ===
+    model_save_path = f'{config.full_path}/uid{uid}-' + ARTIFACT_NAME 
+    torch.save( model.state_dict(), model_save_path )
+    bt.logging.success(f"Saved updated model to path: {model_save_path} for uid: {uid}")
+    model_paths[uid] = model_save_path
 
 # === Validating loop ===
 last_weights_blocks = metagraph.block.item()
@@ -257,35 +224,23 @@ while True:
             pages = random_pages
         ))
 
-        # === Get models to update ===
-        for uid in get_available_uids( metagraph ):
-            try:    
+        # === UIDs to evaluate ===
+        available = get_available_uids( metagraph ) 
 
-                # === Get miner state or create ===
-                miner_state = global_state['miners'][ uid ] if uid in global_state['miners'] else {
-                    'run_id': None, # Records the wandb run id of the miner.
-                    'model_timestamp': None, # Records the timestamp of the last model update.
-                    'eval_timestamp': None, # Records the timestamp of the last eval.
-                    'losses': [], # Records the miners loss.
-                    'hotkey': metagraph.hotkeys[uid], # Records the miner's hotkey.
-                    'uid': uid, # Records the miner's uid.
-                    'model_path': None # Records the path to the miner's model.
-                }
-                miner_state['losses'].append(math.inf)
+        # === Update model for each uid ===
+        for uid in available:
+            optionally_update_model( uid )
 
-                # === Optionally update the miner model ===
-                optionally_update_miner_model( uid, miner_state )
+        # === Compute losses on each batch ===
+        losses_per_uid_per_batch = { uid: compute_losses_on_batches( uid, eval_batches, config.device ) for uid in available }
 
-                # === Update model loss ===
-                if miner_state['model_path'] != None:
-                    miner_state['losses'][-1] = compute_miner_eval( miner_state, eval_batches, config.device )
-
-                # === Update global state ===
-                global_state['miners'][ uid ] = miner_state
-            
-            except Exception as e:
-                bt.logging.error(f"Error in state update for uid: {uid} with error: \n {e} \n {traceback.format_exc()}")
-                continue
+        # === Compute wins per batch ===
+        for step in range(len(eval_batches)):
+            min_
+            for uid in losses_per_uid_per_batch:
+                if 
+            if uid not in wins: wins[uid] = []
+            wins[uid] += losses_per_batch
 
         # === Log state ==
         log_state( global_state )
@@ -295,7 +250,7 @@ while True:
         if metagraph.block.item() - last_weights_blocks > config.blocks_till_set_weights:
 
             # === Set weights ===
-            weights = lowest_loss_win_average( global_state )            
+            weights = lowest_loss_win_average( global_state )       
             subtensor.set_weights(
                 netuid = pretrain.NETUID,
                 wallet = wallet,
