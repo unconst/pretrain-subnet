@@ -208,12 +208,31 @@ def run_step():
         wins_per_epoch[min_loss_uid] = wins_per_epoch.get(min_loss_uid, 0) + 1
         win_per_step[step] = min_loss_uid
 
-    # Log wins per step
+    # === Log wins per step ===
     for uid in win_per_step:
         if config.wandb.on: wandb.log( {f"win_per_step/{uid}": win_per_step[uid] } )
 
     # === Update metagraph state ==
     metagraph = subtensor.metagraph( pretrain.NETUID )
+
+def epoch():
+    # === Compute weights from wins ===
+    weights = torch.zeros( len(metagraph.hotkeys) )
+    for uid in wins_per_epoch:
+        weights[uid] = wins_per_epoch[uid] / wins_per_epoch( wins_per_epoch.values() )
+        if config.wandb.on: wandb.log( {f"wins_per_epoch/{uid}": wins_per_epoch[uid]} )
+    wins_per_epoch = {} # Clearn wins per epoch.
+
+    # === Set weights ===
+    subtensor.set_weights(
+        netuid = pretrain.NETUID,
+        wallet = wallet,
+        uids = metagraph.uids,
+        weights = weights,
+        wait_for_inclusion=False,
+    )
+    bt.logging.success(f"Served weights: {weights.tolist()}")
+    last_weights_blocks = metagraph.block.item()
 
 # === Validating loop ===
 last_weights_blocks = metagraph.block.item()
@@ -226,23 +245,7 @@ while True:
         # === Find best miner ===
         if metagraph.block.item() - last_weights_blocks > config.blocks_till_set_weights:
 
-            # === Compute weights from wins ===
-            weights = torch.zeros( len(metagraph.hotkeys) )
-            for uid in wins_per_epoch:
-                weights[uid] = wins_per_epoch[uid] / wins_per_epoch( wins_per_epoch.values() )
-                if config.wandb.on: wandb.log( {f"wins_per_epoch/{uid}": wins_per_epoch[uid]} )
-            wins_per_epoch = {}
-
-            # === Set weights ===
-            subtensor.set_weights(
-                netuid = pretrain.NETUID,
-                wallet = wallet,
-                uids = metagraph.uids,
-                weights = weights,
-                wait_for_inclusion=False,
-            )
-            bt.logging.success(f"Served weights: {weights.tolist()}")
-            last_weights_blocks = metagraph.block.item()
+            epoch()
 
         # === Update state ===
         bt.logging.debug(f"Updated metagraph")
