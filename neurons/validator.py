@@ -236,7 +236,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     for uid in win_per_step.keys():
         log[uid] = win_per_step[uid] / (sum(win_per_step.values())) 
 
-    bt.logging.success(f"Steo: {log}")
+    bt.logging.success(f"Step: {log}")
     if config.wandb.on: wandb.log( log, step = wandb_step )
 
 def run_epoch( wins_per_epoch, wandb_step ):
