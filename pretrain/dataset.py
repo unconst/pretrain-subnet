@@ -70,7 +70,7 @@ class SubsetFalconLoader(IterableDataset):
                     time.sleep(self.retry_delay)  # Wait before the next retry
                 else:
                     bt.logging.error("Maximum retry limit reached. Unable to fetch data.")
-                    raise`
+                    raise
             
     def __iter__(self):
         while len(self.buffer) >= self.sequence_length * self.batch_size:
