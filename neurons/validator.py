@@ -215,7 +215,7 @@ def run_step( wins_per_epoch, metagraph ):
     for uid in win_per_step.keys():
         if config.wandb.on: wandb.log( {f"win_per_step/{uid}": win_per_step[uid] } )
 
-def epoch():
+def epoch( wins_per_epoch ):
     # === Compute weights from wins ===
     weights = torch.zeros( len(metagraph.hotkeys) )
     for uid in wins_per_epoch:
