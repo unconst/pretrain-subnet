@@ -190,7 +190,7 @@ def run_step( wins_per_epoch, metagraph ):
         optionally_update_model( uid )
 
     # === Compute losses on each batch ===
-    best_uid
+    best_uid = None
     best_average_loss = math.inf
     losses_per_uid_per_batch = {}
     for uid in available:
