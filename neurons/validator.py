@@ -145,7 +145,7 @@ def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device )
 def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
 
     # == Get uid's run ==
-    response = dendrite.query( metagraph.axons[uid], pretrain.protocol.GetRun(), timeout=1 )
+    response = dendrite.query( metagraph.axons[uid], pretrain.protocol.GetRun(), timeout=0.5 )
     if not response.is_success: bt.logging.debug('Failed to get miner run'); return
     
     # === Get model run === 
