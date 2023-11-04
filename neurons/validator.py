@@ -18,14 +18,12 @@
 
 
 # TODO: 
-# log pages in json dict
 # change from wandb pull to huggingface api in both miner and validator
 # test larger models
 # allow for different model types -optional
 # set maximum VRAM/size for model -optional
 # add try-except for dataloader pull with retry loop
 # add docs/readme
-# fix miner path, natively allow different uids to use diff models?
 # improve frontend to be overlapping lines per UID on a time series
 
 
@@ -230,7 +228,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
             average_loss = sum(losses_per_batch) / len(losses_per_batch)
             average_loss_per_uid[uid] = {"average_loss": average_loss}
             if average_loss < best_average_loss: best_average_loss = average_loss; best_uid = uid
-            log[uid] = average_loss
+            log[f"{uid}"] = average_loss
     if best_uid != None:
         log["best_average_loss"] = best_average_loss
         log["best_average_loss_uid"] = best_uid 
@@ -250,7 +248,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
 
     # === Log wins per step ===
     for uid in win_per_step.keys():
-        log[uid] = win_per_step[uid] / (sum(win_per_step.values()))
+        log[f"{uid}"] = win_per_step[uid] / (sum(win_per_step.values()))
 
     bt.logging.success(f"Step results: {log}")
     if config.wandb.on: wandb.log( log, step = wandb_step )
