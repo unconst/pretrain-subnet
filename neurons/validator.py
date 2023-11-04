@@ -113,7 +113,7 @@ def get_available_uids( metagraph ) -> typing.List[int]:
     return available_uids   
 
 
-def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device ):
+def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device, pbar ):
     """ Computes the average loss of a model on a list of batches.
         Args:
             batches (:obj:`List[torch.Tensor]`): The batches to evaluate on.
@@ -139,6 +139,7 @@ def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device )
                 inputs = batch.to(model.device)
                 outputs = model(inputs, labels=inputs)
                 losses_per_batch.append( outputs.loss.detach().item() )
+                pbar.set_description(f"Loss: {uid} - {outputs.loss.detach().item()}")
             except Exception as e:
                 losses_per_batch.append( math.inf )
     return losses_per_batch
@@ -196,8 +197,9 @@ def run_step( wins_per_epoch, metagraph ):
     best_average_loss = math.inf
     losses_per_uid_per_batch = {}
     average_loss_per_uid = {}
-    for uid in tqdm(available, desc="Computing losses on batches", leave=False):
-        losses_per_batch = compute_losses_on_batches( uid, eval_batches, config.device )
+    pbar = tqdm(available, desc="Computing losses on batches", leave=False)
+    for uid in pbar:
+        losses_per_batch = compute_losses_on_batches( uid, eval_batches, config.device, pbar )
         losses_per_uid_per_batch[uid] = losses_per_batch
         if math.inf not in losses_per_batch:
             average_loss = sum(losses_per_batch) / len(losses_per_batch)
