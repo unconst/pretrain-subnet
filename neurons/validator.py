@@ -220,13 +220,6 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
         log["best_average_loss"] = best_average_loss
         log["best_average_loss_uid"] = best_uid 
 
-    bt.logging.info(f"average_loss_per_uid = {average_loss_per_uid}")
-    bt.logging.info(f"log = {log}")
-<<<<<<< HEAD
-    bt.logging.info(f"losss_per_uid_per_batch = {losses_per_uid_per_batch}")
-=======
->>>>>>> 4f0d78c5cc25e14837d4117c8f5d90dc8586fc4f
-
     # === Compute wins per batch ===
     win_per_step = {}
     for step in range(len(eval_batches)):
@@ -238,14 +231,12 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
                 min_loss_uid = uid
         wins_per_epoch[min_loss_uid] = wins_per_epoch.get(min_loss_uid, 0) + 1
         win_per_step[min_loss_uid] = win_per_step.get(min_loss_uid, 0) + 1
-    bt.logging.success(f"Average losses per uid: {average_loss_per_uid}")
-    bt.logging.success(f"Computed wins per step: {win_per_step}")
-    bt.logging.success(f"Computed wins per epoch: {wins_per_epoch}")
 
     # === Log wins per step ===
     for uid in win_per_step.keys():
         log[uid] = win_per_step[uid] / (sum(win_per_step.values())) 
 
+    bt.logging.success(f"Steo: {log}")
     if config.wandb.on: wandb.log( log, step = wandb_step )
 
 def run_epoch( wins_per_epoch, wandb_step ):
