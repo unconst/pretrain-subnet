@@ -204,7 +204,7 @@ def run_step( wins_per_epoch, metagraph ):
             if config.wandb.on and average_loss != math.inf: wandb.log( {f"average_loss/{uid}": average_loss} )
             bt.logging.success(f"Computed average_loss for uid: {uid} losses: {average_loss}")
     uid_losses = {f"{uid}: {average_loss} " for uid, average_loss in average_loss_per_uid.items()}
-    wandb.log(uid_losses)
+    if config.wandb.on: wandb.log(uid_losses)
     if best_uid == None and config.wandb.on: wandb.log( {f"best_average_loss/{uid}": math.inf} )
     if best_uid == None and config.wandb.on: wandb.log( {f"best_average_loss_uid": best_uid} )
 
