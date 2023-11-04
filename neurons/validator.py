@@ -221,7 +221,7 @@ def epoch( wins_per_epoch ):
     # === Compute weights from wins ===
     weights = torch.zeros( len(metagraph.hotkeys) )
     for uid in wins_per_epoch:
-        weights[uid] = wins_per_epoch[uid] / wins_per_epoch( wins_per_epoch.values() )
+        weights[uid] = wins_per_epoch[uid] / sum( wins_per_epoch.values() )
         if config.wandb.on: wandb.log( {f"wins_per_epoch/{uid}": wins_per_epoch[uid]} )
     wins_per_epoch = {} # Clearn wins per epoch.
 
