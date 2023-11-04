@@ -40,7 +40,7 @@ def get_config():
             config.logging.logging_dir,
             config.wallet.name,
             config.wallet.hotkey,
-            config.netuid,
+            pretrain.NETUID,
             "miner",
         )
     )

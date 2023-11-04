@@ -66,12 +66,34 @@ To perform well miners must attain the lowest loss on the largest number of rand
 
 ## Mining
 
-Before mining or validating make sure you have python3.8. Then install this repository.
+Before mining make sure you have python3.8. Then install this repository.
 ```bash
 git clone https://github.com/unconst/pretrain-subnet.git
 cd pretrain-subnet
 python -m pip install -e . 
 ```
+
+Miners must attain a wandb account from [wandb](https://wandb.ai/home) and attain their wandb api key.
+Follow the instructions [here](https://docs.wandb.ai/quickstart)
+
+```bash
+wandb init
+```
+
+Once your wandb is installed. Train your model. Note, the training script is simply a mock training script, we recommend you ammend the training script at later date.
+Or copy the weights from other miners, subnet 9 is pro model sharing as a means of distributing contiously better models to participants. 
+```bash
+python neurons/train.py --wallet.name ... --wallet.hotkey ... 
+```
+
+The mode trained by the running the above training script will be written to ```~/.bittensor/miners/<your cold>/<your hot>/netuid9/miner/model.pth```. Your miner will find this
+model and periodically advertise if it changes over time. To run a miner over the model save here run the following command.
+
+```bash
+python neurons/miner.py --wallet.name ... --wallet.hotkey ...
+```
+
+
 
 ---
 
