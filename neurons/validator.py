@@ -245,7 +245,7 @@ while True:
             # Updates models (if needed) runs an eval step over each model
             # Records the number of 'wins' per model in the step. A wins
             # is defined as the model with the lowest loss on a given batch.
-            bt.logging.success(f"Run step.")
+            bt.logging.debug(f"Run step.")
             run_step( metagraph )
 
         # Finish epoch.
