@@ -24,7 +24,7 @@
 # set maximum VRAM/size for model -optional
 # add docs/readme
 # improve frontend to be overlapping lines per UID on a time series
-
+# launch!
 
 import os
 import json
