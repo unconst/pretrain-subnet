@@ -234,7 +234,6 @@ def epoch():
         wait_for_inclusion=False,
     )
     bt.logging.success(f"Served weights: {weights.tolist()}")
-    last_weights_blocks = metagraph.block.item()
 
 # === Validating loop ===
 last_epoch = metagraph.block.item()
