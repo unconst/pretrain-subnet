@@ -94,14 +94,16 @@ Miners + validator require a Bittensor coldkey and hotkey pair registered to net
 To create a wallet for either your validator or miner run the following command in your terminal. Make sure to save the mnemonic for
 both keys and store them in a safe place.
 ```bash
-btcli w create --wallet.name ... --wallet.hotkey ... # to create your miner/validator cold + hotkey keys.
+# to create your miner/validator cold + hotkey keys.
+btcli w create --wallet.name ... --wallet.hotkey ... 
 btcli w list # to view your created keys.
 ```
 
 Registering a miner or a validator on subnet 9 requires the participant `recycle` TAO to pay for entrance. To register your key run the 
 following command.
 ```bash
-btcli s recycle_register --wallet.name ... --wallet.hotkey ... --netuid 0 # register your cold and associated hotkey to netuid 9.
+# register your cold and associated hotkey to netuid 9
+btcli s recycle_register --wallet.name ... --wallet.hotkey ... --netuid 0 
 ```
 
 ---
@@ -109,21 +111,26 @@ btcli s recycle_register --wallet.name ... --wallet.hotkey ... --netuid 0 # regi
 ## Mining
 
 Miners must attain a wandb account from [wandb](https://wandb.ai/home) and attain their wandb api key.
-Follow the instructions [here](https://docs.wandb.ai/quickstart)
+Follow the instructions [here](https://docs.wandb.ai/quickstart) to get access to your API key for logging in.
 
 ```bash
 wandb init
 ```
 
 Once your wandb is installed. Train your model. Note, the training script is simply a mock training script, we recommend you ammend the training script at a later date.
+You can directly pass a ```--model_path ``` flag to have the training script write your model under a newly specified path. By default the trained model is written to 
+```~/.bittensor/miners/<your cold>/<your hot>/netuid9/miner/model.pth```. 
+
 ```bash
+# Run your miner with specified wallet keys.
 python neurons/train.py --wallet.name ... --wallet.hotkey ... 
 ... training ....
 2023-11-04 13:53:04.134 |     SUCCESS      | Saving model to /home/setup/.bittensor/miners/my_coldkey/my_hotkey/netuid9/miner/model.pth
 ```
 
-The mode trained by running the above training script will be written to ```~/.bittensor/miners/<your cold>/<your hot>/netuid9/miner/model.pth```. Your miner will find this
-model and periodically advertise if you change it over time. To run your miner over this model, run the following script.
+To host your model on the miner run the following script. By default the miner will host the model stored under ```~/.bittensor/miners/<your cold>/<your hot>/netuid9/miner/model.pth```
+however pass ```--model_path ``` to set an alterative model path. The miner will use your wandb run to store the model artifact which becomes available for validators to validate.
+You can follow the wandb run link to see model artifact.
 
 ```bash
 python neurons/miner.py --wallet.name ... --wallet.hotkey ...
@@ -133,10 +140,9 @@ python neurons/miner.py --wallet.name ... --wallet.hotkey ...
 ...
 ```
 
-
 ---
 
-## Running
+## Validating
 
 Miners produce gradients using their local machines. You can run a miner like so.
 ```bash

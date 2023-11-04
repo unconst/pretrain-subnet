@@ -93,6 +93,7 @@ if config.wandb.on:
         project = 'openpretraining',
         entity = 'opentensor-dev',
         config = config,
+        dir = config.full_path,
     )
     bt.logging.success( f'Started wandb run' )
     wandb.init(project="openpretraining", entity="opentensor-dev")
