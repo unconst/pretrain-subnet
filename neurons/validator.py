@@ -17,11 +17,17 @@
 # DEALINGS IN THE SOFTWARE.
 
 
-# TODO: change wandb api to huggingface api, need to change both miner upload and validator pull
-# determine step time to decrease load for apis, concern= rate limits
-# fix bug of not always using the lowest loss for weights
-# keep score of loss per batch 
-# avoid sampling 
+# TODO: 
+# log pages in json dict
+# change from wandb pull to huggingface api in both miner and validator
+# test larger models
+# allow for different model types -optional
+# set maximum VRAM/size for model -optional
+# add try-except for dataloader pull with retry loop
+# add docs/readme
+# fix miner path, natively allow different uids to use diff models?
+# improve frontend to be overlapping lines per UID on a time series
+
 
 import os
 import json
@@ -177,6 +183,8 @@ def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
 def run_step( wins_per_epoch, metagraph, wandb_step ):
     # === Get next batches ===
     random_pages = [ random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages) ]
+    bt.logging.info(f"using random pages: {random_pages}")
+    
     eval_batches = list(pretrain.dataset.SubsetFalconLoader(
         batch_size = pretrain.batch_size,
         sequence_length = pretrain.sequence_length,
@@ -200,16 +208,21 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     log = {}
     pbar = tqdm(available, desc="Loss:", leave=False)
     for uid in pbar:
-        losses_per_batch = compute_losses_on_batches( uid, eval_batches, config.device, pbar )
+        losses_per_batch = compute_losses_on_batches(uid, eval_batches, config.device, pbar)
         losses_per_uid_per_batch[uid] = losses_per_batch
         if math.inf not in losses_per_batch:
             average_loss = sum(losses_per_batch) / len(losses_per_batch)
-            average_loss_per_uid[uid] = average_loss
+            average_loss_per_uid[uid] = {"average_loss": average_loss}
+            average_loss_per_uid[uid]["pages"] = random_pages
             if average_loss < best_average_loss: best_average_loss = average_loss; best_uid = uid
             log[f"average_loss/{uid}"] = average_loss
     if best_uid != None:
         log[f"best_average_loss"] = best_average_loss
         log[f"best_average_loss_uid"] = best_uid 
+
+    bt.logging.info(f"average_loss_per_uid = {average_loss_per_uid}")
+    bt.logging.info(f"log = {log}")
+    bt.logging.info(f"losss_per_uid_per_batch = {losss_per_uid_per_batch}")
 
     # === Compute wins per batch ===
     win_per_step = {}

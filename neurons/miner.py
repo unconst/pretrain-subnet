@@ -46,7 +46,9 @@ def get_config():
     )
     if not os.path.exists(config.full_path):
         os.makedirs(config.full_path, exist_ok=True)
-    config.model_path = config.full_path + '/' + 'model.pth'
+    # config.model_path = config.full_path + '/' + 'model.pth'
+    config.model_path = "~/model.pth"
+
     return config
 
 config = get_config()
