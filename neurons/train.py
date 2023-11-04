@@ -45,6 +45,7 @@ def get_config():
         os.makedirs(config.model_dir, exist_ok=True)
     return config
 config = get_config()
+print (config)
 
 model = pretrain.model.get_model()
 model.zero_grad()
