@@ -218,7 +218,8 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     best_average_loss = math.inf
     losses_per_uid_per_batch = {}
     average_loss_per_uid = {}
-    log = {}
+
+    log = { str(uid): {} for uid in available }
     pbar = tqdm(available, desc="Loss:", leave=False)
     for uid in pbar:
         losses_per_batch = compute_losses_on_batches(uid, eval_batches, config.device, pbar)
@@ -229,9 +230,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
             if average_loss < best_average_loss:
                 best_average_loss = average_loss
                 best_uid = uid
-            if uid not in log:
-                log[f"{uid}"] = {}
-            log[f"{uid}"]["loss"] = average_loss
+            log[str(uid)]["loss"] = average_loss
     if best_uid != None:
         log["best_average_loss"] = best_average_loss
         log["best_average_loss_uid"] = best_uid 
@@ -251,18 +250,18 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
 
     # === Log wins per step ===
     for uid in win_per_step.keys():
-        if uid not in log:
-            log[f"{uid}"] = {}
-
         if uid in win_per_step:
             total_wins = sum(win_per_step.values())
             if total_wins > 0:
-                log[f"{uid}"]["Win Percentage"] = win_per_step[uid] / total_wins
+                log[str(uid)]["Win Percentage"] = win_per_step[uid] / total_wins
             else:
-                log[f"{uid}"]["Win Percentage"] = 0  # Default to 0 if there are no wins
+                log[str(uid)]["Win Percentage"] = 0  # Default to 0 if there are no wins
         else:
-            log[f"{uid}"]["Win Percentage"] = 0 
+            log[str(uid)]["Win Percentage"] = 0 
 
+    # Clear uid logs for empty dictionaries.
+    for key in log: 
+        if log[key] == {}: del log[key]
     bt.logging.success(f"Step results: {log}")
     if config.wandb.on: wandb.log( log, step = wandb_step )
 
