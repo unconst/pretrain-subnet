@@ -173,7 +173,7 @@ def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
     model_paths[uid] = model_dir + ARTIFACT_NAME
 
 
-def run_step( metagraph ):
+def run_step( wins_per_epoch, metagraph ):
     # === Get next batches ===
     random_pages = [ random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages) ]
     eval_batches = list(pretrain.dataset.SubsetFalconLoader(
@@ -242,12 +242,12 @@ while True:
             # Updates models (if needed) runs an eval step over each model
             # Records the number of 'wins' per model in the step. A wins
             # is defined as the model with the lowest loss on a given batch.
-            run_step( metagraph )
+            run_step( wins_per_epoch, metagraph )
             metagraph = subtensor.metagraph( pretrain.NETUID )
-            bt.logging.debug(f"{metagraph.block.item() - last_epoch } / {config.blocks_per_epoch} blocks until next epoch.")
+            bt.logging.success(f"{metagraph.block.item() - last_epoch } / {config.blocks_per_epoch} blocks until next epoch.")
 
         # Finish epoch.
-        epoch()
+        epoch( wins_per_epoch )
         last_epoch = metagraph.block.item()
 
     except KeyboardInterrupt:
