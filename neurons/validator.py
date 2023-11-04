@@ -209,6 +209,7 @@ def run_step( metagraph ):
         wins_per_epoch[min_loss_uid] = wins_per_epoch.get(min_loss_uid, 0) + 1
         win_per_step[min_loss_uid] = win_per_step.get(min_loss_uid, 0) + 1
     bt.logging.success(f"Computed wins per step: {win_per_step}")
+    bt.logging.success(f"Computed wins per epoch: {wins_per_epoch}")
 
     # === Log wins per step ===
     for uid in win_per_step.keys():
