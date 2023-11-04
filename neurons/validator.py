@@ -168,34 +168,24 @@ def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
 
     # == Get uid's run ==
     response = dendrite.query( metagraph.axons[uid], pretrain.protocol.GetRun(), timeout=1 )
-    if not response.is_success: 
-        bt.logging.debug('Failed to get miner run')
-        return
+    if not response.is_success: bt.logging.debug('Failed to get miner run'); return
     
     # === Get model run === 
     run_id = response.run_id
     run = api.run(f"opentensor-dev/openpretraining/{run_id}")
-    if run == None:
-        bt.logging.debug('Failed to get miner run')
-        return
+    if run == None: bt.logging.debug('Failed to get miner run'); return
 
     # === Check hotkey match ===
     hotkey = run.config.get('hotkey')
-    if hotkey != metagraph.hotkeys[uid]:
-        bt.logging.debug('Hotkey mismatch')
-        return 
+    if hotkey != metagraph.hotkeys[uid]: bt.logging.debug('Hotkey mismatch'); return 
 
     # === Check if model exist ===
     model_file = run.file( ARTIFACT_NAME )
-    if model_file == None:
-        bt.logging.debug('Miner has no model artifact.')
-        return 
+    if model_file == None: bt.logging.debug('Miner has no model artifact.'); return 
     
     # === Check if the model needs updating ===    
     model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-    if model_timestamp == model_timestamps['model_timestamp']:
-        bt.logging.debug('Miner model artifact is up to date.')
-        return 
+    if model_timestamp == model_timestamps['model_timestamp']: bt.logging.debug('Miner model artifact is up to date.'); return 
     model_timestamps[uid] = model_timestamp # Update model timestamp.
 
     # === Load the model from file ===
