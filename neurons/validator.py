@@ -236,11 +236,13 @@ while True:
 
         # === Compute wins per batch ===
         for step in range(len(eval_batches)):
-            min_
+            min_loss = math.inf
+            min_loss_uid = None
             for uid in losses_per_uid_per_batch:
-                if 
-            if uid not in wins: wins[uid] = []
-            wins[uid] += losses_per_batch
+                if losses_per_uid_per_batch[uid][step] < min_loss:
+                    min_loss = losses_per_uid_per_batch[uid][step]
+                    min_loss_uid = uid
+            wins[min_loss_uid] = wins.get(min_loss_uid, 0) + 1
 
         # === Log state ==
         log_state( global_state )
