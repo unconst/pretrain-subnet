@@ -190,7 +190,7 @@ def run_step( wins_per_epoch, metagraph ):
     pbar = tqdm( available , desc="Updating model:", leave=False )
     for uid in pbar:
         optionally_update_model( uid )
-        pbar.set_description(f"Updating model:: {uid}")
+        pbar.set_description(f"Updating model: {uid}")
 
     # === Compute losses on each batch ===
     best_uid = None
