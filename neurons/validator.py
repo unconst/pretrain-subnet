@@ -236,21 +236,19 @@ def epoch():
 
 # === Validating loop ===
 last_epoch = metagraph.block.item()
+bt.logging.success(f"Starting validator loop")
 while True:
-    bt.logging.success(f"Starting validator loop")
     try:
+        while metagraph.block.item() - last_epoch < config.blocks_per_epoch:
+            # Updates models (if needed) runs an eval step over each model
+            # Records the number of 'wins' per model in the step. A wins
+            # is defined as the model with the lowest loss on a given batch.
+            bt.logging.success(f"Run step.")
+            run_step( metagraph )
 
-        # Updates models (if needed) runs an eval step over each model
-        # Records the number of 'wins' per model in the step. A wins
-        # is defined as the model with the lowest loss on a given batch.
-        run_step( metagraph )
-
-        if metagraph.block.item() - last_epoch > config.blocks_per_epoch:
-            epoch()
-            last_epoch = metagraph.block.item()
-
-        # === Update state ===
-        bt.logging.debug(f"Updated metagraph")
+        # Finish epoch.
+        epoch()
+        last_epoch = metagraph.block.item()
 
     except KeyboardInterrupt:
         bt.logging.info("KeyboardInterrupt caught, gracefully closing the wandb run...")
