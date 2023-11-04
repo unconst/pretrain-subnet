@@ -57,7 +57,7 @@ def get_config():
             config.logging.logging_dir,
             config.wallet.name,
             config.wallet.hotkey,
-            config.netuid,
+            pretrain.NETUID,
             "validator",
         )
     )
@@ -113,7 +113,7 @@ def get_available_uids( metagraph ) -> typing.List[int]:
     return available_uids   
 
 
-def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device ):
+def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device, pbar ):
     """ Computes the average loss of a model on a list of batches.
         Args:
             batches (:obj:`List[torch.Tensor]`): The batches to evaluate on.
@@ -139,12 +139,12 @@ def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device )
                 inputs = batch.to(model.device)
                 outputs = model(inputs, labels=inputs)
                 losses_per_batch.append( outputs.loss.detach().item() )
+                pbar.set_description(f"Loss: {uid} - {outputs.loss.detach().item()}")
             except Exception as e:
                 losses_per_batch.append( math.inf )
     return losses_per_batch
 
 def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
-
     # == Get uid's run ==
     response = dendrite.query( metagraph.axons[uid], pretrain.protocol.GetRun(), timeout=0.5 )
     if not response.is_success: bt.logging.debug('Failed to get miner run'); return
@@ -174,7 +174,7 @@ def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
     model_paths[uid] = model_dir + ARTIFACT_NAME
 
 
-def run_step( wins_per_epoch, metagraph ):
+def run_step( wins_per_epoch, metagraph, wandb_step ):
     # === Get next batches ===
     random_pages = [ random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages) ]
     eval_batches = list(pretrain.dataset.SubsetFalconLoader(
@@ -187,26 +187,29 @@ def run_step( wins_per_epoch, metagraph ):
     available = get_available_uids( metagraph ) 
 
     # === Update model for each uid ===
-    for uid in tqdm( available , desc="Updating models", leave=False):
+    pbar = tqdm( available , desc="Updating model:", leave=False )
+    for uid in pbar:
         optionally_update_model( uid )
+        pbar.set_description(f"Updating model: {uid}")
 
     # === Compute losses on each batch ===
     best_uid = None
     best_average_loss = math.inf
     losses_per_uid_per_batch = {}
     average_loss_per_uid = {}
-    for uid in tqdm(available, desc="Computing losses on batches", leave=False):
-        losses_per_batch = compute_losses_on_batches( uid, eval_batches, config.device )
+    log = {}
+    pbar = tqdm(available, desc="Loss:", leave=False)
+    for uid in pbar:
+        losses_per_batch = compute_losses_on_batches( uid, eval_batches, config.device, pbar )
         losses_per_uid_per_batch[uid] = losses_per_batch
         if math.inf not in losses_per_batch:
             average_loss = sum(losses_per_batch) / len(losses_per_batch)
             average_loss_per_uid[uid] = average_loss
             if average_loss < best_average_loss: best_average_loss = average_loss; best_uid = uid
-    uid_losses = {uid: average_loss for uid, average_loss in average_loss_per_uid.items()}
-    if config.wandb.on: wandb.log( {'average_losses': uid_losses } )
-    if best_uid == None and config.wandb.on: wandb.log( {f"best_average_loss/{uid}": math.inf} )
-    if best_uid == None and config.wandb.on: wandb.log( {f"best_average_loss_uid": best_uid} )
-    bt.logging.success(f"Average losses per uid: {average_loss_per_uid}")
+            log[f"average_loss/{uid}"] = average_loss
+    if best_uid != None:
+        log[f"best_average_loss"] = best_average_loss
+        log[f"best_average_loss_uid"] = best_uid 
 
     # === Compute wins per batch ===
     win_per_step = {}
@@ -219,19 +222,22 @@ def run_step( wins_per_epoch, metagraph ):
                 min_loss_uid = uid
         wins_per_epoch[min_loss_uid] = wins_per_epoch.get(min_loss_uid, 0) + 1
         win_per_step[min_loss_uid] = win_per_step.get(min_loss_uid, 0) + 1
+    bt.logging.success(f"Average losses per uid: {average_loss_per_uid}")
     bt.logging.success(f"Computed wins per step: {win_per_step}")
     bt.logging.success(f"Computed wins per epoch: {wins_per_epoch}")
 
     # === Log wins per step ===
     for uid in win_per_step.keys():
-        if config.wandb.on: wandb.log( {f"win_per_step/{uid}": win_per_step[uid] / (sum(win_per_step.values())) } )
+        log[f"win_per_step/{uid}"] = win_per_step[uid] / (sum(win_per_step.values())) 
 
-def epoch( wins_per_epoch ):
+    if config.wandb.on: wandb.log( log, step = wandb_step )
+
+def run_epoch( wins_per_epoch, wandb_step ):
     # === Compute weights from wins ===
     weights = torch.zeros( len(metagraph.hotkeys) )
     for uid in wins_per_epoch:
         weights[uid] = wins_per_epoch[uid] / sum( wins_per_epoch.values() )
-        if config.wandb.on: wandb.log( {f"wins_per_epoch/{uid}": wins_per_epoch[uid]} )
+        if config.wandb.on: wandb.log( {f"wins_per_epoch/{uid}": wins_per_epoch[uid]/ sum(wins_per_epoch.values())}, step = wandb_step )
     wins_per_epoch = {} # Clearn wins per epoch.
 
     # === Set weights ===
@@ -245,6 +251,8 @@ def epoch( wins_per_epoch ):
     bt.logging.success(f"Set weights: {weights.tolist()}")
 
 # === Validating loop ===
+step = 0
+epoch = 0 
 last_epoch = metagraph.block.item()
 bt.logging.success(f"Starting validator loop")
 while True:
@@ -253,13 +261,15 @@ while True:
             # Updates models (if needed) runs an eval step over each model
             # Records the number of 'wins' per model in the step. A wins
             # is defined as the model with the lowest loss on a given batch.
-            run_step( wins_per_epoch, metagraph )
+            run_step( wins_per_epoch, metagraph, step )
             metagraph = subtensor.metagraph( pretrain.NETUID )
             bt.logging.success(f"{metagraph.block.item() - last_epoch } / {config.blocks_per_epoch} blocks until next epoch.")
+            step += 1
 
         # Finish epoch.
-        epoch( wins_per_epoch )
+        run_epoch( wins_per_epoch, step )
         last_epoch = metagraph.block.item()
+        epoch += 1
 
     except KeyboardInterrupt:
         bt.logging.info("KeyboardInterrupt caught, gracefully closing the wandb run...")
