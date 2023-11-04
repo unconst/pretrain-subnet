@@ -170,8 +170,8 @@ def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
     
     # === Check if the model needs updating ===    
     model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-    if uid in model_timestamps and model_timestamp == model_timestamps[uid]: bt.logging.debug('Miner model artifact is up to date.'); return 
     model_timestamps[uid] = model_timestamp # Update model timestamp.
+    if uid in model_timestamps and model_timestamp == model_timestamps[uid]: bt.logging.debug('Miner model artifact is up to date.'); return 
 
     # === Load the model from file ===
     bt.logging.debug(f"Updating model for: {uid}")
@@ -222,7 +222,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
 
     bt.logging.info(f"average_loss_per_uid = {average_loss_per_uid}")
     bt.logging.info(f"log = {log}")
-    
+
     # === Compute wins per batch ===
     win_per_step = {}
     for step in range(len(eval_batches)):
