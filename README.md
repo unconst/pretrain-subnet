@@ -62,10 +62,9 @@ To perform well miners must attain the lowest loss on the largest number of rand
         set_weights( weight )
 ```
 
-
 ---
 
-## Mining
+## Installing
 
 Before mining make sure you have python3.8. Then install this repository.
 ```bash
@@ -74,11 +73,40 @@ cd pretrain-subnet
 python -m pip install -e . 
 ```
 
-Miners require a Bittensor coldkey and hotkey pair registered to netuid 9.
+---
+
+## Subtensor
+
+Your node will run better if you are connecting to a local Bittensor chain entrypoint node rather than using Opentensor's. 
+We recommend running a local node as follows and passing the ```--subtensor.network local``` flag to your running miners/validators. 
+To install and run a local subtensor node follow the commands below with Docker and Docker-Compose previously installed.
 ```bash
-btcli w create # to create your miner/validator cold + hotkey keys.
+git clone https://github.com/opentensor/subtensor.git
+cd subtensor
+docker compose up --detach
+```
+
+---
+
+## Registration
+
+Miners + validator require a Bittensor coldkey and hotkey pair registered to netuid 9 before they can participate in the network.
+To create a wallet for either your validator or miner run the following command in your terminal. Make sure to save the mnemonic for
+both keys and store them in a safe place.
+```bash
+btcli w create --wallet.name ... --wallet.hotkey ... # to create your miner/validator cold + hotkey keys.
+btcli w list # to view your created keys.
+```
+
+Registering a miner or a validator on subnet 9 requires the participant `recycle` TAO to pay for entrance. To register your key run the 
+following command.
+```bash
 btcli s recycle_register --wallet.name ... --wallet.hotkey ... --netuid 0 # register your cold and associated hotkey to netuid 9.
 ```
+
+---
+
+## Mining
 
 Miners must attain a wandb account from [wandb](https://wandb.ai/home) and attain their wandb api key.
 Follow the instructions [here](https://docs.wandb.ai/quickstart)
@@ -103,37 +131,6 @@ python neurons/miner.py --wallet.name ... --wallet.hotkey ...
 2023-11-04 13:55:46.798 |     SUCCESS      | Loaded model from: /home/setup/.bittensor/miners/Rawls/M1/netuid9/miner/model.pth
 2023-11-04 13:56:27.397 |     SUCCESS      | Waiting for updated on /home/setup/.bittensor/miners/my_coldkey/my_hotkey/netuid9/miner/model.pth
 ...
-```
-
----
-
-## Wallets
-
-
-```bash
-# Create your wallet and hotkeys.
-btcli w new_coldkey --wallet.name my_wallet
-btcli w new_hotkey --wallet.name my_wallet --wallet.hotkey miner1
-btcli w new_hotkey --wallet.name my_wallet --wallet.hotkey miner2
-btcli w new_hotkey --wallet.name my_wallet --wallet.hotkey validator
-
-# Register your hotkeys to the main chain.
-# NOTE: this costs TAO.
-btcli s recycle_register --wallet.name my_wallet --wallet.hotkey miner1
-btcli s recycle_register --wallet.name my_wallet --wallet.hotkey miner1
-btcli s recycle_register --wallet.name my_wallet --wallet.hotkey validator
-```
----
-
-## Local Subtensor
-
-Your node will run better if you are connecting to a local Bittensor chain entrypoint node rather than using Opentensor's. 
-We recommend running a local node as follows and passing the ```--subtensor.network local``` flag to your running miners/validators. 
-To install and run a local subtensor node follow the commands below with Docker and Docker-Compose previously installed.
-```bash
-git clone https://github.com/opentensor/subtensor.git
-cd subtensor
-docker compose up --detach
 ```
 
 

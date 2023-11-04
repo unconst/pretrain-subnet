@@ -25,7 +25,7 @@ import bittensor as bt
 # === Config ===
 def get_config():
     parser = argparse.ArgumentParser()
-    parser.add_argument( "--model_dir", type=str, required=False, help="Override model directory")
+    parser.add_argument( "--model_path", type=str, required=False, help="Override model path")
     parser.add_argument( "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
     bt.wallet.add_args( parser )
     bt.logging.add_args( parser )
@@ -39,10 +39,10 @@ def get_config():
             "miner",
         )
     )
-    config.model_dir = config.full_path if config.model_dir == None else os.path.expanduser( config.model_dir )
-    config.model_path = config.model_dir + '/' + 'model.pth'
-    if not os.path.exists(config.model_dir):
-        os.makedirs(config.model_dir, exist_ok=True)
+    if config.model_path == None:
+        config.model_path = config.full_path + '/' + 'model.pth'
+    if not os.path.exists( config.model_path ):
+        os.makedirs( config.model_path, exist_ok=True )
     return config
 config = get_config()
 print (config)
