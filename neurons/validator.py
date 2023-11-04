@@ -26,6 +26,7 @@
 # launch!
 
 import os
+import copy
 import json
 import math
 import time
@@ -260,7 +261,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
             log[str(uid)]["Win Percentage"] = 0 
 
     # Clear uid logs for empty dictionaries.
-    for key in log: 
+    for key in copy.deepcopy(log): 
         if log[key] == {}: del log[key]
     bt.logging.success(f"Step results: {log}")
     if config.wandb.on: wandb.log( log, step = wandb_step )
