@@ -163,7 +163,7 @@ def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
     
     # === Check if the model needs updating ===    
     model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-    if model_timestamp == model_timestamps[uid]: bt.logging.debug('Miner model artifact is up to date.'); return 
+    if uid in model_timestamps and model_timestamp == model_timestamps[uid]: bt.logging.debug('Miner model artifact is up to date.'); return 
     model_timestamps[uid] = model_timestamp # Update model timestamp.
 
     # === Load the model from file ===
