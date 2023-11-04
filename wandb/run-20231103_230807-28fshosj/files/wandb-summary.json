@@ -1,0 +1,1 @@
+{"average_loss/223": 3.97064351609775, "_timestamp": 1699070920.6785042, "average_loss/255": 3.9740859610693797, "best_average_loss": 3.97064351609775, "best_average_loss_uid": 223, "win_per_step/255": 0.17857142857142858, "_runtime": 33.3732533454895, "_step": 1, "win_per_step/223": 0.8214285714285714, "_wandb": {"runtime": 59}}
