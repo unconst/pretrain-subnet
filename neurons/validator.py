@@ -250,6 +250,8 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
 
     # === Log wins per step ===
     for uid in win_per_step.keys():
+        if uid not in log:
+            log[uid] = {}
         log[f"{uid}"]["Win Percentage"] = win_per_step[uid] / (sum(win_per_step.values()))
 
     bt.logging.success(f"Step results: {log}")
