@@ -139,7 +139,7 @@ def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device )
                 outputs = model(inputs, labels=inputs)
                 losses_per_batch.append( outputs.loss.detach().item() )
             except Exception as e:
-                losses_per_batch.appedn( math.inf )
+                losses_per_batch.append( math.inf )
     return losses_per_batch
 
 def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
