@@ -65,7 +65,7 @@ class SubsetFalconLoader(IterableDataset):
                 break  # If the request was successful, break out of the retry loop
             except requests.exceptions.RequestException as e:
                 attempt += 1
-                bt.logging.warn(f"Failed to fetch data, attempt {attempt}/{self.retry_limit}. Reason: {str(e)}")
+                bt.logging.error(f"Failed to fetch data, attempt {attempt}/{self.retry_limit}. Reason: {str(e)}")
                 if attempt < self.retry_limit:
                     time.sleep(self.retry_delay)  # Wait before the next retry
                 else:
