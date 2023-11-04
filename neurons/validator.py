@@ -190,14 +190,19 @@ def run_step( wins_per_epoch, metagraph ):
         optionally_update_model( uid )
 
     # === Compute losses on each batch ===
+    best_uid
+    best_average_loss = math.inf
     losses_per_uid_per_batch = {}
     for uid in available:
         losses_per_batch = compute_losses_on_batches( uid, eval_batches, config.device )
         losses_per_uid_per_batch[uid] = losses_per_batch
         if math.inf not in losses_per_batch:
             average_loss = sum(losses_per_batch) / len(losses_per_batch)
+            if average_loss < best_average_loss: best_average_loss = average_loss; best_uid = uid
             if config.wandb.on and average_loss != math.inf: wandb.log( {f"average_loss/{uid}": average_loss} )
             bt.logging.success(f"Computed average_loss for uid: {uid} losses: {average_loss}")
+    if best_uid == None and config.wandb.on: wandb.log( {f"best_average_loss/{uid}": math.inf} )
+    if best_uid == None and config.wandb.on: wandb.log( {f"best_average_loss_uid": best_uid} )
 
     # === Compute wins per batch ===
     win_per_step = {}
@@ -215,7 +220,7 @@ def run_step( wins_per_epoch, metagraph ):
 
     # === Log wins per step ===
     for uid in win_per_step.keys():
-        if config.wandb.on: wandb.log( {f"win_per_step/{uid}": win_per_step[uid] } )
+        if config.wandb.on: wandb.log( {f"win_per_step/{uid}": win_per_step[uid] / (sum(win_per_step.values())) } )
 
 def epoch( wins_per_epoch ):
     # === Compute weights from wins ===
