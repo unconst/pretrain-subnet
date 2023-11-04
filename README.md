@@ -80,14 +80,15 @@ Follow the instructions [here](https://docs.wandb.ai/quickstart)
 wandb init
 ```
 
-Once your wandb is installed. Train your model. Note, the training script is simply a mock training script, we recommend you ammend the training script at later date.
-Or copy the weights from other miners, subnet 9 is pro model sharing as a means of distributing contiously better models to participants. 
+Once your wandb is installed. Train your model. Note, the training script is simply a mock training script, we recommend you ammend the training script at a later date.
 ```bash
 python neurons/train.py --wallet.name ... --wallet.hotkey ... 
+... training ....
+2023-11-04 13:53:04.134 |     SUCCESS      | Saving model to /home/setup/.bittensor/miners/my_coldkey/my_hotkey/netuid9/miner/model.pth
 ```
 
-The mode trained by the running the above training script will be written to ```~/.bittensor/miners/<your cold>/<your hot>/netuid9/miner/model.pth```. Your miner will find this
-model and periodically advertise if it changes over time. To run a miner over the model save here run the following command.
+The mode trained by running the above training script will be written to ```~/.bittensor/miners/<your cold>/<your hot>/netuid9/miner/model.pth```. Your miner will find this
+model and periodically advertise if you change it over time. To run your miner over this model, run the following script.
 
 ```bash
 python neurons/miner.py --wallet.name ... --wallet.hotkey ...
