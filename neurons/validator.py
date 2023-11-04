@@ -195,7 +195,7 @@ def run_step( metagraph ):
         losses_per_batch = compute_losses_on_batches( uid, eval_batches, config.device )
         losses_per_uid_per_batch[uid] = losses_per_batch
         if config.wandb.on: wandb.log( {f"average_loss/{uid}": sum(losses_per_batch) / len(losses_per_batch) } )
-        bt.logging.success(f"Computed losses for uid: {uid} losses: {losses_per_batch}")
+        bt.logging.debug(f"Computed losses for uid: {uid} losses: {losses_per_batch}")
 
     # === Compute wins per batch ===
     win_per_step = {}
@@ -208,6 +208,7 @@ def run_step( metagraph ):
                 min_loss_uid = uid
         wins_per_epoch[min_loss_uid] = wins_per_epoch.get(min_loss_uid, 0) + 1
         win_per_step[step] = min_loss_uid
+    bt.logging.debug(f"Computed wins per step: {win_per_step}")
 
     # === Log wins per step ===
     for uid in win_per_step:
