@@ -175,6 +175,10 @@ def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
     model_dir = f'{config.full_path}/models/{metagraph.hotkeys[uid]}/'
     timestamp_file = f'{model_dir}timestamp.json'
 
+    # === Set the paths ===
+    model_paths[uid] = model_dir + ARTIFACT_NAME
+    model_timestamps[uid] = model_timestamp
+
     # === Check if the timestamp file exists and if the timestamp matches ===
     if os.path.exists(timestamp_file):
         with open(timestamp_file, 'r') as f:
@@ -187,10 +191,6 @@ def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
     os.makedirs(model_dir, exist_ok=True)  # Ensure the directory exists
     with open(timestamp_file, 'w') as f:
         json.dump(model_timestamp, f)
-
-    # === Set the paths ===
-    model_paths[uid] = model_dir + ARTIFACT_NAME
-    model_timestamps[uid] = model_timestamp
 
     # === Load the model from the file ===
     bt.logging.debug(f"Updating model for: {uid}")
