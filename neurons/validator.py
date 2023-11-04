@@ -200,16 +200,9 @@ def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
 
     # === Load the model from file ===
     bt.logging.debug(f"Updating model for: {uid}")
-    model_file.download( replace = True ) # Replaces the model.pth file in the current directory.
-    model = pretrain.model.get_model()
-    model_weights = torch.load( ARTIFACT_NAME, map_location=torch.device('cpu'))
-    model.load_state_dict(model_weights)
-
-    # === Save new model to path ===
-    model_save_path = f'{config.full_path}/uid{uid}-' + ARTIFACT_NAME 
-    torch.save( model.state_dict(), model_save_path )
-    bt.logging.success(f"Saved updated model to path: {model_save_path} for uid: {uid}")
-    model_paths[uid] = model_save_path
+    model_dir = f'{config.full_path}/models/{metagraph.hotkeys[uid]}/' 
+    model_file.download( replace = True, root = model_dir) 
+    model_paths[uid] = model_dir + ARTIFACT_NAME
 
 # === Validating loop ===
 last_weights_blocks = metagraph.block.item()
