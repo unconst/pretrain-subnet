@@ -45,7 +45,7 @@ def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument( "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
     parser.add_argument( '--wandb.on', action='store_true', help='Turn on wandb logging.' )
-    parser.add_argument( '--blocks_till_set_weights', type=int, default=360, help='Number of blocks to wait before setting weights.' )
+    parser.add_argument( '--blocks_per_epoch', type=int, default=360, help='Number of blocks to wait before setting weights.' )
     bt.subtensor.add_args(parser)
     bt.logging.add_args(parser)
     bt.wallet.add_args(parser)
@@ -173,7 +173,7 @@ def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
     model_paths[uid] = model_dir + ARTIFACT_NAME
 
 
-def run_step():
+def run_step( metagraph ):
     # === Get next batches ===
     random_pages = [ random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages) ]
     eval_batches = list(pretrain.dataset.SubsetFalconLoader(
@@ -235,17 +235,19 @@ def epoch():
     last_weights_blocks = metagraph.block.item()
 
 # === Validating loop ===
-last_weights_blocks = metagraph.block.item()
+last_epoch = metagraph.block.item()
 while True:
     bt.logging.success(f"Starting validator loop")
     try:
 
-        run_step()
+        # Updates models (if needed) runs an eval step over each model
+        # Records the number of 'wins' per model in the step. A wins
+        # is defined as the model with the lowest loss on a given batch.
+        run_step( metagraph )
 
-        # === Find best miner ===
-        if metagraph.block.item() - last_weights_blocks > config.blocks_till_set_weights:
-
+        if metagraph.block.item() - last_epoch > config.blocks_per_epoch:
             epoch()
+            last_epoch = metagraph.block.item()
 
         # === Update state ===
         bt.logging.debug(f"Updated metagraph")
