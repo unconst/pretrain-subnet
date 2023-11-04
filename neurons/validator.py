@@ -197,7 +197,7 @@ def run_step( wins_per_epoch, metagraph ):
         if math.inf not in losses_per_batch:
             average_loss = sum(losses_per_batch) / len(losses_per_batch)
             if config.wandb.on and average_loss != math.inf: wandb.log( {f"average_loss/{uid}": average_loss} )
-            bt.logging.debug(f"Computed losses for uid: {uid} losses: {losses_per_batch}")
+            bt.logging.success(f"Computed average_loss for uid: {uid} losses: {average_loss}")
 
     # === Compute wins per batch ===
     win_per_step = {}
