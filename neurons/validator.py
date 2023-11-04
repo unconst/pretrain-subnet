@@ -254,6 +254,7 @@ while True:
             weights = torch.zeros( len(metagraph.hotkeys) )
             for uid in wins:
                 wins[uid] = wins[uid] / sum( wins.values() )
+            wins = {}
 
             # === Set weights ===
             subtensor.set_weights(
