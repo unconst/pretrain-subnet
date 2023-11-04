@@ -215,9 +215,6 @@ def run_step( metagraph ):
     for uid in win_per_step.keys():
         if config.wandb.on: wandb.log( {f"win_per_step/{uid}": win_per_step[uid] } )
 
-    # === Update metagraph state ==
-    metagraph = subtensor.metagraph( pretrain.NETUID )
-
 def epoch():
     # === Compute weights from wins ===
     weights = torch.zeros( len(metagraph.hotkeys) )
@@ -245,8 +242,9 @@ while True:
             # Updates models (if needed) runs an eval step over each model
             # Records the number of 'wins' per model in the step. A wins
             # is defined as the model with the lowest loss on a given batch.
-            bt.logging.debug(f"Run step.")
             run_step( metagraph )
+            metagraph = subtensor.metagraph( pretrain.NETUID )
+            bt.logging.debug(f"{metagraph.block.item() - last_epoch } / {config.blocks_per_epoch} blocks until next epoch.")
 
         # Finish epoch.
         epoch()
