@@ -187,7 +187,7 @@ def run_step( wins_per_epoch, metagraph ):
     available = get_available_uids( metagraph ) 
 
     # === Update model for each uid ===
-    for uid in tqdm( available , desc="Computing losses on batches", leave=False):
+    for uid in tqdm( available , desc="Updating models", leave=False):
         optionally_update_model( uid )
 
     # === Compute losses on each batch ===
