@@ -222,7 +222,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
 
     bt.logging.info(f"average_loss_per_uid = {average_loss_per_uid}")
     bt.logging.info(f"log = {log}")
-    bt.logging.info(f"losss_per_uid_per_batch = {losss_per_uid_per_batch}")
+    bt.logging.info(f"losss_per_uid_per_batch = {losses_per_uid_per_batch}")
 
     # === Compute wins per batch ===
     win_per_step = {}

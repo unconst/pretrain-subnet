@@ -25,6 +25,7 @@ import bittensor as bt
 # === Config ===
 def get_config():
     parser = argparse.ArgumentParser()
+    parser.add_argument( "--model_dir", type=str, required=False, help="Override model directory")
     parser.add_argument( "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
     bt.wallet.add_args( parser )
     bt.logging.add_args( parser )
@@ -38,13 +39,12 @@ def get_config():
             "miner",
         )
     )
-    if not os.path.exists(config.full_path):
-        os.makedirs(config.full_path, exist_ok=True)
-    config.model_path = config.full_path + '/' + 'model.pth'
+    config.model_dir = config.full_path if config.model_dir == None else os.path.expanduser( config.model_dir )
+    config.model_path = config.model_dir + '/' + 'model.pth'
+    if not os.path.exists(config.model_dir):
+        os.makedirs(config.model_dir, exist_ok=True)
     return config
 config = get_config()
-
-model_path = os.path.expanduser(config.model_path)
 
 model = pretrain.model.get_model()
 model.zero_grad()
@@ -64,5 +64,5 @@ for epoch in range(num_epochs):
         optimizer.step()
         bt.logging.success( f'Acc: step: {i} loss: {outputs.loss}' )
 
-bt.logging.success( f'Saving model to {model_path}' )
-torch.save( model.state_dict(), model_path )
+bt.logging.success( f'Saving model to {config.model_path}' )
+torch.save( model.state_dict(), config.model_path )

@@ -62,6 +62,7 @@ To perform well miners must attain the lowest loss on the largest number of rand
         set_weights( weight )
 ```
 
+
 ---
 
 ## Mining
@@ -71,6 +72,12 @@ Before mining make sure you have python3.8. Then install this repository.
 git clone https://github.com/unconst/pretrain-subnet.git
 cd pretrain-subnet
 python -m pip install -e . 
+```
+
+Miners require a Bittensor coldkey and hotkey pair registered to netuid 9.
+```bash
+btcli w create # to create your miner/validator cold + hotkey keys.
+btcli s recycle_register --wallet.name ... --wallet.hotkey ... --netuid 0 # register your cold and associated hotkey to netuid 9.
 ```
 
 Miners must attain a wandb account from [wandb](https://wandb.ai/home) and attain their wandb api key.
@@ -92,9 +99,11 @@ model and periodically advertise if you change it over time. To run your miner o
 
 ```bash
 python neurons/miner.py --wallet.name ... --wallet.hotkey ...
+2023-11-04 13:55:44.141 |     SUCCESS      | Started wandb run
+2023-11-04 13:55:46.798 |     SUCCESS      | Loaded model from: /home/setup/.bittensor/miners/Rawls/M1/netuid9/miner/model.pth
+2023-11-04 13:56:27.397 |     SUCCESS      | Waiting for updated on /home/setup/.bittensor/miners/my_coldkey/my_hotkey/netuid9/miner/model.pth
+...
 ```
-
-
 
 ---
 

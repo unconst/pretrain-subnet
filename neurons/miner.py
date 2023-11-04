@@ -30,6 +30,7 @@ import bittensor as bt
 # === Config ===
 def get_config():
     parser = argparse.ArgumentParser()
+    parser.add_argument( "--model_dir", type=str, required=False, help="Override model directory")
     bt.subtensor.add_args(parser)
     bt.logging.add_args(parser)
     bt.wallet.add_args(parser)
@@ -44,11 +45,10 @@ def get_config():
             "miner",
         )
     )
-    if not os.path.exists(config.full_path):
-        os.makedirs(config.full_path, exist_ok=True)
-    # config.model_path = config.full_path + '/' + 'model.pth'
-    config.model_path = "~/model.pth"
-
+    config.model_dir = config.full_path if config.model_dir == None else os.path.expanduser( config.model_dir )
+    config.model_path = config.model_dir + '/' + 'model.pth'
+    if not os.path.exists(config.model_dir):
+        os.makedirs(config.model_dir, exist_ok=True)
     return config
 
 config = get_config()
@@ -79,14 +79,13 @@ wandb_run =  wandb.init(
 )
 bt.logging.success( f'Started wandb run' )
 
-model_path = os.path.expanduser( config.model_path )
-timestamp = os.path.getmtime( model_path )
+timestamp = os.path.getmtime( config.model_path )
 model = pretrain.model.get_model( )
-model_weights = torch.load( model_path )
+model_weights = torch.load( config.model_path )
 model.load_state_dict( model_weights )
-bt.logging.success( f'Loaded model from: {model_path}' )
+bt.logging.success( f'Loaded model from: {config.model_path}' )
 
-wandb.save( model_path )
+wandb.save( config.model_path )
 bt.logging.success( f'Saved weights to wandb' )
 
 def get_run( synapse: pretrain.protocol.GetRun ) -> pretrain.protocol.GetRun:
@@ -120,16 +119,16 @@ subtensor.set_weights (
 )
 while True:
     try:
-        bt.logging.success( f'Waiting for updated on {model_path}' )
+        bt.logging.success( f'Waiting for updated on {config.model_path}' )
 
-        new_timestamp = os.path.getmtime( model_path )
+        new_timestamp = os.path.getmtime( config.model_path )
         if new_timestamp != timestamp:
             model = pretrain.model.get_model()
-            model_weights = torch.load( model_path )
+            model_weights = torch.load( config.model_path )
             model.load_state_dict( model_weights )
-            wandb.save( model_path )
+            wandb.save( config.model_path )
             timestamp = new_timestamp
-            bt.logging.success( f'Found newer model at {model_path}' )
+            bt.logging.success( f'Found newer model at {config.model_path}' )
 
         time.sleep( 10 )
         step += 1
