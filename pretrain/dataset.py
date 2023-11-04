@@ -19,7 +19,6 @@ import torch
 import typing
 import requests
 import bittensor as bt
-from tqdm import tqdm
 from torch.utils.data import IterableDataset
 from transformers import GPT2Tokenizer
 
@@ -43,7 +42,7 @@ class SubsetFalconLoader(IterableDataset):
         }
         self.pages = pages
         self.buffer = []
-        for page in tqdm(self.pages):
+        for page in self.pages:
             self.params["offset"] = page
             self.params["limit"] = self.num_rows_per_page
             response = requests.get(self.base_url, params=self.params)

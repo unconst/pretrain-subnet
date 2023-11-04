@@ -233,7 +233,7 @@ def epoch( wins_per_epoch ):
         weights = weights,
         wait_for_inclusion=False,
     )
-    bt.logging.success(f"Served weights: {weights.tolist()}")
+    bt.logging.success(f"Set weights: {weights.tolist()}")
 
 # === Validating loop ===
 last_epoch = metagraph.block.item()
