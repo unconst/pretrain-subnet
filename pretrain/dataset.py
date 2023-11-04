@@ -32,7 +32,7 @@ class SubsetFalconLoader(IterableDataset):
         self.batch_size = batch_size
         self.sequence_length = sequence_length
         self.num_rows_per_page = 100
-        self.tokenizer = GPT2Tokenizer.from_pretrained(model_name)
+        self.tokenizer = GPT2Tokenizer.from_pretrained(model_name, truncation=True)
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.base_url = "https://datasets-server.huggingface.co/rows"
         self.params = {
