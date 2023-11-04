@@ -207,11 +207,11 @@ def run_step( metagraph ):
                 min_loss = losses_per_uid_per_batch[uid][step]
                 min_loss_uid = uid
         wins_per_epoch[min_loss_uid] = wins_per_epoch.get(min_loss_uid, 0) + 1
-        win_per_step[step] = min_loss_uid
+        win_per_step[min_loss_uid] = win_per_step.get(min_loss_uid, 0) + 1
     bt.logging.success(f"Computed wins per step: {win_per_step}")
 
     # === Log wins per step ===
-    for uid in win_per_step:
+    for uid in win_per_step.keys():
         if config.wandb.on: wandb.log( {f"win_per_step/{uid}": win_per_step[uid] } )
 
     # === Update metagraph state ==
