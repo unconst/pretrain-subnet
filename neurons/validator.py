@@ -36,6 +36,7 @@ import traceback
 import pretrain
 import argparse
 import bittensor as bt
+from tqdm import tqdm
 from datetime import datetime
 
 # Global artifact name
@@ -186,7 +187,7 @@ def run_step( wins_per_epoch, metagraph ):
     available = get_available_uids( metagraph ) 
 
     # === Update model for each uid ===
-    for uid in available:
+    for uid in tqdm( available , desc="Computing losses on batches", leave=False):
         optionally_update_model( uid )
 
     # === Compute losses on each batch ===
@@ -194,7 +195,7 @@ def run_step( wins_per_epoch, metagraph ):
     best_average_loss = math.inf
     losses_per_uid_per_batch = {}
     average_loss_per_uid = {}
-    for uid in available:
+    for uid in tqdm(available, desc="Computing losses on batches", leave=False):
         losses_per_batch = compute_losses_on_batches( uid, eval_batches, config.device )
         losses_per_uid_per_batch[uid] = losses_per_batch
         if math.inf not in losses_per_batch:
