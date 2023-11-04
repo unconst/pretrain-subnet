@@ -183,6 +183,8 @@ def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
 def run_step( wins_per_epoch, metagraph, wandb_step ):
     # === Get next batches ===
     random_pages = [ random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages) ]
+    bt.logging.info(f"using random pages: {random_pages}")
+    
     eval_batches = list(pretrain.dataset.SubsetFalconLoader(
         batch_size = pretrain.batch_size,
         sequence_length = pretrain.sequence_length,
@@ -211,11 +213,16 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
         if math.inf not in losses_per_batch:
             average_loss = sum(losses_per_batch) / len(losses_per_batch)
             average_loss_per_uid[uid] = average_loss
+            average_loss_per_uid[uid]["pages"] = random_pages
             if average_loss < best_average_loss: best_average_loss = average_loss; best_uid = uid
             log[f"average_loss/{uid}"] = average_loss
     if best_uid != None:
         log[f"best_average_loss"] = best_average_loss
         log[f"best_average_loss_uid"] = best_uid 
+
+    bt.logging.info(f"average_loss_per_uid = {average_loss_per_uid}")
+    bt.logging.info(f"log = {log}")
+    bt.logging.info(f"losss_per_uid_per_batch = {losss_per_uid_per_batch}")
 
     # === Compute wins per batch ===
     win_per_step = {}
