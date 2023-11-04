@@ -45,7 +45,7 @@ def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument( "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
     parser.add_argument( '--wandb.on', action='store_true', help='Turn on wandb logging.' )
-    parser.add_argument( '--blocks_till_set_weights', type=int, default=100, help='Number of blocks to wait before setting weights.' )
+    parser.add_argument( '--blocks_till_set_weights', type=int, default=360, help='Number of blocks to wait before setting weights.' )
     bt.subtensor.add_args(parser)
     bt.logging.add_args(parser)
     bt.wallet.add_args(parser)
@@ -96,7 +96,7 @@ if config.wandb.on:
 
 # === Init vars ===
 api = wandb.Api( timeout = 100 )
-wins = {}
+wins_per_epoch = {}
 model_paths = {}
 model_timestamps = {}
 
@@ -110,28 +110,6 @@ def get_available_uids( metagraph ) -> typing.List[int]:
     """
     available_uids = [ uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving and (metagraph.block.item() - metagraph.last_update[uid] < 500)]
     return available_uids   
-
-def log_state( global_state: typing.Dict ):
-    """ Logs the global state to wandb and to screen.
-        Args:
-            global_state (:obj:`Dict`): The global state to log.
-    """
-    # === Write global state to file ===
-    with open(f'{config.full_path}/global_state.json', 'w') as f:
-        json.dump(global_state, f)
-
-    # === Log global state to wandb ===
-    log = {}
-    if 'best_miner_uid' in global_state:
-        log['best_miner_uid'] = global_state['best_miner_uid']
-        log['best_miner_loss'] = global_state['best_miner_loss']
-    for uid, state in global_state['miners'].items():
-        if len(state['losses']) == 0 : log[f'loss-{uid}'] = sum(state['losses'])/len(state['losses'])  
-    if config.wandb.on:
-        wandb_run.log( log )
-
-    # Log to screen.
-    bt.logging.info(log)
 
 
 def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device ):
@@ -194,50 +172,62 @@ def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
     model_file.download( replace = True, root = model_dir) 
     model_paths[uid] = model_dir + ARTIFACT_NAME
 
+
+def run_step():
+    # === Get next batches ===
+    random_pages = [ random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages) ]
+    eval_batches = list(pretrain.dataset.SubsetFalconLoader(
+        batch_size = pretrain.batch_size,
+        sequence_length = pretrain.sequence_length,
+        pages = random_pages
+    ))
+
+    # === UIDs to evaluate ===
+    available = get_available_uids( metagraph ) 
+
+    # === Update model for each uid ===
+    for uid in available:
+        optionally_update_model( uid )
+
+    # === Compute losses on each batch ===
+    losses_per_uid_per_batch = { uid: compute_losses_on_batches( uid, eval_batches, config.device ) for uid in available }
+
+    # === Compute wins per batch ===
+    win_per_step = {}
+    for step in range(len(eval_batches)):
+        min_loss = math.inf
+        min_loss_uid = None
+        for uid in losses_per_uid_per_batch:
+            if losses_per_uid_per_batch[uid][step] < min_loss:
+                min_loss = losses_per_uid_per_batch[uid][step]
+                min_loss_uid = uid
+        wins_per_epoch[min_loss_uid] = wins_per_epoch.get(min_loss_uid, 0) + 1
+        win_per_step[step] = min_loss_uid
+
+    # Log wins per step
+    for uid in win_per_step:
+        if config.wandb.on: wandb.log( {f"win_per_step/{uid}": win_per_step[uid] } )
+
+    # === Update metagraph state ==
+    metagraph = subtensor.metagraph( pretrain.NETUID )
+
 # === Validating loop ===
 last_weights_blocks = metagraph.block.item()
 while True:
     bt.logging.success(f"Starting validator loop")
     try:
-        # === Get next batches ===
-        random_pages = [ random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages) ]
-        eval_batches = list(pretrain.dataset.SubsetFalconLoader(
-            batch_size = pretrain.batch_size,
-            sequence_length = pretrain.sequence_length,
-            pages = random_pages
-        ))
 
-        # === UIDs to evaluate ===
-        available = get_available_uids( metagraph ) 
-
-        # === Update model for each uid ===
-        for uid in available:
-            optionally_update_model( uid )
-
-        # === Compute losses on each batch ===
-        losses_per_uid_per_batch = { uid: compute_losses_on_batches( uid, eval_batches, config.device ) for uid in available }
-
-        # === Compute wins per batch ===
-        for step in range(len(eval_batches)):
-            min_loss = math.inf
-            min_loss_uid = None
-            for uid in losses_per_uid_per_batch:
-                if losses_per_uid_per_batch[uid][step] < min_loss:
-                    min_loss = losses_per_uid_per_batch[uid][step]
-                    min_loss_uid = uid
-            wins[min_loss_uid] = wins.get(min_loss_uid, 0) + 1
-
-        # === Log state ==
-        metagraph = subtensor.metagraph( pretrain.NETUID )
+        run_step()
 
         # === Find best miner ===
         if metagraph.block.item() - last_weights_blocks > config.blocks_till_set_weights:
 
             # === Compute weights from wins ===
             weights = torch.zeros( len(metagraph.hotkeys) )
-            for uid in wins:
-                wins[uid] = wins[uid] / sum( wins.values() )
-            wins = {}
+            for uid in wins_per_epoch:
+                weights[uid] = wins_per_epoch[uid] / wins_per_epoch( wins_per_epoch.values() )
+                if config.wandb.on: wandb.log( {f"wins_per_epoch/{uid}": wins_per_epoch[uid]} )
+            wins_per_epoch = {}
 
             # === Set weights ===
             subtensor.set_weights(
