@@ -17,11 +17,17 @@
 # DEALINGS IN THE SOFTWARE.
 
 
-# TODO: change wandb api to huggingface api, need to change both miner upload and validator pull
-# determine step time to decrease load for apis, concern= rate limits
-# fix bug of not always using the lowest loss for weights
-# keep score of loss per batch 
-# avoid sampling 
+# TODO: 
+# log pages in json dict
+# change from wandb pull to huggingface api in both miner and validator
+# test larger models
+# allow for different model types -optional
+# set maximum VRAM/size for model -optional
+# add try-except for dataloader pull with retry loop
+# add docs/readme
+# fix miner path, natively allow different uids to use diff models?
+# improve frontend to be overlapping lines per UID on a time series
+
 
 import os
 import json
