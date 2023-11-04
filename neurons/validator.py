@@ -144,7 +144,6 @@ def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device )
     return losses_per_batch
 
 def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
-
     # == Get uid's run ==
     response = dendrite.query( metagraph.axons[uid], pretrain.protocol.GetRun(), timeout=0.5 )
     if not response.is_success: bt.logging.debug('Failed to get miner run'); return
@@ -187,8 +186,10 @@ def run_step( wins_per_epoch, metagraph ):
     available = get_available_uids( metagraph ) 
 
     # === Update model for each uid ===
-    for uid in tqdm( available , desc="Updating models", leave=False):
+    pbar = tqdm( available , desc="Updating model:", leave=False )
+    for uid in pbar:
         optionally_update_model( uid )
+        pbar.set_description(f"Updating model:: {uid}")
 
     # === Compute losses on each batch ===
     best_uid = None
