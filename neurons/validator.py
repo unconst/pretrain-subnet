@@ -245,14 +245,17 @@ while True:
             wins[min_loss_uid] = wins.get(min_loss_uid, 0) + 1
 
         # === Log state ==
-        log_state( global_state )
         metagraph = subtensor.metagraph( pretrain.NETUID )
 
         # === Find best miner ===
         if metagraph.block.item() - last_weights_blocks > config.blocks_till_set_weights:
 
+            # === Compute weights from wins ===
+            weights = torch.zeros( len(metagraph.hotkeys) )
+            for uid in wins:
+                wins[uid] = wins[uid] / sum( wins.values() )
+
             # === Set weights ===
-            weights = lowest_loss_win_average( global_state )       
             subtensor.set_weights(
                 netuid = pretrain.NETUID,
                 wallet = wallet,
