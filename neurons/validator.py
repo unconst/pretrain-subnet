@@ -190,7 +190,11 @@ def run_step():
         optionally_update_model( uid )
 
     # === Compute losses on each batch ===
-    losses_per_uid_per_batch = { uid: compute_losses_on_batches( uid, eval_batches, config.device ) for uid in available }
+    losses_per_uid_per_batch = {}
+    for uid in available:
+        losses_per_batch = compute_losses_on_batches( uid, eval_batches, config.device )
+        losses_per_uid_per_batch[uid] = losses_per_batch
+        if config.wandb.on: wandb.log( {f"average_loss/{uid}": sum(losses_per_batch) / len(losses_per_batch) } )
 
     # === Compute wins per batch ===
     win_per_step = {}
