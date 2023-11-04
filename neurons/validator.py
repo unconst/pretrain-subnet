@@ -22,7 +22,6 @@
 # test larger models
 # allow for different model types -optional
 # set maximum VRAM/size for model -optional
-# add docs/readme
 # improve frontend to be overlapping lines per UID on a time series
 # launch!
 
@@ -226,8 +225,12 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
         if math.inf not in losses_per_batch:
             average_loss = sum(losses_per_batch) / len(losses_per_batch)
             average_loss_per_uid[uid] = {"average_loss": average_loss}
-            if average_loss < best_average_loss: best_average_loss = average_loss; best_uid = uid
-            log[f"{uid}"]["loss"] = average_loss
+            if average_loss < best_average_loss:
+                best_average_loss = average_loss
+                best_uid = uid
+            if uid not in log:
+                log[uid] = {}
+            log[uid]["loss"] = average_loss
     if best_uid != None:
         log["best_average_loss"] = best_average_loss
         log["best_average_loss_uid"] = best_uid 
