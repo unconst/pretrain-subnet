@@ -229,8 +229,8 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
                 best_average_loss = average_loss
                 best_uid = uid
             if uid not in log:
-                log[uid] = {}
-            log[uid]["loss"] = average_loss
+                log[f"uid"] = {}
+            log[f"uid"]["loss"] = average_loss
     if best_uid != None:
         log["best_average_loss"] = best_average_loss
         log["best_average_loss_uid"] = best_uid 
@@ -251,16 +251,16 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     # === Log wins per step ===
     for uid in win_per_step.keys():
         if uid not in log:
-            log[uid] = {}
+            log[f"uid"] = {}
 
         if uid in win_per_step:
             total_wins = sum(win_per_step.values())
             if total_wins > 0:
-                log[uid]["Win Percentage"] = win_per_step[uid] / total_wins
+                log[f"uid"]["Win Percentage"] = win_per_step[uid] / total_wins
             else:
-                log[uid]["Win Percentage"] = 0  # Default to 0 if there are no wins
+                log[f"uid"]["Win Percentage"] = 0  # Default to 0 if there are no wins
         else:
-            log[uid]["Win Percentage"] = 0 
+            log[f"uid"]["Win Percentage"] = 0 
 
     bt.logging.success(f"Step results: {log}")
     if config.wandb.on: wandb.log( log, step = wandb_step )
