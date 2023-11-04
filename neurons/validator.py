@@ -170,8 +170,8 @@ def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
     
     # === Check if the model needs updating ===    
     model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-    if uid in model_timestamps and model_timestamp == model_timestamps[uid]: bt.logging.debug('Miner model artifact is up to date.'); return 
     model_timestamps[uid] = model_timestamp # Update model timestamp.
+    if uid in model_timestamps and model_timestamp == model_timestamps[uid]: bt.logging.debug('Miner model artifact is up to date.'); return 
 
     # === Load the model from file ===
     bt.logging.debug(f"Updating model for: {uid}")
@@ -215,14 +215,17 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
             average_loss_per_uid[uid] = {"average_loss": average_loss}
             average_loss_per_uid[uid]["pages"] = random_pages
             if average_loss < best_average_loss: best_average_loss = average_loss; best_uid = uid
-            log[f"average_loss/{uid}"] = average_loss
+            log[uid] = average_loss
     if best_uid != None:
-        log[f"best_average_loss"] = best_average_loss
-        log[f"best_average_loss_uid"] = best_uid 
+        log["best_average_loss"] = best_average_loss
+        log["best_average_loss_uid"] = best_uid 
 
     bt.logging.info(f"average_loss_per_uid = {average_loss_per_uid}")
     bt.logging.info(f"log = {log}")
+<<<<<<< HEAD
     bt.logging.info(f"losss_per_uid_per_batch = {losses_per_uid_per_batch}")
+=======
+>>>>>>> 4f0d78c5cc25e14837d4117c8f5d90dc8586fc4f
 
     # === Compute wins per batch ===
     win_per_step = {}
@@ -241,7 +244,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
 
     # === Log wins per step ===
     for uid in win_per_step.keys():
-        log[f"win_per_step/{uid}"] = win_per_step[uid] / (sum(win_per_step.values())) 
+        log[uid] = win_per_step[uid] / (sum(win_per_step.values())) 
 
     if config.wandb.on: wandb.log( log, step = wandb_step )
 
