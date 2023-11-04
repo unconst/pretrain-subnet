@@ -252,7 +252,15 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     for uid in win_per_step.keys():
         if uid not in log:
             log[uid] = {}
-        log[f"{uid}"]["Win Percentage"] = win_per_step[uid] / (sum(win_per_step.values()))
+
+        if uid in win_per_step:
+            total_wins = sum(win_per_step.values())
+            if total_wins > 0:
+                log[uid]["Win Percentage"] = win_per_step[uid] / total_wins
+            else:
+                log[uid]["Win Percentage"] = 0  # Default to 0 if there are no wins
+        else:
+            log[uid]["Win Percentage"] = 0 
 
     bt.logging.success(f"Step results: {log}")
     if config.wandb.on: wandb.log( log, step = wandb_step )
