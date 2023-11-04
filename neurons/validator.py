@@ -164,20 +164,37 @@ def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
     hotkey = run.config.get('hotkey')
     if hotkey != metagraph.hotkeys[uid]: bt.logging.debug('Hotkey mismatch'); return 
 
-    # === Check if model exist ===
-    model_file = run.file( ARTIFACT_NAME )
-    if model_file == None: bt.logging.debug('Miner has no model artifact.'); return 
-    
-    # === Check if the model needs updating ===    
-    model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-    model_timestamps[uid] = model_timestamp # Update model timestamp.
-    model_dir = f'{config.full_path}/models/{metagraph.hotkeys[uid]}/' 
-    model_paths[uid] = model_dir + ARTIFACT_NAME
-    if uid in model_timestamps and model_timestamp == model_timestamps[uid]: bt.logging.debug('Miner model artifact is up to date.'); return 
+    # === Check if the model exists ===
+    model_file = run.file(ARTIFACT_NAME)
+    if model_file is None:
+        bt.logging.debug('Miner has no model artifact.')
+        return
 
-    # === Load the model from file ===
+    # === Get the model's updated timestamp ===
+    model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
+    model_dir = f'{config.full_path}/models/{metagraph.hotkeys[uid]}/'
+    timestamp_file = f'{model_dir}timestamp.json'
+
+    # === Check if the timestamp file exists and if the timestamp matches ===
+    if os.path.exists(timestamp_file):
+        with open(timestamp_file, 'r') as f:
+            existing_timestamp = json.load(f)
+        if existing_timestamp == model_timestamp:
+            bt.logging.debug('Miner model artifact is up to date.')
+            return
+
+    # === If the timestamp does not match or the file does not exist, update the timestamp ===
+    os.makedirs(model_dir, exist_ok=True)  # Ensure the directory exists
+    with open(timestamp_file, 'w') as f:
+        json.dump(model_timestamp, f)
+
+    # === Set the paths ===
+    model_paths[uid] = model_dir + ARTIFACT_NAME
+    model_timestamps[uid] = model_timestamp
+
+    # === Load the model from the file ===
     bt.logging.debug(f"Updating model for: {uid}")
-    model_file.download( replace = True, root = model_dir) 
+    model_file.download(replace=True, root=model_dir)
 
 def run_step( wins_per_epoch, metagraph, wandb_step ):
     # === Get next batches ===
