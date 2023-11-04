@@ -213,6 +213,37 @@ def log_state( global_state: typing.Dict ):
     # Log to screen.
     bt.logging.info(log)
 
+
+def lowest_loss_win_average( global_state ) -> typing.Dict[int, float]:
+    # This will hold the count of lowest losses for each UID
+    lowest_loss_win_percentage = {uid: 0 for uid in global_state['miners'].keys()}
+
+    # Assuming all UIDs have the same number of steps in their losses
+    num_steps = len(next(iter(global_state['miners'].values()))['losses'])
+
+    # Iterate over each step
+    for step in range(num_steps):
+        # Get the loss for each UID at the current step
+        losses_at_step = {uid: global_state['miners'][uid]['losses'][step] for uid in state}
+        # Find the max loss at this step
+        min_loss = min(losses_at_step.values())
+        # Find all UIDs that have this min loss at this step (there can be ties)
+        uids_with_min_loss = [uid for uid, loss in losses_at_step.items() if loss == min_loss]
+        # Increment the count for each UID that has the min loss at this step
+        for uid in uids_with_min_loss:
+            lowest_loss_win_percentage[uid] += 1
+
+    # Average wins.
+    for uid in lowest_loss_win_percentage.keys():
+        lowest_loss_win_percentage[uid] /= num_steps
+
+    weights = torch.zeros_like( metagraph.S )
+    for uid in lowest_loss_win_percentage.keys():
+        weights[ uid ] = lowest_loss_win_percentage[ uid ]
+
+    return weights
+
+
 # === Validating loop ===
 last_weights_blocks = metagraph.block.item()
 while True:
@@ -256,28 +287,15 @@ while True:
                 bt.logging.error(f"Error in state update for uid: {uid} with error: \n {e} \n {traceback.format_exc()}")
                 continue
 
-        # === Find best ===
-        for miner_state in global_state['miners'].values():
-            if miner_state['losses'][-1] == None: continue
-            elif 'best_miner_loss' not in global_state or miner_state['losses'][-1] < global_state['best_miner_loss']:
-                global_state['best_miner_uid'] = miner_state['uid']
-                global_state['best_miner_loss'] = miner_state['losses']
-
-        # === Update global state ===
-        if 'best_miner_uid' in global_state:
-            wins[ global_state['best_miner_uid'] ] += 1
-
-
         # === Log state ==
         log_state( global_state )
+        metagraph = subtensor.metagraph( pretrain.NETUID )
 
         # === Find best miner ===
         if metagraph.block.item() - last_weights_blocks > config.blocks_till_set_weights:
 
             # === Set weights ===
-            weights = torch.zeros_like( metagraph.S )
-            for uid in wins.keys():
-                weights[ uid ] = wins[ uid ] / sum( wins.values() )
+            weights = lowest_loss_win_average( global_state )            
             subtensor.set_weights(
                 netuid = pretrain.NETUID,
                 wallet = wallet,
@@ -286,12 +304,9 @@ while True:
                 wait_for_inclusion=False,
             )
             bt.logging.success(f"Served weights: {weights.tolist()}")
-
             last_weights_blocks = metagraph.block.item()
-            wins = {}
 
         # === Update state ===
-        metagraph = subtensor.metagraph( pretrain.NETUID )
         bt.logging.debug(f"Updated metagraph")
 
     except KeyboardInterrupt:
