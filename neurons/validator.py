@@ -171,14 +171,13 @@ def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
     # === Check if the model needs updating ===    
     model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
     model_timestamps[uid] = model_timestamp # Update model timestamp.
+    model_dir = f'{config.full_path}/models/{metagraph.hotkeys[uid]}/' 
+    model_paths[uid] = model_dir + ARTIFACT_NAME
     if uid in model_timestamps and model_timestamp == model_timestamps[uid]: bt.logging.debug('Miner model artifact is up to date.'); return 
 
     # === Load the model from file ===
     bt.logging.debug(f"Updating model for: {uid}")
-    model_dir = f'{config.full_path}/models/{metagraph.hotkeys[uid]}/' 
     model_file.download( replace = True, root = model_dir) 
-    model_paths[uid] = model_dir + ARTIFACT_NAME
-
 
 def run_step( wins_per_epoch, metagraph, wandb_step ):
     # === Get next batches ===
