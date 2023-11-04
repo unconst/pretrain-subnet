@@ -25,10 +25,22 @@ import bittensor as bt
 # === Config ===
 def get_config():
     parser = argparse.ArgumentParser()
-    parser.add_argument( "--model_path", type = str, help="Run name.", default='~/model.pth' )
     parser.add_argument( "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
+    bt.wallet.add_args( parser )
     bt.logging.add_args( parser )
     config = bt.config(parser)
+    config.full_path = os.path.expanduser(
+        "{}/{}/{}/netuid{}/{}".format(
+            config.logging.logging_dir,
+            config.wallet.name,
+            config.wallet.hotkey,
+            config.netuid,
+            "miner",
+        )
+    )
+    if not os.path.exists(config.full_path):
+        os.makedirs(config.full_path, exist_ok=True)
+    config.model_path = config.full_path + '/' + 'model.pth'
     return config
 config = get_config()
 
