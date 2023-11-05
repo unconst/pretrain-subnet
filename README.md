@@ -123,7 +123,7 @@ You can directly pass a ```--model_path ``` flag to have the training script wri
 
 ```bash
 # Run your miner with specified wallet keys.
-python neurons/train.py --wallet.name ... --wallet.hotkey ... --n
+python neurons/train.py --wallet.name ... --wallet.hotkey ... --num_epochs 1 --pages_per_epoch 1
 ... training ....
 2023-11-04 13:53:04.134 |     SUCCESS      | Saving model to /home/setup/.bittensor/miners/my_coldkey/my_hotkey/netuid9/miner/model.pth
 ```
