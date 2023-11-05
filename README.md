@@ -37,13 +37,13 @@ To perform well miners must attain the lowest loss on the largest number of rand
             batches = get_random_sample_of_batches_from_falcon()
             
             # Fetch and or update models during this step.
-            Models = get_and_update_models_from_miners()
+            models = get_and_update_models_from_miners()
 
             # Compute losses for each batch on subset and count wins per miner
-            for batch in Batches:
+            for batch in batches:
 
                 # Find miner with lowest loss on the batch.
-                for miner_uid, model in enumerate( Models ):
+                for miner_uid, model in enumerate( models ):
                     loss = get_loss_for_model_on_batch( model, batch )
                     if loss < best_loss:
                         best_uid = miner_uid
