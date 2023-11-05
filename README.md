@@ -119,7 +119,7 @@ wandb init
 
 Once your wandb is installed. Train your model. Note, the training script is simply a mock training script, we recommend you ammend the training script at a later date.
 You can directly pass a ```--model_path ``` flag to have the training script write your model under a newly specified path. By default the trained model is written to 
-```~/.bittensor/miners/<your cold>/<your hot>/netuid9/miner/model.pth```. 
+```~/.bittensor/miners/<your cold>/<your hot>/netuid9/miner/model.pth```. Note if you pass your model path it must end in ```model.pth```.
 
 ```bash
 # Run your miner with specified wallet keys.
