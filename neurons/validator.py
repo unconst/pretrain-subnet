@@ -40,6 +40,7 @@ import argparse
 import bittensor as bt
 from tqdm import tqdm
 from datetime import datetime
+import time
 
 # Global artifact name
 ARTIFACT_NAME:str = "model.pth"
