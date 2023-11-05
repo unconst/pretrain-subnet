@@ -53,7 +53,7 @@ model.train()
 model.to( config.device )
 
 optimizer = torch.optim.AdamW( model.parameters(), lr=0.000001, weight_decay=0.01 )
-loader = pretrain.dataset.SubsetFalconLoader( batch_size=3, sequence_length=512, pages=[1] )
+loader = pretrain.dataset.SubsetFalconLoader( batch_size=3, sequence_length=512, pages=[1, 2, 3, 4, 5] )
 
 num_epochs = 5 
 for epoch in range(num_epochs):
