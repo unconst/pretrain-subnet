@@ -184,6 +184,7 @@ def optionally_update_model( uid: int ):
         return
 
     # === Get the model's updated timestamp ===
+    bt.logging.info(f"model_file is :{model_file}")
     model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
     model_dir = f'{config.full_path}/models/{metagraph.hotkeys[uid]}/'
     timestamp_file = f'{model_dir}timestamp.json'
