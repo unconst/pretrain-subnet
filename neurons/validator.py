@@ -26,7 +26,6 @@
 # launch!
 
 import os
-import copy
 import json
 import math
 import time
@@ -148,7 +147,23 @@ def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device, 
                 losses_per_batch.append( math.inf )
     return losses_per_batch
 
-def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
+def optionally_update_model( uid: int ):
+    """
+        Checks if a model corresponding to a given uid needs to be updated, and if so, updates it.
+        If the model is found to be outdated, it is downloaded and updated from a specified repository.
+
+        The process involves the following steps:
+        1. Fetches the run associated with the uid.
+        2. Retrieves the run configuration and checks if the 'hotkey' matches the one in the metagraph.
+        3. Checks if the model artifact exists in the run files.
+        4. Compares the timestamp of the model artifact with the locally stored timestamp.
+        5. If the timestamps differ, or if there is no local timestamp, downloads and updates the model artifact.
+        6. Updates the local timestamp file with the new timestamp of the updated model.
+
+        Args:
+            uid (int): The metagraph uid of the miner.
+
+    """
     # == Get uid's run ==
     response = dendrite.query( metagraph.axons[uid], pretrain.protocol.GetRun(), timeout=0.5 )
     if not response.is_success: bt.logging.debug('Failed to get miner run'); return
@@ -195,6 +210,21 @@ def optionally_update_model( uid: int ) -> pretrain.model.GPT2LMHeadModel:
     model_file.download(replace=True, root=model_dir)
 
 def run_step( wins_per_epoch, metagraph, wandb_step ):
+    """
+        Executes a single validation step.
+        - 1. Generates random pages from Falcon Refined web for evaluation.
+        - 2. Identifies available UIDs for model updating (uids must be serving and have a recent weight set event.)
+        - 3. Computes losses for each batch and each UID to attain losses per batch.
+        - 4. Determines the winning UID based on lowest average loss per batch.
+        - 5. Logs win percentages for each UID to wandb and screen.
+        - 6. Logs step results and updates weights and biases (wandb) if configured.
+
+        Parameters:
+        - wins_per_epoch (dict): A dictionary to record the number of wins per UID.
+        - metagraph (object): An object representing the meta information of models.
+        - wandb_step (int): The current step number for logging in weights and biases.
+
+    """
     # === Get next batches ===
     random_pages = [ random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages) ]
     bt.logging.info(f"using random pages: {random_pages}")
@@ -261,12 +291,20 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
             log[str(uid)]["Win Percentage"] = 0 
 
     # Clear uid logs for empty dictionaries.
-    for key in copy.deepcopy(log): 
+    for key in list(log): 
         if log[key] == {}: del log[key]
     bt.logging.success(f"Step results: {log}")
     if config.wandb.on: wandb.log( log, step = wandb_step )
 
 def run_epoch( wins_per_epoch, wandb_step ):
+    """
+        Completes the validation epoch determining the weights that need to be set on chain
+        and firing off the extrinsic. 
+
+        Parameters:
+        - wins_per_epoch (dict): A dictionary to record the number of wins per UID.
+        - wandb_step (int): The current step number for logging in weights and biases.
+    """
     # === Compute weights from wins ===
     weights = torch.zeros( len(metagraph.hotkeys) )
     for uid in wins_per_epoch:
