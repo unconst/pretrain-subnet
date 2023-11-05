@@ -184,6 +184,7 @@ def optionally_update_model( uid: int ):
         return
 
     # === Get the model's updated timestamp ===
+    bt.logging.info(f"run is {run}")
     model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
     model_dir = f'{config.full_path}/models/{metagraph.hotkeys[uid]}/'
     timestamp_file = f'{model_dir}timestamp.json'
@@ -294,7 +295,8 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     for key in list(log): 
         if log[key] == {}: del log[key]
     bt.logging.success(f"Step results: {log}")
-    with open ("step_results.json", "a") as f:
+    with open ("step_
+    results.json", "a") as f:
         json.dump(log, f)
     if config.wandb.on: wandb.log( log, step = wandb_step )
 
