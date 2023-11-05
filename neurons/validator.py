@@ -270,6 +270,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
         log["best_average_loss"] = best_average_loss
         log["best_average_loss_uid"] = best_uid 
         log["pages"] = random_pages
+        log["timestamp"] = time.time()
 
     # === Compute wins per batch ===
     win_per_step = {}
