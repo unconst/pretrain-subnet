@@ -294,7 +294,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     for key in list(log): 
         if log[key] == {}: del log[key]
     bt.logging.success(f"Step results: {log}")
-    with open ("results.json", "a") as f:
+    with open ("step_results.json", "a") as f:
         json.dump(log, f)
     if config.wandb.on: wandb.log( log, step = wandb_step )
 
