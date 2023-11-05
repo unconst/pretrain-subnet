@@ -26,6 +26,10 @@ __spec_version__ = (
 )
 NETUID = 9
 
+n_eval_pages = 2
+batch_size = 3
+sequence_length = 512
+
 from . import model as model
 from . import dataset as dataset
 from . import protocol as protocol
