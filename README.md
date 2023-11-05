@@ -144,70 +144,32 @@ python neurons/miner.py --wallet.name ... --wallet.hotkey ...
 
 ## Validating
 
-Miners produce gradients using their local machines. You can run a miner like so.
+First follow the instructions to install and create your wallet before proceeding. Validators should also use wandb to help us monitor the training runs.
+Follow the instructions [here](https://docs.wandb.ai/quickstart) to get access to your API key for logging in.
+
 ```bash
-# Miner script.
-#   python neurons/miner.py
-#
-# Miner wallet name
-#    --wallet.name i.e. miner
-#
-# Miner hotkey must be distinct per miner
-#    --wallet.hotkey i.e. my_hotkey
-#
-# Select a device (different for each miner), if you dont have a GPU pass 'cpu'  
-#    --device cuda:1  
-#
-# Each miner must have a separate port here (also different for each miner)
-#    --axon.port 8091 
-#
-# To use wandb pass 
-#    --wandb.on
-#
-# To run connect to your local subtensor entrypoint
-#   --subtensor.network local 
-
-# Run first miner
-python neurons/miner/run.py --wallet.name my_wallet --wallet.hotkey miner1 --device cuda:1 --logging.debug --axon.port 9091 --wandb.on --subtensor.network local
-
-# Run your second miner
-python neurons/miner/run.py --wallet.name my_wallet --wallet.hotkey miner2 --device cuda:2 --logging.debug --axon.port 9092 --wandb.on --subtensor.network local
+wandb init
 ```
 
-Validators train a GPT2 model over the network and validate the gradients produced by the miners.
-You can run your validator/trainer like so.
+Next run your validator as follows, passing the name of your validator codld and hotkeys to the python script. Note validation required you have a working GPU.
+In version release/2.0.1 you need a GPU with atleast 20GB of RAM. 
+
 ```bash
-# Validator name:
-#   python neurons/validator.py
-#
-# The validator wallet name:
-#    --wallet.name i.e. validator 
-#
-# The validator hotkey name:
-#    --wallet.hotkey i.e. default 
-#
-# The validator device, different that miners:
-#    --device i.e. cuda:0
-# 
-# To use wandb pass 
-#    --wandb.on
-#
-# To run connect to your local subtensor entrypoint
-#   --subtensor.network local 
-
-# Run the validator
-python neurons/validator/run.py --wallet.name my_wallet --wallet.hotkey validator --logging.debug --device cuda:3 --wandb.on --subtensor.network local
+python neurons/validator.py 
+    --wallet.name YOUR_WALLET_NAME
+    --wallet.hotkey YOUR_WALLET_HOTKEY 
+    --device YOUR_CUDA DEVICE
+    --wandb.on 
 ```
-
 ---
 
 # Auto-update PM2 + CRON
 
 ```bash
 echo '* * * * * git -C <path to pretrain-subnet repo> pull' >> /etc/crontab
-pm2 start neurons/validator/run.py --name sn9_validator --interpreter python3 --watch -- --wallet.name my_wallet --wallet.hotkey validator --logging.debug --device cuda:1  --subtensor.network local
-pm2 start neurons/miner/run.py --name sn9_miner_1 --interpreter python3 --watch -- --wallet.name my_wallet --wallet.hotkey miner1 --logging.debug --device cuda:2  --subtensor.network local
-pm2 start neurons/miner/run.py --name sn9_miner_2 --interpreter python3 --watch -- --wallet.name my_wallet --wallet.hotkey miner2 --logging.debug --device cuda:3  --subtensor.network local
+pm2 start neurons/validator.py --name sn9_validator --interpreter python3 --watch -- --wallet.name my_wallet ...
+pm2 start neurons/miner.py --name sn9_miner_1 --interpreter python3 --watch -- --wallet.name my_wallet ...
+pm2 start neurons/miner.py --name sn9_miner_2 --interpreter python3 --watch -- --wallet.name my_wallet ...
 ```
 
 ---
