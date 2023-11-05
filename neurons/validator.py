@@ -184,7 +184,6 @@ def optionally_update_model( uid: int ):
         return
 
     # === Get the model's updated timestamp ===
-    bt.logging.info(f"run is {run}")
     try:
         model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
     except:
