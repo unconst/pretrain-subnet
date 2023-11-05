@@ -294,6 +294,8 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     for key in list(log): 
         if log[key] == {}: del log[key]
     bt.logging.success(f"Step results: {log}")
+    with open ("results.json", "w") as f:
+        json.dump(log, f)
     if config.wandb.on: wandb.log( log, step = wandb_step )
 
 def run_epoch( wins_per_epoch, wandb_step ):
@@ -310,7 +312,7 @@ def run_epoch( wins_per_epoch, wandb_step ):
     for uid in wins_per_epoch:
         weights[uid] = wins_per_epoch[uid] / sum( wins_per_epoch.values() )
         if config.wandb.on: wandb.log( {f"wins_per_epoch/{uid}": wins_per_epoch[uid]/ sum(wins_per_epoch.values())}, step = wandb_step )
-    wins_per_epoch = {} # Clearn wins per epoch.
+    wins_per_epoch = {} # Clean wins per epoch.
 
     # === Set weights ===
     subtensor.set_weights(
