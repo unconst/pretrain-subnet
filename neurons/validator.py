@@ -34,6 +34,7 @@ import torch
 import string
 import random
 import typing
+from typing import Dict, List
 import traceback
 import pretrain
 import argparse
@@ -117,7 +118,7 @@ def get_available_uids( metagraph ) -> typing.List[int]:
     return available_uids   
 
 
-def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device, pbar, log, random_pages ):
+def compute_losses_on_batches( uid, eval_batches: Dict[int, List[torch.Tensor]], device, pbar, log, random_pages ):
     """ Computes the average loss of a model on a list of batches.
         Args:
             batches (:obj:`List[torch.Tensor]`): The batches to evaluate on.
@@ -125,7 +126,7 @@ def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device, 
     """
     # No model for this uid.
     if uid not in model_paths: 
-        return [math.inf for _ in range(len(batches))]
+        return [math.inf for _ in range(len(eval_batches.items()))]
 
     # === Load model ===
     model = pretrain.model.get_model()
@@ -136,20 +137,20 @@ def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device, 
     model.to( device )
 
     # === Compute losses ===
-    losses_per_batch = {}
-    for i, batch in enumerate( batches ):
-        page = random_pages[i]
-        losses_per_batch[page] = []
-        with torch.no_grad():
-            try:
-                inputs = batch.to(model.device)
-                outputs = model(inputs, labels=inputs)
-                losses_per_batch[page].append( outputs.loss.detach().item() )
-                pbar.set_description(f"Loss: {uid} - {outputs.loss.detach().item()}")
-            except Exception as e:
-                losses_per_batch[page].append( math.inf )
-        log[str(uid)]["loss"].append(sum(losses_per_batch[page]) / len(losses_per_batch[page]))
-    return list(losses_per_batch.values())
+    for page, batches in eval_batches.items():
+        log[str(uid)][page] = {}
+        for batch in batches:
+            log[str(uid)][page]["losses"] = []
+            losses = log[str(uid)][page]["losses"]
+            with torch.no_grad():
+                try:
+                    inputs = batch.to(model.device)
+                    outputs = model(inputs, labels=inputs)
+                    loss = outputs.loss.detach().item()
+                    losses.append(loss)
+                    pbar.set_description(f"Loss: {uid} - {loss}")
+                except Exception as e:
+                    losses.append(math.inf)
 
 def optionally_update_model( uid: int, log ):
     """
@@ -257,29 +258,25 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     # === Update model for each uid ===
     pbar = tqdm( available , desc="Updating model:", leave=False )
     for uid in pbar:
-        log[str(uid)] = {"loss": []}
+        log[str(uid)] = {"losses": []}
         optionally_update_model( uid, log )
         pbar.set_description(f"Updating model: {uid}")
 
     # === Compute losses on each batch ===
     best_uid = None
     best_average_loss = math.inf
-    losses_per_uid_per_batch = {}
-    average_loss_per_uid = {}
 
     pbar = tqdm(available, desc="Loss:", leave=False)
     for uid in pbar:
-        losses_per_batch = compute_losses_on_batches(uid, eval_batches, config.device, pbar, log, random_pages)
-        losses_per_uid_per_batch[uid] = losses_per_batch
-        if math.inf not in losses_per_batch:
-            log[str(uid)]["losses"] = [loss for loss in losses_per_batch]
-            flat_losses_per_batch = [loss for sublist in losses_per_batch for loss in sublist]
-            average_loss = sum(flat_losses_per_batch) / len(flat_losses_per_batch)
-            average_loss_per_uid[uid] = {"average_loss": average_loss}
-            if average_loss < best_average_loss:
-                best_average_loss = average_loss
-                best_uid = uid
-            log[str(uid)]["average_loss"] = average_loss
+        compute_losses_on_batches(uid, eval_batches, config.device, pbar, log, random_pages)
+        for page in random_pages:
+            losses = log[str(uid)][page]["losses"]
+            if math.inf not in losses:
+                average_loss = sum(losses) / len(losses)
+                log[str(uid)][page]["average_loss"] = average_loss
+                if average_loss < best_average_loss:
+                    best_average_loss = average_loss
+                    best_uid = uid
     if best_uid != None:
         log["best_average_loss"] = best_average_loss
         log["best_average_loss_uid"] = best_uid 
@@ -287,31 +284,24 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
         log["timestamp"] = time.time()
 
     # === Compute wins per batch ===
-    win_per_step = {}
-    for step in range(pretrain.n_eval_pages):  
+    win_per_step = {uid: 0 for uid in available}
+    for page in random_pages:
         min_loss = math.inf
         min_loss_uid = None
         for uid in available:
-            min_loss_for_uid = math.inf
-            # Assuming losses_per_uid_per_batch[uid] is a list of floats where each float is a loss for a batch
-            if step < len(losses_per_uid_per_batch[uid]):
-                min_loss_for_uid = losses_per_uid_per_batch[uid][step]
-            if min_loss_for_uid < min_loss:
-                min_loss = min_loss_for_uid
-                min_loss_uid = uid
-        wins_per_epoch[min_loss_uid] = wins_per_epoch.get(min_loss_uid, 0) + 1
-        win_per_step[min_loss_uid] = win_per_step.get(min_loss_uid, 0) + 1
+            if losses:
+                min_loss_for_uid = min(losses)
+                if min_loss_for_uid < min_loss:
+                    min_loss = min_loss_for_uid
+                    min_loss_uid = uid
+        # Increment the win count for the UID with the minimum loss for the current page
+        if min_loss_uid is not None:
+            win_per_step[min_loss_uid] += 1
 
-    # === Log wins per step ===
-    for uid in win_per_step.keys():
-        if uid in win_per_step:
-            total_wins = sum(win_per_step.values())
-            if total_wins > 0:
-                log[str(uid)]["Win Percentage"] = win_per_step[uid] / total_wins
-            else:
-                log[str(uid)]["Win Percentage"] = 0  # Default to 0 if there are no wins
-        else:
-            log[str(uid)]["Win Percentage"] = 0 
+    # Log wins per UID
+    total_wins = sum(win_per_step.values())
+    for uid, wins in win_per_step.items():
+        log[str(uid)]["Win Percentage"] = wins / total_wins if total_wins > 0 else 0
 
     # Clear uid logs for empty dictionaries.
     for key in list(log): 
@@ -335,7 +325,7 @@ def run_epoch( wins_per_epoch, wandb_step ):
     for uid in wins_per_epoch:
         weights[uid] = wins_per_epoch[uid] / sum( wins_per_epoch.values() )
         if config.wandb.on: wandb.log( {f"wins_per_epoch/{uid}": wins_per_epoch[uid]/ sum(wins_per_epoch.values())}, step = wandb_step )
-    wins_per_epoch = {} # Clean wins per epoch.
+    wins_per_epoch = {}
 
     # === Set weights ===
     subtensor.set_weights(
