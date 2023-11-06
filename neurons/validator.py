@@ -119,6 +119,7 @@ def get_available_uids( metagraph ) -> typing.List[int]:
 
 
 def compute_losses_on_batches( uid, eval_batches: Dict[int, List[torch.Tensor]], device, pbar, log, random_pages ):
+
     """ Computes the average loss of a model on a list of batches.
         Args:
             batches (:obj:`List[torch.Tensor]`): The batches to evaluate on.
@@ -137,11 +138,13 @@ def compute_losses_on_batches( uid, eval_batches: Dict[int, List[torch.Tensor]],
     model.to( device )
 
     # === Compute losses ===
+    bt.logging.info(f"hieelo {log}")
     for page, batches in eval_batches.items():
-        log[str(uid)][page] = {}
-        for batch in batches:
+        if page not in log[str(uid)]:
+            # log[str(uid)][page] = {} #need to fix this because page not inited if not in available
+        if "losses" not in log[str(uid)][page]:
             log[str(uid)][page]["losses"] = []
-            losses = log[str(uid)][page]["losses"]
+        for batch in batches:
             with torch.no_grad():
                 try:
                     inputs = batch.to(model.device)
@@ -152,7 +155,6 @@ def compute_losses_on_batches( uid, eval_batches: Dict[int, List[torch.Tensor]],
                 except Exception as e:
                     losses.append(math.inf)
 
-    return log
 
 def optionally_update_model( uid: int, log ):
     """
@@ -260,7 +262,6 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     # === Update model for each uid ===
     pbar = tqdm( available , desc="Updating model:", leave=False )
     for uid in pbar:
-        log[str(uid)] = {"losses": []}
         optionally_update_model( uid, log )
         pbar.set_description(f"Updating model: {uid}")
 
@@ -270,10 +271,10 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
 
     pbar = tqdm(available, desc="Loss:", leave=False)
     for uid in pbar:
-        log = compute_losses_on_batches(uid, eval_batches, config.device, pbar, log, random_pages)
+        bt.logging.info(f"before{log}")
+        compute_losses_on_batches(uid, eval_batches, config.device, pbar, log, random_pages)
+        bt.logging.info(f"after{log}")
         for page in random_pages:
-            bt.logging.info(log)
-            log[(str)][page] = {}
             losses = log[str(uid)][page]["losses"]
             if math.inf not in losses:
                 average_loss = sum(losses) / len(losses)
