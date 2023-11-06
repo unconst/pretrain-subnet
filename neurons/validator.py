@@ -138,7 +138,6 @@ def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device, 
     # === Compute losses ===
     losses_per_batch = {}
     for i, batch in enumerate( batches ):
-        bt.logging.info(i)
         page = random_pages[i]
         losses_per_batch[page] = []
         with torch.no_grad():
@@ -274,7 +273,8 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
         losses_per_uid_per_batch[uid] = losses_per_batch
         if math.inf not in losses_per_batch:
             log[str(uid)]["losses"] = [loss for loss in losses_per_batch]
-            average_loss = sum(losses_per_batch) / len(losses_per_batch)
+            flat_losses_per_batch = [loss for sublist in losses_per_batch for loss in sublist]
+            average_loss = sum(flat_losses_per_batch) / len(flat_losses_per_batch)
             average_loss_per_uid[uid] = {"average_loss": average_loss}
             if average_loss < best_average_loss:
                 best_average_loss = average_loss
@@ -288,12 +288,16 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
 
     # === Compute wins per batch ===
     win_per_step = {}
-    for step in range(len(eval_batches)):
+    for step in range(pretrain.n_eval_pages):  
         min_loss = math.inf
         min_loss_uid = None
-        for uid in losses_per_uid_per_batch:
-            if losses_per_uid_per_batch[uid][step] < min_loss:
-                min_loss = losses_per_uid_per_batch[uid][step]
+        for uid in available:
+            min_loss_for_uid = math.inf
+            # Assuming losses_per_uid_per_batch[uid] is a list of floats where each float is a loss for a batch
+            if step < len(losses_per_uid_per_batch[uid]):
+                min_loss_for_uid = losses_per_uid_per_batch[uid][step]
+            if min_loss_for_uid < min_loss:
+                min_loss = min_loss_for_uid
                 min_loss_uid = uid
         wins_per_epoch[min_loss_uid] = wins_per_epoch.get(min_loss_uid, 0) + 1
         win_per_step[min_loss_uid] = win_per_step.get(min_loss_uid, 0) + 1
