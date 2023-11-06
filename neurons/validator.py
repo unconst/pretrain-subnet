@@ -152,6 +152,8 @@ def compute_losses_on_batches( uid, eval_batches: Dict[int, List[torch.Tensor]],
                 except Exception as e:
                     losses.append(math.inf)
 
+    return log
+
 def optionally_update_model( uid: int, log ):
     """
         Checks if a model corresponding to a given uid needs to be updated, and if so, updates it.
@@ -268,8 +270,10 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
 
     pbar = tqdm(available, desc="Loss:", leave=False)
     for uid in pbar:
-        compute_losses_on_batches(uid, eval_batches, config.device, pbar, log, random_pages)
+        log = compute_losses_on_batches(uid, eval_batches, config.device, pbar, log, random_pages)
         for page in random_pages:
+            bt.logging.info(log)
+            log[(str)][page] = {}
             losses = log[str(uid)][page]["losses"]
             if math.inf not in losses:
                 average_loss = sum(losses) / len(losses)
