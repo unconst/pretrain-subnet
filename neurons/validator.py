@@ -146,12 +146,13 @@ def compute_losses_on_batches( uid, eval_batches: Dict[int, List[torch.Tensor]],
         for batch in eval_batches:
             with torch.no_grad():
                 try:
-                    inputs = batch.to(model.device)
+                    inputs = batch
                     outputs = model(inputs, labels=inputs)
                     loss = outputs.loss.detach().item()
                     losses.append(loss)
                     pbar.set_description(f"Loss: {uid} - {loss}")
                 except Exception as e:
+                    bt.logging.error(f"Exception is here! error {e}")
                     losses.append(math.inf)
 
 
@@ -267,15 +268,13 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
 
     # === Compute losses on each batch ===
     best_uid = None
-    best_average_loss = math.inf
+    best_average_loss = 1000
 
     uid_list = [uid for uid in model_paths if uid in successful_uids]
     pbar = tqdm(uid_list, desc="Loss:", leave=False)
     for uid in pbar:
         log[str(uid)][page] = {}
-        bt.logging.info(f"before{log}")
         compute_losses_on_batches(uid, eval_batches, config.device, pbar, log, random_pages)
-        bt.logging.info(f"after{log}")
         for page in random_pages:
             losses = log[str(uid)][page]["losses"]
             if math.inf not in losses:
