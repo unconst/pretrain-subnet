@@ -126,8 +126,8 @@ def compute_losses_on_batches( uid, eval_batches: Dict[int, List[torch.Tensor]],
             device (:obj:`torch.device`): The device to evaluate on.
     """
     # No model for this uid.
-    if uid not in model_paths: 
-        return [math.inf for _ in range(len(eval_batches.items()))]
+    # if uid not in model_paths: 
+    #     return [math.inf for _ in range(len(eval_batches.items()))]
 
     # === Load model ===
     model = pretrain.model.get_model()
@@ -138,13 +138,12 @@ def compute_losses_on_batches( uid, eval_batches: Dict[int, List[torch.Tensor]],
     model.to( device )
 
     # === Compute losses ===
-    bt.logging.info(f"hieelo {log}")
-    for page, batches in eval_batches.items():
+    for page in random_pages:
         if page not in log[str(uid)]:
-            # log[str(uid)][page] = {} #need to fix this because page not inited if not in available
-        if "losses" not in log[str(uid)][page]:
-            log[str(uid)][page]["losses"] = []
-        for batch in batches:
+            log[str(uid)][page] = {}
+        log[str(uid)][page]["losses"] = []
+        losses = log[str(uid)][page]["losses"]
+        for batch in eval_batches:
             with torch.no_grad():
                 try:
                     inputs = batch.to(model.device)
@@ -156,7 +155,7 @@ def compute_losses_on_batches( uid, eval_batches: Dict[int, List[torch.Tensor]],
                     losses.append(math.inf)
 
 
-def optionally_update_model( uid: int, log ):
+def optionally_update_model( uid: int, log, successful_uids ):
     """
         Checks if a model corresponding to a given uid needs to be updated, and if so, updates it.
         If the model is found to be outdated, it is downloaded and updated from a specified repository.
@@ -176,6 +175,7 @@ def optionally_update_model( uid: int, log ):
     # == Get uid's run ==
     response = dendrite.query( metagraph.axons[uid], pretrain.protocol.GetRun(), timeout=0.5 )
     if not response.is_success: bt.logging.debug('Failed to get miner run'); return
+    else: successful_uids.append(uid)
     
     # === Get model run === 
     run_id = response.run_id
@@ -258,19 +258,21 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     # === UIDs to evaluate ===
     available = get_available_uids( metagraph ) 
     log = { str(uid): {} for uid in available }
-
+    successful_uids = []
     # === Update model for each uid ===
     pbar = tqdm( available , desc="Updating model:", leave=False )
     for uid in pbar:
-        optionally_update_model( uid, log )
+        optionally_update_model( uid, log, successful_uids )
         pbar.set_description(f"Updating model: {uid}")
 
     # === Compute losses on each batch ===
     best_uid = None
     best_average_loss = math.inf
 
-    pbar = tqdm(available, desc="Loss:", leave=False)
+    uid_list = [uid for uid in model_paths if uid in successful_uids]
+    pbar = tqdm(uid_list, desc="Loss:", leave=False)
     for uid in pbar:
+        log[str(uid)][page] = {}
         bt.logging.info(f"before{log}")
         compute_losses_on_batches(uid, eval_batches, config.device, pbar, log, random_pages)
         bt.logging.info(f"after{log}")
