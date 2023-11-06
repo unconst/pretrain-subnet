@@ -117,7 +117,7 @@ def get_available_uids( metagraph ) -> typing.List[int]:
     return available_uids   
 
 
-def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device, pbar ):
+def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device, pbar, log, random_pages ):
     """ Computes the average loss of a model on a list of batches.
         Args:
             batches (:obj:`List[torch.Tensor]`): The batches to evaluate on.
@@ -136,19 +136,23 @@ def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device, 
     model.to( device )
 
     # === Compute losses ===
-    losses_per_batch = []
+    losses_per_batch = {}
     for i, batch in enumerate( batches ):
+        bt.logging.info(i)
+        page = random_pages[i]
+        losses_per_batch[page] = []
         with torch.no_grad():
             try:
                 inputs = batch.to(model.device)
                 outputs = model(inputs, labels=inputs)
-                losses_per_batch.append( outputs.loss.detach().item() )
+                losses_per_batch[page].append( outputs.loss.detach().item() )
                 pbar.set_description(f"Loss: {uid} - {outputs.loss.detach().item()}")
             except Exception as e:
-                losses_per_batch.append( math.inf )
-    return losses_per_batch
+                losses_per_batch[page].append( math.inf )
+        log[str(uid)]["loss"].append(sum(losses_per_batch[page]) / len(losses_per_batch[page]))
+    return list(losses_per_batch.values())
 
-def optionally_update_model( uid: int ):
+def optionally_update_model( uid: int, log ):
     """
         Checks if a model corresponding to a given uid needs to be updated, and if so, updates it.
         If the model is found to be outdated, it is downloaded and updated from a specified repository.
@@ -233,14 +237,19 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
 
     """
     # === Get next batches ===
-    random_pages = [ random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages) ]
+    random_pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages)]
     bt.logging.info(f"using random pages: {random_pages}")
-    
-    eval_batches = list(pretrain.dataset.SubsetFalconLoader(
-        batch_size = pretrain.batch_size,
-        sequence_length = pretrain.sequence_length,
-        pages = random_pages
-    ))
+
+    # Initialize an empty dictionary for eval_batches
+    eval_batches = {}
+
+    # For each unique page, create a list of batches
+    for page in set(random_pages):
+        eval_batches[page] = list(pretrain.dataset.SubsetFalconLoader(
+            batch_size=pretrain.batch_size,
+            sequence_length=pretrain.sequence_length,
+            pages=[page]
+        ))
 
     # === UIDs to evaluate ===
     available = get_available_uids( metagraph ) 
@@ -249,7 +258,8 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     # === Update model for each uid ===
     pbar = tqdm( available , desc="Updating model:", leave=False )
     for uid in pbar:
-        optionally_update_model( uid )
+        log[str(uid)] = {"loss": []}
+        optionally_update_model( uid, log )
         pbar.set_description(f"Updating model: {uid}")
 
     # === Compute losses on each batch ===
@@ -260,7 +270,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
 
     pbar = tqdm(available, desc="Loss:", leave=False)
     for uid in pbar:
-        losses_per_batch = compute_losses_on_batches(uid, eval_batches, config.device, pbar)
+        losses_per_batch = compute_losses_on_batches(uid, eval_batches, config.device, pbar, log, random_pages)
         losses_per_uid_per_batch[uid] = losses_per_batch
         if math.inf not in losses_per_batch:
             log[str(uid)]["losses"] = [loss for loss in losses_per_batch]
