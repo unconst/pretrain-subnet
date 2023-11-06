@@ -17,6 +17,7 @@
 # DEALINGS IN THE SOFTWARE.
 
 import os
+import wandb
 import torch
 import random
 import argparse
@@ -43,6 +44,9 @@ def get_config():
 
     # Add device argument which defaults to 'cuda' if available, else 'cpu'
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
+
+    # Add device argument which defaults to 'cuda' if available, else 'cpu'
+    parser.add_argument("--load_run_id", type=str, default=None, help='If passed loads the model under this run id' )  
 
     # Set the number of epochs
     parser.add_argument("--num_epochs", type=int, default=1, help="Number of training epochs")
@@ -86,6 +90,20 @@ print(config)
 
 # Initialize and configure the model for pretraining
 model = pretrain.model.get_model()  # Get the model from the pretrain module
+torch.save(model.state_dict(), config.model_path)
+
+# Optionall load the model from the passed run id:
+if config.load_run_id != None:
+    run_path = f"opentensor-dev/openpretraining/{config.load_run_id}"
+    bt.logging.success(f'Loading model from path: {run_path}')
+    api = wandb.Api( timeout = 100 )
+    model_file = api.run(run_path).file("model.pth")
+    model_file.download(replace=True, root = os.path.dirname(config.model_path) )
+    bt.logging.success(f'Loaded and saved model to: {config.model_path}')
+
+# Load the model.
+model_weights = torch.load( config.model_path, map_location=torch.device(config.device) )
+model.load_state_dict( model_weights )
 model.zero_grad()  # Reset gradients to zero
 model.train()  # Set the model to training mode
 model.to(config.device)  # Move the model to the specified device
