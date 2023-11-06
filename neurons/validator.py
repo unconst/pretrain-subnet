@@ -37,6 +37,7 @@ import typing
 from typing import Dict, List
 import traceback
 import pretrain
+import traceback
 import argparse
 import bittensor as bt
 from tqdm import tqdm
@@ -138,21 +139,21 @@ def compute_losses_on_batches( uid, eval_batches: Dict[int, List[torch.Tensor]],
     model.to( device )
 
     # === Compute losses ===
-    for page in random_pages:
+    for page, batches in eval_batches.items():
         if page not in log[str(uid)]:
             log[str(uid)][page] = {}
         log[str(uid)][page]["losses"] = []
         losses = log[str(uid)][page]["losses"]
-        for batch in eval_batches:
+        for batch in batches:
             with torch.no_grad():
                 try:
-                    inputs = batch
+                    inputs = batch.to(device)
                     outputs = model(inputs, labels=inputs)
                     loss = outputs.loss.detach().item()
                     losses.append(loss)
                     pbar.set_description(f"Loss: {uid} - {loss}")
                 except Exception as e:
-                    bt.logging.error(f"Exception is here! error {e}")
+                    bt.logging.error(f"Exception is here! error {traceback_exec(e)}")
                     losses.append(math.inf)
 
 
