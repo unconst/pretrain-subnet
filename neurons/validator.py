@@ -173,11 +173,13 @@ def optionally_update_model( uid: int ):
     run_id = response.run_id
     run = api.run(f"opentensor-dev/openpretraining/{run_id}")
     if run == None: bt.logging.debug('Failed to get miner run'); return
+    log["run_id"] = run_id
 
     # === Check hotkey match ===
     hotkey = run.config.get('hotkey')
     if hotkey != metagraph.hotkeys[uid]: bt.logging.debug('Hotkey mismatch'); return 
-
+    log[str(uid)]["hotkey"] = hotkey
+    
     # === Check if the model exists ===
     model_file = run.file(ARTIFACT_NAME)
     if model_file is None:
@@ -242,6 +244,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
 
     # === UIDs to evaluate ===
     available = get_available_uids( metagraph ) 
+    log = { str(uid): {} for uid in available }
 
     # === Update model for each uid ===
     pbar = tqdm( available , desc="Updating model:", leave=False )
@@ -255,18 +258,18 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     losses_per_uid_per_batch = {}
     average_loss_per_uid = {}
 
-    log = { str(uid): {} for uid in available }
     pbar = tqdm(available, desc="Loss:", leave=False)
     for uid in pbar:
         losses_per_batch = compute_losses_on_batches(uid, eval_batches, config.device, pbar)
         losses_per_uid_per_batch[uid] = losses_per_batch
         if math.inf not in losses_per_batch:
+            log[str(uid)]["losses"] = [loss for loss in losses_per_batch]
             average_loss = sum(losses_per_batch) / len(losses_per_batch)
             average_loss_per_uid[uid] = {"average_loss": average_loss}
             if average_loss < best_average_loss:
                 best_average_loss = average_loss
                 best_uid = uid
-            log[str(uid)]["loss"] = average_loss
+            log[str(uid)]["average_loss"] = average_loss
     if best_uid != None:
         log["best_average_loss"] = best_average_loss
         log["best_average_loss_uid"] = best_uid 
