@@ -177,7 +177,7 @@ def optionally_update_model( uid: int, log ):
     run_id = response.run_id
     run = api.run(f"opentensor-dev/openpretraining/{run_id}")
     if run == None: bt.logging.debug('Failed to get miner run'); return
-    log["run_id"] = run_id
+    log[str(uid)]["run_id"] = run_id
 
     # === Check hotkey match ===
     hotkey = run.config.get('hotkey')
