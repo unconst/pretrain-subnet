@@ -103,7 +103,7 @@ wallet = bt.wallet( config = config )
 subtensor = bt.subtensor( config = config )
 metagraph = subtensor.metagraph( pretrain.NETUID )
 if wallet.hotkey.ss58_address not in metagraph.hotkeys: 
-    bt.logging.critical("You are not registered. Use `btcli s recycle_register` to register.")
+    bt.logging.error("You are not registered. Use `btcli s recycle_register` to register.")
     exit()
 my_uid = metagraph.hotkeys.index( wallet.hotkey.ss58_address )
 bt.logging.success( f'You are registered with address: {wallet.hotkey.ss58_address} and uid: {my_uid}' )
