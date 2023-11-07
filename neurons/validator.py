@@ -34,8 +34,10 @@ import torch
 import string
 import random
 import typing
+from typing import Dict, List
 import traceback
 import pretrain
+import traceback
 import argparse
 import bittensor as bt
 from tqdm import tqdm
@@ -133,15 +135,16 @@ def update_models( valid_runs ):
         # Replace model.
         model_file.download(replace=True, root=model_dir)
 
-def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device, pbar, log, random_pages ):
+def compute_losses_on_batches( uid, eval_batches: Dict[int, List[torch.Tensor]], device, pbar, log, random_pages ):
+
     """ Computes the average loss of a model on a list of batches.
         Args:
             batches (:obj:`List[torch.Tensor]`): The batches to evaluate on.
             device (:obj:`torch.device`): The device to evaluate on.
     """
     # No model for this uid.
-    if uid not in model_paths: 
-        return [math.inf for _ in range(len(batches))]
+    # if uid not in model_paths: 
+    #     return [math.inf for _ in range(len(eval_batches.items()))]
 
     # === Load model ===
     model = pretrain.model.get_model()
@@ -152,6 +155,7 @@ def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device, 
     model.to( device )
 
     # === Compute losses ===
+<<<<<<< HEAD
     losses_per_batch = {}
     for i, batch in enumerate( batches ):
         page = random_pages[i]
@@ -166,6 +170,94 @@ def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device, 
                 losses_per_batch[page].append( math.inf )
         log[str(uid)]["loss"].append(sum(losses_per_batch[page]) / len(losses_per_batch[page]))
     return list(losses_per_batch.values())
+=======
+    for page, batches in eval_batches.items():
+        if page not in log[str(uid)]:
+            log[str(uid)][page] = {}
+        log[str(uid)][page]["losses"] = []
+        losses = log[str(uid)][page]["losses"]
+        for batch in batches:
+            with torch.no_grad():
+                try:
+                    inputs = batch.to(device)
+                    outputs = model(inputs, labels=inputs)
+                    loss = outputs.loss.detach().item()
+                    losses.append(loss)
+                    pbar.set_description(f"Loss: {uid} - {loss}")
+                except Exception as e:
+                    bt.logging.error(f"Exception is here! error {traceback_exec(e)}")
+                    losses.append(math.inf)
+
+
+def optionally_update_model( uid: int, log, successful_uids ):
+    """
+        Checks if a model corresponding to a given uid needs to be updated, and if so, updates it.
+        If the model is found to be outdated, it is downloaded and updated from a specified repository.
+
+        The process involves the following steps:
+        1. Fetches the run associated with the uid.
+        2. Retrieves the run configuration and checks if the 'hotkey' matches the one in the metagraph.
+        3. Checks if the model artifact exists in the run files.
+        4. Compares the timestamp of the model artifact with the locally stored timestamp.
+        5. If the timestamps differ, or if there is no local timestamp, downloads and updates the model artifact.
+        6. Updates the local timestamp file with the new timestamp of the updated model.
+
+        Args:
+            uid (int): The metagraph uid of the miner.
+
+    """
+    # == Get uid's run ==
+    response = dendrite.query( metagraph.axons[uid], pretrain.protocol.GetRun(), timeout=0.5 )
+    if not response.is_success: bt.logging.debug('Failed to get miner run'); return
+    else: successful_uids.append(uid)
+    
+    # === Get model run === 
+    run_id = response.run_id
+    run = api.run(f"opentensor-dev/openpretraining/{run_id}")
+    if run == None: bt.logging.debug('Failed to get miner run'); return
+    log[str(uid)]["run_id"] = run_id
+
+    # === Check hotkey match ===
+    hotkey = run.config.get('hotkey')
+    if hotkey != metagraph.hotkeys[uid]: bt.logging.debug('Hotkey mismatch'); return 
+    log[str(uid)]["hotkey"] = hotkey
+    
+    # === Check if the model exists ===
+    model_file = run.file(ARTIFACT_NAME)
+    if model_file is None:
+        bt.logging.debug('Miner has no model artifact.')
+        return
+
+    # === Get the model's updated timestamp ===
+    try:
+        model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
+    except:
+        bt.logging.error("model not named model.pth")
+        return
+    model_dir = f'{config.full_path}/models/{metagraph.hotkeys[uid]}/'
+    timestamp_file = f'{model_dir}timestamp.json'
+
+    # === Set the paths ===
+    model_paths[uid] = model_dir + ARTIFACT_NAME
+    model_timestamps[uid] = model_timestamp
+
+    # === Check if the timestamp file exists and if the timestamp matches ===
+    if os.path.exists(timestamp_file):
+        with open(timestamp_file, 'r') as f:
+            existing_timestamp = json.load(f)
+        if existing_timestamp == model_timestamp:
+            bt.logging.debug('Miner model artifact is up to date.')
+            return
+
+    # === If the timestamp does not match or the file does not exist, update the timestamp ===
+    os.makedirs(model_dir, exist_ok=True)  # Ensure the directory exists
+    with open(timestamp_file, 'w') as f:
+        json.dump(model_timestamp, f)
+
+    # === Load the model from the file ===
+    bt.logging.debug(f"Updating model for: {uid}")
+    model_file.download(replace=True, root=model_dir)
+>>>>>>> 9877029e34833bab94b3eceb5100cf7153384a81
 
 def run_step( wins_per_epoch, metagraph, wandb_step ):
     """
@@ -198,6 +290,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
             pages=[page]
         ))
 
+<<<<<<< HEAD
     # Pull all relevant runs.
     valid_runs = pretrain.get_valid_runs( metagraph )
     valid_uids = [ v['uid'] for v in valid_runs.values() ]
@@ -205,26 +298,39 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
 
     # Update all models if need be.
     update_models( valid_runs )
+=======
+    # === UIDs to evaluate ===
+    available = get_available_uids( metagraph ) 
+    log = { str(uid): {} for uid in available }
+    successful_uids = []
+    # === Update model for each uid ===
+    pbar = tqdm( available , desc="Updating model:", leave=False )
+    for uid in pbar:
+        optionally_update_model( uid, log, successful_uids )
+        pbar.set_description(f"Updating model: {uid}")
+>>>>>>> 9877029e34833bab94b3eceb5100cf7153384a81
 
     # === Compute losses on each batch ===
     best_uid = None
-    best_average_loss = math.inf
-    losses_per_uid_per_batch = {}
-    average_loss_per_uid = {}
+    best_average_loss = 1000
 
+<<<<<<< HEAD
     pbar = tqdm(valid_uids, desc="Loss:", leave=False)
+=======
+    uid_list = [uid for uid in model_paths if uid in successful_uids]
+    pbar = tqdm(uid_list, desc="Loss:", leave=False)
+>>>>>>> 9877029e34833bab94b3eceb5100cf7153384a81
     for uid in pbar:
-        losses_per_batch = compute_losses_on_batches(uid, eval_batches, config.device, pbar, log, random_pages)
-        losses_per_uid_per_batch[uid] = losses_per_batch
-        if math.inf not in losses_per_batch:
-            log[str(uid)]["losses"] = [loss for loss in losses_per_batch]
-            flat_losses_per_batch = [loss for sublist in losses_per_batch for loss in sublist]
-            average_loss = sum(flat_losses_per_batch) / len(flat_losses_per_batch)
-            average_loss_per_uid[uid] = {"average_loss": average_loss}
-            if average_loss < best_average_loss:
-                best_average_loss = average_loss
-                best_uid = uid
-            log[str(uid)]["average_loss"] = average_loss
+        log[str(uid)][page] = {}
+        compute_losses_on_batches(uid, eval_batches, config.device, pbar, log, random_pages)
+        for page in random_pages:
+            losses = log[str(uid)][page]["losses"]
+            if math.inf not in losses:
+                average_loss = sum(losses) / len(losses)
+                log[str(uid)][page]["average_loss"] = average_loss
+                if average_loss < best_average_loss:
+                    best_average_loss = average_loss
+                    best_uid = uid
     if best_uid != None:
         log["best_average_loss"] = best_average_loss
         log["best_average_loss_uid"] = best_uid 
@@ -232,10 +338,11 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
         log["timestamp"] = time.time()
 
     # === Compute wins per batch ===
-    win_per_step = {}
-    for step in range(pretrain.n_eval_pages):  
+    win_per_step = {uid: 0 for uid in available}
+    for page in random_pages:
         min_loss = math.inf
         min_loss_uid = None
+<<<<<<< HEAD
         for uid in valid_uids:
             min_loss_for_uid = math.inf
             # Assuming losses_per_uid_per_batch[uid] is a list of floats where each float is a loss for a batch
@@ -257,6 +364,22 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
                 log[str(uid)]["Win Percentage"] = 0  # Default to 0 if there are no wins
         else:
             log[str(uid)]["Win Percentage"] = 0 
+=======
+        for uid in available:
+            if losses:
+                min_loss_for_uid = min(losses)
+                if min_loss_for_uid < min_loss:
+                    min_loss = min_loss_for_uid
+                    min_loss_uid = uid
+        # Increment the win count for the UID with the minimum loss for the current page
+        if min_loss_uid is not None:
+            win_per_step[min_loss_uid] += 1
+
+    # Log wins per UID
+    total_wins = sum(win_per_step.values())
+    for uid, wins in win_per_step.items():
+        log[str(uid)]["Win Percentage"] = wins / total_wins if total_wins > 0 else 0
+>>>>>>> 9877029e34833bab94b3eceb5100cf7153384a81
 
     # Clear uid logs for empty dictionaries.
     for key in list(log): 
@@ -280,7 +403,7 @@ def run_epoch( wins_per_epoch, wandb_step ):
     for uid in wins_per_epoch:
         weights[uid] = wins_per_epoch[uid] / sum( wins_per_epoch.values() )
         if config.wandb.on: wandb.log( {f"wins_per_epoch/{uid}": wins_per_epoch[uid]/ sum(wins_per_epoch.values())}, step = wandb_step )
-    wins_per_epoch = {} # Clean wins per epoch.
+    wins_per_epoch = {}
 
     # === Set weights ===
     subtensor.set_weights(
