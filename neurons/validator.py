@@ -119,44 +119,6 @@ def get_available_uids( metagraph ) -> typing.List[int]:
     return available_uids   
 
 
-def compute_losses_on_batches( uid, eval_batches: Dict[int, List[torch.Tensor]], device, pbar, log, random_pages ):
-
-    """ Computes the average loss of a model on a list of batches.
-        Args:
-            batches (:obj:`List[torch.Tensor]`): The batches to evaluate on.
-            device (:obj:`torch.device`): The device to evaluate on.
-    """
-    # No model for this uid.
-    # if uid not in model_paths: 
-    #     return [math.inf for _ in range(len(eval_batches.items()))]
-
-    # === Load model ===
-    model = pretrain.model.get_model()
-    model_weights = torch.load( model_paths[uid], map_location=torch.device(device))
-    model.load_state_dict( model_weights )
-    model.zero_grad()
-    model.eval()
-    model.to( device )
-
-    # === Compute losses ===
-    for page, batches in eval_batches.items():
-        if page not in log[str(uid)]:
-            log[str(uid)][page] = {}
-        log[str(uid)][page]["losses"] = []
-        losses = log[str(uid)][page]["losses"]
-        for batch in batches:
-            with torch.no_grad():
-                try:
-                    inputs = batch.to(device)
-                    outputs = model(inputs, labels=inputs)
-                    loss = outputs.loss.detach().item()
-                    losses.append(loss)
-                    pbar.set_description(f"Loss: {uid} - {loss}")
-                except Exception as e:
-                    bt.logging.error(f"Exception is here! error {traceback_exec(e)}")
-                    losses.append(math.inf)
-
-
 def optionally_update_model( uid: int, log, successful_uids ):
     """
         Checks if a model corresponding to a given uid needs to be updated, and if so, updates it.
@@ -225,6 +187,43 @@ def optionally_update_model( uid: int, log, successful_uids ):
     # === Load the model from the file ===
     bt.logging.debug(f"Updating model for: {uid}")
     model_file.download(replace=True, root=model_dir)
+
+def compute_losses_on_batches( uid, eval_batches: Dict[int, List[torch.Tensor]], device, pbar, log, random_pages ):
+
+    """ Computes the average loss of a model on a list of batches.
+        Args:
+            batches (:obj:`List[torch.Tensor]`): The batches to evaluate on.
+            device (:obj:`torch.device`): The device to evaluate on.
+    """
+    # No model for this uid.
+    # if uid not in model_paths: 
+    #     return [math.inf for _ in range(len(eval_batches.items()))]
+
+    # === Load model ===
+    model = pretrain.model.get_model()
+    model_weights = torch.load( model_paths[uid], map_location=torch.device(device))
+    model.load_state_dict( model_weights )
+    model.zero_grad()
+    model.eval()
+    model.to( device )
+
+    # === Compute losses ===
+    for page, batches in eval_batches.items():
+        if page not in log[str(uid)]:
+            log[str(uid)][page] = {}
+        log[str(uid)][page]["losses"] = []
+        losses = log[str(uid)][page]["losses"]
+        for batch in batches:
+            with torch.no_grad():
+                try:
+                    inputs = batch.to(device)
+                    outputs = model(inputs, labels=inputs)
+                    loss = outputs.loss.detach().item()
+                    losses.append(loss)
+                    pbar.set_description(f"Loss: {uid} - {loss}")
+                except Exception as e:
+                    bt.logging.error(f"Exception is here! error {traceback_exec(e)}")
+                    losses.append(math.inf)
 
 def run_step( wins_per_epoch, metagraph, wandb_step ):
     """
