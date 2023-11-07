@@ -105,17 +105,33 @@ wins_per_epoch = {}
 model_paths = {}
 model_timestamps = {}
 
-# === Helper functions ===
-def get_available_uids( metagraph ) -> typing.List[int]:
-    """ Returns a list of uids that are available to serve.
-        Args:
-            metagraph (:obj:`bittensor.Metagraph`): The metagraph to pull uids from.
-        Returns:
-            (:obj:`List[int]`): The list of uids that are available to query.
-    """
-    available_uids = [ uid.item() for uid in metagraph.uids if metagraph.axons[uid].is_serving and (metagraph.block.item() - metagraph.last_update[uid] < 500)]
-    return available_uids   
+def update_models( valid_runs ):
 
+    pbar = tqdm( list(valid_runs.items()) , desc="Updating models:", leave=False )
+    for hotkey, run_info in pbar:
+        pbar.set_description(f"Updating models: {run_info['run'].id}")
+
+        # Get run info.
+        model_file = run_info['model_artifact']
+        model_timestamp = run_info['timestamp']
+        model_dir = f'{config.full_path}/models/{hotkey}/'
+        timestamp_file = f'{model_dir}timestamp.json'
+
+        # Check if the timestamp file exists and if the timestamp matches ===
+        if os.path.exists(timestamp_file):
+            with open(timestamp_file, 'r') as f:
+                existing_timestamp = json.load(f)
+            if existing_timestamp == model_timestamp:
+                bt.logging.debug('Miner model artifact is up to date.')
+                return
+
+        # If the timestamp does not match or the file does not exist, update the timestamp ===
+        os.makedirs(model_dir, exist_ok=True)  # Ensure the directory exists
+        with open(timestamp_file, 'w') as f:
+            json.dump(model_timestamp, f)
+
+        # Replace model.
+        model_file.download(replace=True, root=model_dir)
 
 def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device, pbar, log, random_pages ):
     """ Computes the average loss of a model on a list of batches.
@@ -151,74 +167,6 @@ def compute_losses_on_batches( uid, batches: typing.List[torch.Tensor], device, 
         log[str(uid)]["loss"].append(sum(losses_per_batch[page]) / len(losses_per_batch[page]))
     return list(losses_per_batch.values())
 
-def optionally_update_model( uid: int, log ):
-    """
-        Checks if a model corresponding to a given uid needs to be updated, and if so, updates it.
-        If the model is found to be outdated, it is downloaded and updated from a specified repository.
-
-        The process involves the following steps:
-        1. Fetches the run associated with the uid.
-        2. Retrieves the run configuration and checks if the 'hotkey' matches the one in the metagraph.
-        3. Checks if the model artifact exists in the run files.
-        4. Compares the timestamp of the model artifact with the locally stored timestamp.
-        5. If the timestamps differ, or if there is no local timestamp, downloads and updates the model artifact.
-        6. Updates the local timestamp file with the new timestamp of the updated model.
-
-        Args:
-            uid (int): The metagraph uid of the miner.
-
-    """
-    # == Get uid's run ==
-    response = dendrite.query( metagraph.axons[uid], pretrain.protocol.GetRun(), timeout=0.5 )
-    if not response.is_success: bt.logging.debug('Failed to get miner run'); return
-    
-    # === Get model run === 
-    run_id = response.run_id
-    run = api.run(f"opentensor-dev/openpretraining/{run_id}")
-    if run == None: bt.logging.debug('Failed to get miner run'); return
-    log[str(uid)]["run_id"] = run_id
-
-    # === Check hotkey match ===
-    hotkey = run.config.get('hotkey')
-    if hotkey != metagraph.hotkeys[uid]: bt.logging.debug('Hotkey mismatch'); return 
-    log[str(uid)]["hotkey"] = hotkey
-    
-    # === Check if the model exists ===
-    model_file = run.file(ARTIFACT_NAME)
-    if model_file is None:
-        bt.logging.debug('Miner has no model artifact.')
-        return
-
-    # === Get the model's updated timestamp ===
-    try:
-        model_timestamp = int(datetime.strptime(model_file.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-    except:
-        bt.logging.error("model not named model.pth")
-        return
-    model_dir = f'{config.full_path}/models/{metagraph.hotkeys[uid]}/'
-    timestamp_file = f'{model_dir}timestamp.json'
-
-    # === Set the paths ===
-    model_paths[uid] = model_dir + ARTIFACT_NAME
-    model_timestamps[uid] = model_timestamp
-
-    # === Check if the timestamp file exists and if the timestamp matches ===
-    if os.path.exists(timestamp_file):
-        with open(timestamp_file, 'r') as f:
-            existing_timestamp = json.load(f)
-        if existing_timestamp == model_timestamp:
-            bt.logging.debug('Miner model artifact is up to date.')
-            return
-
-    # === If the timestamp does not match or the file does not exist, update the timestamp ===
-    os.makedirs(model_dir, exist_ok=True)  # Ensure the directory exists
-    with open(timestamp_file, 'w') as f:
-        json.dump(model_timestamp, f)
-
-    # === Load the model from the file ===
-    bt.logging.debug(f"Updating model for: {uid}")
-    model_file.download(replace=True, root=model_dir)
-
 def run_step( wins_per_epoch, metagraph, wandb_step ):
     """
         Executes a single validation step.
@@ -250,16 +198,13 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
             pages=[page]
         ))
 
-    # === UIDs to evaluate ===
-    available = get_available_uids( metagraph ) 
-    log = { str(uid): {} for uid in available }
+    # Pull all relevant runs.
+    valid_runs = pretrain.get_valid_runs( metagraph )
+    valid_uids = [ v['uid'] for v in valid_runs.values() ]
+    log = { str(uid): {} for uid in valid_uids }
 
-    # === Update model for each uid ===
-    pbar = tqdm( available , desc="Updating model:", leave=False )
-    for uid in pbar:
-        log[str(uid)] = {"loss": []}
-        optionally_update_model( uid, log )
-        pbar.set_description(f"Updating model: {uid}")
+    # Update all models if need be.
+    update_models( valid_runs )
 
     # === Compute losses on each batch ===
     best_uid = None
@@ -267,7 +212,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     losses_per_uid_per_batch = {}
     average_loss_per_uid = {}
 
-    pbar = tqdm(available, desc="Loss:", leave=False)
+    pbar = tqdm(valid_uids, desc="Loss:", leave=False)
     for uid in pbar:
         losses_per_batch = compute_losses_on_batches(uid, eval_batches, config.device, pbar, log, random_pages)
         losses_per_uid_per_batch[uid] = losses_per_batch
@@ -291,7 +236,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     for step in range(pretrain.n_eval_pages):  
         min_loss = math.inf
         min_loss_uid = None
-        for uid in available:
+        for uid in valid_uids:
             min_loss_for_uid = math.inf
             # Assuming losses_per_uid_per_batch[uid] is a list of floats where each float is a loss for a batch
             if step < len(losses_per_uid_per_batch[uid]):
