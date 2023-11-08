@@ -26,10 +26,104 @@ __spec_version__ = (
 )
 NETUID = 9
 
+epsilon = 0.03
 n_eval_pages = 2
 batch_size = 3
 sequence_length = 512
 
 from . import model as model
 from . import dataset as dataset
-from . import protocol as protocol
+import wandb
+import bittensor as bt
+from tqdm import tqdm
+from datetime import datetime
+
+def get_miner_runs( metagraph ):
+    api = wandb.Api( timeout = 100 )
+    runs = api.runs("opentensor-dev/openpretraining")
+    pbar = tqdm( runs , desc="Getting runs:", leave=False )
+    miner_runs = {}
+    model_timestamps = {}
+    for run in pbar:
+        pbar.set_description(f"Checking: {run.id}")
+
+        # Filter out non miner runs.
+        if 'miner' not in run.name: continue
+
+        # Find hotkey of continue
+        if 'hotkey' not in run.config: continue
+        hotkey = run.config['hotkey']
+
+        # Filter models not registered
+        if hotkey not in metagraph.hotkeys: continue
+        uid = metagraph.hotkeys.index( hotkey )
+
+        # Find signature or continue
+        if 'signature' not in run.config: continue
+        signature = run.config['signature']
+
+        # Check signature
+        keypair = bt.Keypair( ss58_address = hotkey )
+        is_legit = keypair.verify( run.id, bytes.fromhex( signature ) )
+        if not is_legit: continue
+
+        # Check for model
+        try:
+            model_artifact = run.file('model.pth')
+        except: continue
+
+        # Check if it is the latest model
+        model_timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
+        if hotkey in model_timestamps and model_timestamps[hotkey] > model_timestamp:
+            continue
+
+        # Set run as valid with and latest.
+        miner_runs[uid] = {
+            'uid': uid, 
+            'hotkey': hotkey,
+            'emission': metagraph.E[uid].item(),
+            'run': run, 
+            'model_artifact': model_artifact, 
+            'timestamp': model_timestamp, 
+        }
+
+    return miner_runs
+
+
+def get_validator_runs( metagraph ):
+    api = wandb.Api( timeout = 100 )
+    runs = api.runs("opentensor-dev/openpretraining")
+    pbar = tqdm( runs , desc="Getting runs:", leave=False )
+    vali_runs = {}
+    for run in pbar:
+        pbar.set_description(f"Checking: {run.id}")
+
+        # Filter out non miner runs.
+        if 'validator' not in run.name: continue
+
+        # Find hotkey of continue
+        if 'hotkey' not in run.config: continue
+        hotkey = run.config['hotkey']
+
+        # Filter models not registered
+        if hotkey not in metagraph.hotkeys: continue
+        uid = metagraph.hotkeys.index( hotkey )
+
+        # Find signature or continue
+        if 'signature' not in run.config: continue
+        signature = run.config['signature']
+
+        # Check signature
+        keypair = bt.Keypair( ss58_address = hotkey )
+        is_legit = keypair.verify( run.id, bytes.fromhex( signature ) )
+        if not is_legit: continue
+
+        # Set run as valid with and latest.
+        vali_runs[uid] = {
+            'uid': uid, 
+            'hotkey': hotkey,
+            'state': metagraph.S[uid].item(),
+            'run': run, 
+        }
+
+    return vali_runs
