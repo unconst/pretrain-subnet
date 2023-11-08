@@ -26,7 +26,11 @@ The reward mechanism works as follows.
 
 Miners are evaluated based on the number of times their loss on a random batch duing a 360 block epoch are lower than all other miners. 
 To perform well miners must attain the lowest loss on the largest number of random batches sampled from the 900M page, 3T token dataset Falcon Refined Wed.
+All models are open and accessible via a wandb [project](https://wandb.ai/opentensor-dev/openpretraining) and this repo contains tools for downloading them and then
+serving them on your own miner. The drive to find the best miner at the earliest rate is ensured by having validators record the best global miner per epoch and assigning
+a miner ```epsilon``` reduction on the loss of the best model from the previous epoch when calculating wins per batch.
 ```python
+    epsilon = 0.03 # best miner epsilon reduction.
     while True:
         wins = {} # Count of wins per batch per miner
 
@@ -45,12 +49,17 @@ To perform well miners must attain the lowest loss on the largest number of rand
                 # Find miner with lowest loss on the batch.
                 for miner_uid, model in enumerate( models ):
                     loss = get_loss_for_model_on_batch( model, batch )
+                    if miner_uid == epoch_global_min_uid: loss *= epsilon
                     if loss < best_loss:
                         best_uid = miner_uid
                         best_loss = loss
 
                 # Increment the number of wins for the miner with the lowest loss on this subnet.
                 wins[ best_uid ] += 1
+
+        # Assign epoch_global_min_uid to miner uid with lowest loss across all epoch batches.
+        # This miner now attains a single epoch advantage for attaining the lower lost first.
+        epoch_global_min_uid = get_miner_with_lowest_loss_on_all_epoch_batches()
 
         # End epoch.
         # Weights are computed based on the ratio of wins a model attains during the epoch.
