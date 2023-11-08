@@ -17,14 +17,6 @@
 # DEALINGS IN THE SOFTWARE.
 
 
-# TODO: 
-# change from wandb pull to huggingface api in both miner and validator
-# test larger models
-# allow for different model types -optional
-# set maximum VRAM/size for model -optional
-# improve frontend to be overlapping lines per UID on a time series
-# launch!
-
 import os
 import json
 import math
@@ -33,15 +25,13 @@ import wandb
 import torch
 import string
 import random
-from typing import Dict, List
-import traceback
 import pretrain
 import traceback
 import argparse
 import bittensor as bt
 from tqdm import tqdm
 from datetime import datetime
-import time
+from typing import Dict, List
 
 # Global artifact name
 ARTIFACT_NAME:str = "model.pth"
