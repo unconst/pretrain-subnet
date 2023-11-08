@@ -340,7 +340,7 @@ def run_step( wins_per_epoch, metagraph, global_step ):
         for page in pages:
             uid_log[ str(page) ] = {
                 'page': page,
-                'losses': losses_per_page_per_uid[ uid ][ page ],
+                # 'losses': losses_per_page_per_uid[ uid ][ page ],
                 'average_loss': average_loss_per_uid_per_page[ uid ][page],
                 'wins': total_wins_per_uid_per_page[ uid ][ page ],
                 'win_rate': total_wins_per_uid_per_page[ uid ][ page ] / len( batches_per_page[ page ] )
