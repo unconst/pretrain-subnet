@@ -80,10 +80,9 @@ def get_miner_runs( metagraph ):
         # Set run as valid with and latest.
         miner_runs[uid] = {
             'uid': uid, 
-            'hotkey': hotkey,
             'emission': metagraph.E[uid].item(),
-            'run': run, 
-            'model_artifact': model_artifact, 
+            'run': run.id, 
+            'model_artifact': "model.pth", 
             'timestamp': model_timestamp, 
         }
 
