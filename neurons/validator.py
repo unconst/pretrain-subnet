@@ -330,22 +330,24 @@ def run_step( wins_per_epoch, metagraph, global_step ):
         'pages': pages,
         'uids': uids,
         'best_average_loss': best_average_loss,
-        'best_average_loss_uid': best_average_loss_uid
+        'best_average_loss_uid': best_average_loss_uid,
+        'uid_data': {}
     }
     for uid in uids:
         uid_log = {
             'uid': uid,
             'timestamp': model_timestamps[ uid ],
+            'pages': {}
         }
         for page in pages:
-            uid_log[ str(page) ] = {
+            uid_log['pages'][ str(page) ] = {
                 'page': page,
                 # 'losses': losses_per_page_per_uid[ uid ][ page ],
                 'average_loss': average_loss_per_uid_per_page[ uid ][page],
                 'wins': total_wins_per_uid_per_page[ uid ][ page ],
                 'win_rate': total_wins_per_uid_per_page[ uid ][ page ] / len( batches_per_page[ page ] )
             }
-        step_log[ str(uid) ] = uid_log
+        step_log['uid_data'][ str(uid) ] = uid_log
 
     # Sink step log.
     bt.logging.success(f"Step results: {step_log}")
