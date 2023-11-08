@@ -113,8 +113,8 @@ def update_models( log, valid_runs ):
 
         pbar.set_description(f"Updating models: {run_info['run']}")
         # Get run info.
-        log[str(uid)]['run_id'] = run_info['run']
         uid = run_info['uid']
+        log[str(uid)]['run_id'] = valid_runs[hotkey]['run']
         model_file = run_info['model_artifact']
         model_timestamp = run_info['timestamp']
         model_dir = f'{config.full_path}/models/{hotkey}/'
