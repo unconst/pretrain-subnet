@@ -359,7 +359,7 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
                 if is_winning_loss_with_timestamps( uid, page, batch ):
                     total_wins_per_uid_per_page[ uid ][ page ] += 1
                     if uid in wins_per_epoch: wins_per_epoch[ uid ] += 1 
-                    else: wins_per_epoch[ uid ] = 0
+                    else: wins_per_epoch[ uid ] = 1
 
     # Build step log
     step_log = {
