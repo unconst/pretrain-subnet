@@ -241,9 +241,13 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
                 is_win = True
                 for uid_j in valid_uids:
                     loss_j = log[str(uid_j)][page]["losses"]
-                    if loss_i < loss_j and model_timestamps[ uid_i ] < model_timestamps[ uid_j ]:
+                    if loss_i > loss_j:
                         is_win = False
                         break
+                    elif loss_i == loss_j and model_timestamps[ uid_i ] > model_timestamps[ uid_j ]:
+                        is_win = False
+                        break
+                    else: continue
                 log[str(uid_i)][page]["wins"].append( is_win )
     
     # Compute wins per step
