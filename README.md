@@ -103,7 +103,7 @@ Registering a miner or a validator on subnet 9 requires the participant `recycle
 following command.
 ```bash
 # register your cold and associated hotkey to netuid 9
-btcli s recycle_register --wallet.name ... --wallet.hotkey ... --netuid 0 
+btcli s register --wallet.name ... --wallet.hotkey ... --netuid 0 
 ```
 
 --- 
@@ -160,8 +160,8 @@ Alternatively, you can download all validation data from wandb which can be used
         }, 
         ...
  }
- dataframe = vali_runs[240].history()
-
+ dataframe = vali_runs[240]['run'].history()
+ ...
 ```
 
 ---

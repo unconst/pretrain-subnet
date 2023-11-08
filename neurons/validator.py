@@ -92,7 +92,6 @@ if config.wandb.on:
     config.signature = wallet.hotkey.sign( wandb_run.id.encode() ).hex()
     wandb.config.update( config, allow_val_change=True )
 
-
 def get_or_update_model_info(metagraph):
     """
     This function updates local model files by synchronizing with models registered in the metagraph
@@ -239,7 +238,7 @@ def compute_losses_per_page(uid: int, model_path: str, batches_per_page: Dict[in
     return losses_per_page
     
 
-def run_step( wins_per_epoch, metagraph, global_step ):
+def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, global_step ):
     """
         Executes a single validation step.
         - 1. Updates local models using wandb data.
@@ -251,6 +250,8 @@ def run_step( wins_per_epoch, metagraph, global_step ):
 
         Parameters:
         - wins_per_epoch (dict): A dictionary to record the number of wins per UID.
+        - losses_per_epoch (dict): A dictionary to record all losses in epoch.
+        - global_best_uid (int): Uid with lowest global loss at beginning of epoch.
         - metagraph (object): An object representing the meta information of models.
         - wandb_step (int): The current step number for logging in weights and biases.
 
@@ -276,7 +277,8 @@ def run_step( wins_per_epoch, metagraph, global_step ):
     pbar = tqdm( uids, desc="Loss:", leave=False)
     for uid_i in pbar:
         model_path = paths[ uid_i ]
-        losses_per_page_per_uid[ uid_i ] = compute_losses_per_page( uid_i, model_path, batches_per_page, pbar )
+        losses  = compute_losses_per_page( uid_i, model_path, batches_per_page, pbar )
+        losses_per_page_per_uid[ uid_i ] = losses
 
     # Compute average loss per page
     average_loss_per_uid_per_page = { uid: {} for uid in uids }
@@ -285,6 +287,11 @@ def run_step( wins_per_epoch, metagraph, global_step ):
             losses = losses_per_page_per_uid[ uid_i ][ page_j ]
             average_loss = sum(losses)/len(losses)
             average_loss_per_uid_per_page[ uid_i ][ page_j ] = average_loss
+            if uid_i in losses_per_epoch:
+                losses_per_epoch[ uid_i ].append(average_loss)
+            else:
+                losses_per_epoch[ uid_i ] = [average_loss]
+
 
     # Compute best average loss
     best_average_loss = math.inf
@@ -299,6 +306,8 @@ def run_step( wins_per_epoch, metagraph, global_step ):
     # batch, in case of ties takes uid with better timestamp.
     def is_winning_loss_with_timestamps( this_uid, page_j, batch_k ):
         this_loss = losses_per_page_per_uid[ this_uid ][page_j][batch_k]
+        if this_uid == global_best_uid:
+            this_loss = this_loss * pretrain.epsilon
         this_timestamp = model_timestamps[ this_uid ]
         for other_uid in uids:
             other_loss = losses_per_page_per_uid[ other_uid ][ page_j ][ batch_k ]
@@ -326,23 +335,15 @@ def run_step( wins_per_epoch, metagraph, global_step ):
         'uids': uids,
         'best_average_loss': best_average_loss,
         'best_average_loss_uid': best_average_loss_uid,
-        'uid_data': {}
     }
     for uid in uids:
-        uid_log = {
+        step_log[ str(uid) ] = {
             'uid': uid,
             'timestamp': model_timestamps[ uid ],
-            'pages': {}
+            'average_loss': sum ( [average_loss_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / len(pages),
+            'average_losses': [ average_loss_per_uid_per_page[ uid ][ pagek ] for pagek in pages ],
+            'win_rate': sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / len(pages)
         }
-        for page in pages:
-            uid_log['pages'][ str(page) ] = {
-                'page': page,
-                # 'losses': losses_per_page_per_uid[ uid ][ page ],
-                'average_loss': average_loss_per_uid_per_page[ uid ][page],
-                'wins': total_wins_per_uid_per_page[ uid ][ page ],
-                'win_rate': total_wins_per_uid_per_page[ uid ][ page ] / len( batches_per_page[ page ] )
-            }
-        step_log['uid_data'][ str(uid) ] = uid_log
 
     # Sink step log.
     bt.logging.success(f"Step results: {step_log}")
@@ -379,21 +380,33 @@ def run_epoch( wins_per_epoch, global_step ):
 # === Validating loop ===
 epoch_step = 0 
 global_step = 0
+# Record the global best uid and loss
+global_best_uid = None
+global_best_loss = math.inf
 last_epoch = metagraph.block.item()
 bt.logging.success(f"Starting validator loop")
 while True:
     try:
         # Init a new dict for counters.
         wins_per_epoch = {}
+        losses_per_epoch = {}
     
         while metagraph.block.item() - last_epoch < config.blocks_per_epoch:
             # Updates models (if needed) runs an eval step over each model
             # Records the number of 'wins' per model in the step. A wins
             # is defined as the model with the lowest loss on a given batch.
-            run_step( wins_per_epoch, metagraph, global_step )
+            run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, global_step )
             metagraph = subtensor.metagraph( pretrain.NETUID )
             bt.logging.success(f"{metagraph.block.item() - last_epoch } / {config.blocks_per_epoch} blocks until next epoch.")
             global_step += 1
+
+        # Update global best loss and uid.
+        for uid in losses_per_epoch.keys():
+            epoch_average_loss = sum(losses_per_epoch[uid])/len(losses_per_epoch[uid])
+            if epoch_average_loss < global_best_loss:
+                global_best_uid = uid
+                global_best_loss = epoch_average_loss
+        if config.wandb.on: wandb.log( {"global_best_uid": global_best_uid, "global_best_loss":global_best_loss }, step = global_step )
 
         # Finish epoch.
         run_epoch( wins_per_epoch, global_step )
