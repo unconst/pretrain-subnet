@@ -340,7 +340,7 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
     def is_winning_loss_with_timestamps( this_uid, page_j, batch_k ):
         this_loss = losses_per_page_per_uid[ this_uid ][page_j][batch_k]
         if this_uid == global_best_uid:
-            this_loss = this_loss * (1 - pretrain.epsilon)
+            this_loss *= (1 - pretrain.epsilon)
         this_timestamp = model_timestamps[ this_uid ]
         for other_uid in uids:
             other_loss = losses_per_page_per_uid[ other_uid ][ page_j ][ batch_k ]
