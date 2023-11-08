@@ -107,11 +107,13 @@ wins_per_epoch = {}
 model_paths = {}
 model_timestamps = {}
 
-def update_models( valid_runs ):
+def update_models( log, valid_runs ):
     pbar = tqdm( list(valid_runs.items()) , desc="Updating models:", leave=False )
     for hotkey, run_info in pbar:
+
         pbar.set_description(f"Updating models: {run_info['run']}")
         # Get run info.
+        log[str(uid)]['run_id'] = run_info['run']
         uid = run_info['uid']
         model_file = run_info['model_artifact']
         model_timestamp = run_info['timestamp']
@@ -209,7 +211,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     log = { str(uid): {} for uid in valid_uids }
 
     # Update all models if need be.
-    update_models( valid_runs )
+    update_models( log, valid_runs )
 
     # === Compute losses on each batch ===
     best_uid = None
@@ -217,7 +219,6 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
 
     pbar = tqdm(valid_uids, desc="Loss:", leave=False)
     for uid in pbar:
-        log[str(uid)][page] = {}
         compute_losses_on_batches(uid, eval_batches, config.device, pbar, log, random_pages)
         for page in random_pages:
             losses = log[str(uid)][page]["losses"]
