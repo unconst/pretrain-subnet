@@ -409,7 +409,8 @@ def run_epoch( wins_per_epoch, global_step ):
         weights = weights,
         wait_for_inclusion=False,
     )
-    bt.logging.success(f"Set weights: {weights.tolist()}")
+    bt.logging.success(f"Set weights successfully")
+    bt.logging.trace(f"Weights info: {weights.tolist()}")
 
 # === Validating loop ===
 epoch_step = 0 
@@ -434,7 +435,7 @@ while True:
             # is defined as the model with the lowest loss on a given batch.
             run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, global_step )
             metagraph = subtensor.metagraph( pretrain.NETUID )
-            bt.logging.success(f"{metagraph.block.item() - last_epoch } / {config.blocks_per_epoch} blocks until next epoch.")
+            bt.logging.debug(f"{metagraph.block.item() - last_epoch } / {config.blocks_per_epoch} blocks until next epoch.")
             global_step += 1
 
         # Update global best loss and uid.
