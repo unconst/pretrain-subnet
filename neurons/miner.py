@@ -135,13 +135,11 @@ elif config.load_best:
     bt.logging.success(f'Loading based on --config.load_best')
     all_valid_runs = pretrain.get_miner_runs( metagraph )
     sorted_valid_runs = sorted( list( all_valid_runs.values()), key=lambda x: x['emission'])
-    load_model_from_run( sorted_valid_runs[0]['run'] )
+    load_model_from_run( get_run_from_id(sorted_valid_runs[0]['run']) )
 
 elif config.continue_id:
     run = get_run_from_id( config.continue_id  )
     run_hotkey = run.config['hotkey']
-    if run_hotkey != wallet.hotkey.ss58_address: 
-        raise ValueError(f'Trying to continue run from run with different hotkey, got {run_hotkey}, expected {wallet.hotkey.ss58_address}')
     load_model_from_run( run )
 
 # Model is reinited fresh.
