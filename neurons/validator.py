@@ -184,40 +184,63 @@ def get_or_update_model_info(metagraph):
     # Return the information of all updated models
     return uids, paths, timestamps
 
-def compute_losses_per_page( uid, model_path, batches_per_page: Dict[int, List[torch.Tensor]], pbar ):
 
-    # === Load model ===
+def compute_losses_per_page(uid: int, model_path: str, batches_per_page: Dict[int, List[torch.Tensor]], pbar) -> Dict[int, List[float]]:
+    """
+    Computes the loss for each page of batches using the given pre-trained model.
+    
+    Args:
+    uid (int): The unique identifier for the current model.
+    model_path (str): The file path to the pre-trained model.
+    batches_per_page (Dict[int, List[torch.Tensor]]): A dictionary where each key is a page number
+        and each value is a list of batch tensors to be processed by the model.
+    pbar: A tqdm progress bar instance for real-time progress updates.
+    
+    Returns:
+    Dict[int, List[float]]: A dictionary mapping each page to a list of loss values for the batches on that page.
+    """
+
+    # Load the pre-trained model from the specified path
     model = pretrain.model.get_model()
-    model_weights = torch.load( model_path, map_location=torch.device( config.device ))
-    model.load_state_dict( model_weights )
-    model.zero_grad()
-    model.eval()
-    model.to( config.device )
+    model_weights = torch.load(model_path, map_location=torch.device(config.device))
+    model.load_state_dict(model_weights)
+    model.eval()  # Set the model to evaluation mode
+    model.to(config.device)  # Move the model to the appropriate device
 
-    # === Compute losses ===
+    # Initialize a dictionary to store loss values for each page
     losses_per_page = {}
+
+    # Iterate over each page and its corresponding batches
     for page, batches in batches_per_page.items():
-        losses_per_page[page] = []
+        page_losses = []  # List to store losses for the current page
+
+        # Process each batch and compute its loss
         for batch in batches:
-            with torch.no_grad():
-                try:
-                    inputs = batch.to(config.device)
-                    outputs = model(inputs, labels=inputs)
-                    loss = outputs.loss.detach().item()
-                    losses_per_page[page].append(loss)
-                    pbar.set_description(f"Loss: {uid} - {loss}")
-                except Exception as e:
-                    bt.logging.error(f"Exception is here! error {traceback.print(e)}")
-                    losses_per_page[page].append(math.inf)
+            try:
+                # Perform a forward pass with the model to compute the loss
+                inputs = batch.to(config.device)
+                outputs = model(inputs, labels=inputs)
+                loss = outputs.loss.item()  # Get the scalar loss value
+                page_losses.append(loss)
+                pbar.set_description(f"Loss: {uid} - {loss:.4f}")
+            except Exception as e:
+                # Log the exception and append infinity to indicate failure
+                bt.logging.error(f"Exception occurred: {e}")
+                traceback.print_exc()  # Correctly print the stack trace
+                page_losses.append(math.inf)
+        
+        # Update the dictionary with the losses for the current page
+        losses_per_page[page] = page_losses
+
     return losses_per_page
     
 
 def run_step( wins_per_epoch, metagraph, global_step ):
     """
         Executes a single validation step.
-        - 1. Generates random pages from Falcon Refined web for evaluation.
-        - 2. Identifies available UIDs for model updating (uids must be serving and have a recent weight set event.)
-        - 3. Computes losses for each batch and each UID to attain losses per batch.
+        - 1. Updates local models using wandb data.
+        - 2. Generates random pages from Falcon Refined web for evaluation.
+        - 3. Computes losses for each batch and each UID to attain losses per batch per page
         - 4. Determines the winning UID based on lowest average loss per batch.
         - 5. Logs win percentages for each UID to wandb and screen.
         - 6. Logs step results and updates weights and biases (wandb) if configured.
@@ -233,15 +256,15 @@ def run_step( wins_per_epoch, metagraph, global_step ):
     # their paths and timestamps.
     uids, paths, model_timestamps = get_or_update_model_info( metagraph )
 
-    # Get next batches
+    # Generate random pages for evaluation and prepare batches for each page
     pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages)]
-    batches_per_page = { page: None for page in pages }
-    for page in pages:
-        batches_per_page[page] = list(pretrain.dataset.SubsetFalconLoader(
+    batches_per_page = {
+        page: list(pretrain.dataset.SubsetFalconLoader(
             batch_size=pretrain.batch_size,
             sequence_length=pretrain.sequence_length,
-            pages = [ page ]
-        ))
+            pages=[page]
+        )) for page in pages
+    }
     
     # Compute losses per page
     losses_per_page_per_uid = { uid: None for uid in uids }
@@ -269,7 +292,7 @@ def run_step( wins_per_epoch, metagraph, global_step ):
 
     # Function returns True if this uid has lowest loss across all other uids on this 
     # batch, in case of ties takes uid with better timestamp.
-    def is_win_loss_with_timestamps( this_uid, page_j, batch_k ):
+    def is_winning_loss_with_timestamps( this_uid, page_j, batch_k ):
         this_loss = losses_per_page_per_uid[ this_uid ][page_j][batch_k]
         this_timestamp = model_timestamps[ this_uid ]
         for other_uid in uids:
@@ -286,7 +309,7 @@ def run_step( wins_per_epoch, metagraph, global_step ):
     for uid in uids:
         for page in pages:
             for batch, _ in enumerate( batches_per_page[page] ):
-                if is_win_loss_with_timestamps( uid, page, batch ):
+                if is_winning_loss_with_timestamps( uid, page, batch ):
                     total_wins_per_uid_per_page[ uid ][ page ] += 1
                     wins_per_epoch[ uid ] += 1 if uid in wins_per_epoch else 0
 
