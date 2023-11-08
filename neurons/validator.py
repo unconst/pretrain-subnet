@@ -343,7 +343,8 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
             'timestamp': model_timestamps[ uid ],
             'average_loss': sum ( [average_loss_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / total_batches,
             'average_losses': [ average_loss_per_uid_per_page[ uid ][ pagek ] for pagek in pages ],
-            'win_rate': sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / total_batches
+            'win_rate': sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / total_batches,
+            'win_total': sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ])
         }
 
     # Sink step log.
