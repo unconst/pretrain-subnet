@@ -271,6 +271,7 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
             pages=[page]
         )) for page in pages
     }
+    total_batches = sum([ len(b) for b in batches_per_page.values()] )
     
     # Compute losses per page
     losses_per_page_per_uid = { uid: None for uid in uids }
@@ -340,9 +341,9 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
         step_log[ str(uid) ] = {
             'uid': uid,
             'timestamp': model_timestamps[ uid ],
-            'average_loss': sum ( [average_loss_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / len(pages),
+            'average_loss': sum ( [average_loss_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / total_batches,
             'average_losses': [ average_loss_per_uid_per_page[ uid ][ pagek ] for pagek in pages ],
-            'win_rate': sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / len(pages)
+            'win_rate': sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / total_batches
         }
 
     # Sink step log.
