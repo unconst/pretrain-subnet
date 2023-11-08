@@ -144,9 +144,6 @@ def compute_losses_on_batches( uid, eval_batches: Dict[int, List[torch.Tensor]],
             batches (:obj:`List[torch.Tensor]`): The batches to evaluate on.
             device (:obj:`torch.device`): The device to evaluate on.
     """
-    # No model for this uid.
-    # if uid not in model_paths: 
-    #     return [math.inf for _ in range(len(eval_batches.items()))]
 
     # === Load model ===
     model = pretrain.model.get_model()
@@ -198,14 +195,16 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     eval_batches = {}
 
     # For each unique page, create a list of batches
+    total_batches = 0
     for page in set(random_pages):
         eval_batches[page] = list(pretrain.dataset.SubsetFalconLoader(
             batch_size=pretrain.batch_size,
             sequence_length=pretrain.sequence_length,
             pages=[page]
         ))
+        total_batches += len( eval_batches )
 
-    # === Update model for each uid ===
+    # Update model for each uid ===
     valid_runs = pretrain.get_valid_runs( metagraph )
     valid_uids = [ v['uid'] for v in valid_runs.values() ]
     log = { str(uid): {} for uid in valid_uids }
@@ -213,10 +212,11 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     # Update all models if need be.
     update_models( log, valid_runs )
 
-    # === Compute losses on each batch ===
+    # Compute losses on each batch ===
     best_uid = None
     best_average_loss = 1000
 
+    # Compute losses per batch per page.
     pbar = tqdm(valid_uids, desc="Loss:", leave=False)
     for uid in pbar:
         compute_losses_on_batches(uid, eval_batches, config.device, pbar, log, random_pages)
@@ -234,25 +234,29 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
         log["pages"] = random_pages
         log["timestamp"] = time.time()
 
-    # === Compute wins per batch ===
-    win_per_step = {uid: 0 for uid in valid_uids}
-    for page in random_pages:
-        min_loss = math.inf
-        min_loss_uid = None
-        for uid in valid_uids:
-            if losses:
-                min_loss_for_uid = min(losses)
-                if min_loss_for_uid < min_loss:
-                    min_loss = min_loss_for_uid
-                    min_loss_uid = uid
-        # Increment the win count for the UID with the minimum loss for the current page
-        if min_loss_uid is not None:
-            win_per_step[min_loss_uid] += 1
-
-    # Log wins per UID
-    total_wins = sum(win_per_step.values())
-    for uid, wins in win_per_step.items():
-        log[str(uid)]["Win Percentage"] = wins / total_wins if total_wins > 0 else 0
+    # Compute wins per batch per page.
+    for uid_i in valid_uids:
+        for page in random_pages:
+            for loss_i in log[str(uid_i)][page]["losses"]:
+                is_win = True
+                for uid_j in valid_uids:
+                    loss_j = log[str(uid_j)][page]["losses"]
+                    if loss_i > loss_j:
+                        is_win = False
+                        break
+                    elif loss_i == loss_j and model_timestamps[ uid_i ] > model_timestamps[ uid_j ]:
+                        is_win = False
+                        break
+                    else: continue
+                log[str(uid_i)][page]["wins"].append( is_win )
+    
+    # Compute wins per step
+    for uid_i in valid_uids:
+        total_wins = 0
+        for page in random_pages:
+            total_wins += sum( log[str(uid_i)][page]["wins"] ) 
+        log[str(uid)]["total_wins"] = total_wins
+        log[str(uid)]["win percentage"] = total_wins / total_batches
 
     # Clear uid logs for empty dictionaries.
     for key in list(log): 
