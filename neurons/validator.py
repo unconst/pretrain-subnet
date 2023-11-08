@@ -39,7 +39,7 @@ ARTIFACT_NAME:str = "model.pth"
 def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument( "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
-    parser.add_argument( '--wandb.on', action='store_true', help='Turn on wandb logging.' )
+    parser.add_argument( '--wandb.off', dest = 'wandb.on', action='store_false', help='Turn off wandb logging.' )
     parser.add_argument( '--blocks_per_epoch', type=int, default=360, help='Number of blocks to wait before setting weights.' )
     bt.subtensor.add_args(parser)
     bt.logging.add_args(parser)
@@ -87,8 +87,10 @@ if config.wandb.on:
         config = config,
         dir = config.full_path,
     )
-    bt.logging.success( f'Started wandb run' )
-    wandb.init(project="openpretraining", entity="opentensor-dev")
+    # Sign wandb run.
+    wandb.init( project = "openpretraining", entity="opentensor-dev" )
+    config.signature = wallet.hotkey.sign( wandb_run.id.encode() ).hex()
+    wandb.config.update( config, allow_val_change=True )
 
 
 def get_or_update_model_info(metagraph):
@@ -118,6 +120,9 @@ def get_or_update_model_info(metagraph):
     # Iterate over each run in the project
     for run in pbar:
         pbar.set_description(f"Updating: {run.id}")
+
+        # Filter out non miner runs.
+        if 'miner' not in run.name: continue
 
         # Continue only if 'hotkey' is in the run's configuration
         if 'hotkey' not in run.config: continue

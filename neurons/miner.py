@@ -133,7 +133,7 @@ if config.load_run_id != None:
 # Model is pulled from best on network
 elif config.load_best:
     bt.logging.success(f'Loading based on --config.load_best')
-    all_valid_runs = pretrain.get_valid_runs( metagraph )
+    all_valid_runs = pretrain.get_miner_runs( metagraph )
     sorted_valid_runs = sorted( list( all_valid_runs.values()), key=lambda x: x['emission'])
     load_model_from_run( sorted_valid_runs[0]['run'] )
 
@@ -164,7 +164,7 @@ import random
 best_avg_loss = float('inf')
 
 # Initialize your wandb run
-run_name = f'{my_uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
+run_name = f'miner-{my_uid}' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
 config.uid = my_uid
 config.hotkey = wallet.hotkey.ss58_address
 config.run_name = run_name

@@ -37,14 +37,17 @@ import bittensor as bt
 from tqdm import tqdm
 from datetime import datetime
 
-def get_valid_runs( metagraph ):
+def get_miner_runs( metagraph ):
     api = wandb.Api( timeout = 100 )
     runs = api.runs("opentensor-dev/openpretraining")
     pbar = tqdm( runs , desc="Getting runs:", leave=False )
-    valid_runs = {}
+    miner_runs = {}
     model_timestamps = {}
     for run in pbar:
         pbar.set_description(f"Checking: {run.id}")
+
+        # Filter out non miner runs.
+        if 'miner' not in run.name: continue
 
         # Find hotkey of continue
         if 'hotkey' not in run.config: continue
@@ -74,7 +77,7 @@ def get_valid_runs( metagraph ):
             continue
 
         # Set run as valid with and latest.
-        valid_runs[hotkey] = {
+        miner_runs[uid] = {
             'uid': uid, 
             'hotkey': hotkey,
             'emission': metagraph.E[uid].item(),
@@ -83,4 +86,43 @@ def get_valid_runs( metagraph ):
             'timestamp': model_timestamp, 
         }
 
-    return valid_runs
+    return miner_runs
+
+
+def get_validator_runs( metagraph ):
+    api = wandb.Api( timeout = 100 )
+    runs = api.runs("opentensor-dev/openpretraining")
+    pbar = tqdm( runs , desc="Getting runs:", leave=False )
+    vali_runs = {}
+    for run in pbar:
+        pbar.set_description(f"Checking: {run.id}")
+
+        # Filter out non miner runs.
+        if 'validator' not in run.name: continue
+
+        # Find hotkey of continue
+        if 'hotkey' not in run.config: continue
+        hotkey = run.config['hotkey']
+
+        # Filter models not registered
+        if hotkey not in metagraph.hotkeys: continue
+        uid = metagraph.hotkeys.index( hotkey )
+
+        # Find signature or continue
+        if 'signature' not in run.config: continue
+        signature = run.config['signature']
+
+        # Check signature
+        keypair = bt.Keypair( ss58_address = hotkey )
+        is_legit = keypair.verify( run.id, bytes.fromhex( signature ) )
+        if not is_legit: continue
+
+        # Set run as valid with and latest.
+        vali_runs[uid] = {
+            'uid': uid, 
+            'hotkey': hotkey,
+            'state': metagraph.S[uid].item(),
+            'run': run, 
+        }
+
+    return vali_runs
