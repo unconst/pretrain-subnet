@@ -18,7 +18,7 @@
 Bittensor subnet 9 rewards miners for producing pretrained models of structure GPT2 on the Falcon Refined Web dataset. It acts like a continuous benchmark where miners are paid out for attaining the best losses on randomly sampled pages of that dataset. The reward mechanism works as follows:
 
     1. Miner train and periodically host their model weights on a wandb account which is linked to their miner through the neurons/miner.py code. 
-    2. Validators periodically check and pull the latest hosted models hosted.
+    2. Validators periodically check and pull the latest hosted models.
     3. Validators run a continuous eval on pulled models and perform the validation system outlined in neurons/validator.py 
     
 ## Validation
