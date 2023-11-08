@@ -138,9 +138,7 @@ def update_models(metagraph):
         except: continue
 
         # Convert the updatedAt string to a timestamp
-        # Exception mean that model run has started, but upload hasn't finished so we can't access the data
-        try: remote_model_timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-        except: continue
+        remote_model_timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
 
         # Skip if the model is stale
         if uid in timestamps and timestamps[uid] > remote_model_timestamp: continue
@@ -358,7 +356,7 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
                 if is_winning_loss_with_timestamps( uid, page, batch ):
                     total_wins_per_uid_per_page[ uid ][ page ] += 1
                     if uid in wins_per_epoch: wins_per_epoch[ uid ] += 1 
-                    else: wins_per_epoch[ uid ] = 1
+                    else: wins_per_epoch[ uid ] = 0
 
     # Build step log
     step_log = {
@@ -367,20 +365,15 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
         'uids': uids,
         'best_average_loss': best_average_loss,
         'best_average_loss_uid': best_average_loss_uid,
-        'total batches': total_batches,
     }
     for uid in uids:
-        average_losses = [average_loss_per_uid_per_page[uid][pagek] for pagek in pages]
-        average_loss = sum(average_losses) / len(average_losses)
-        win_rate = sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / total_batches
-        win_total = sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ])
         step_log[ str(uid) ] = {
             'uid': uid,
             'timestamp': model_timestamps[ uid ],
-            'average_losses': average_losses,
-            'average_loss': average_loss,
-            'win_rate': win_rate,
-            'win_total': win_total,
+            'average_loss': sum ( [average_loss_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / total_batches,
+            'average_losses': [ average_loss_per_uid_per_page[ uid ][ pagek ] for pagek in pages ],
+            'win_rate': sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / total_batches,
+            'win_total': sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ])
         }
 
     # Sink step log.
