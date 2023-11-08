@@ -108,11 +108,9 @@ model_paths = {}
 model_timestamps = {}
 
 def update_models( valid_runs ):
-
     pbar = tqdm( list(valid_runs.items()) , desc="Updating models:", leave=False )
     for hotkey, run_info in pbar:
-        pbar.set_description(f"Updating models: {run_info['run'].id}")
-
+        pbar.set_description(f"Updating models: {run_info['run']}")
         # Get run info.
         uid = run_info['uid']
         model_file = run_info['model_artifact']
@@ -126,8 +124,7 @@ def update_models( valid_runs ):
             with open(timestamp_file, 'r') as f:
                 existing_timestamp = json.load(f)
             if existing_timestamp == model_timestamp:
-                bt.logging.debug('Miner model artifact is up to date.')
-                return
+                continue
 
         # If the timestamp does not match or the file does not exist, update the timestamp ===
         os.makedirs(model_dir, exist_ok=True)  # Ensure the directory exists
@@ -172,7 +169,7 @@ def compute_losses_on_batches( uid, eval_batches: Dict[int, List[torch.Tensor]],
                     losses.append(loss)
                     pbar.set_description(f"Loss: {uid} - {loss}")
                 except Exception as e:
-                    bt.logging.error(f"Exception is here! error {traceback_exec(e)}")
+                    bt.logging.error(f"Exception is here! error {traceback.print(exc)}")
                     losses.append(math.inf)
 
 def run_step( wins_per_epoch, metagraph, wandb_step ):
