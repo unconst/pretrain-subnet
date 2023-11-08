@@ -32,7 +32,6 @@ sequence_length = 512
 
 from . import model as model
 from . import dataset as dataset
-from . import protocol as protocol
 import wandb
 import bittensor as bt
 from tqdm import tqdm

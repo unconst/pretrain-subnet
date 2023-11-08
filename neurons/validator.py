@@ -33,7 +33,6 @@ import wandb
 import torch
 import string
 import random
-import typing
 from typing import Dict, List
 import traceback
 import pretrain
@@ -123,12 +122,13 @@ def get_or_update_model_info(metagraph):
     pbar = tqdm(runs, desc="Getting runs:", leave=False)
 
     # Initialize containers for the model information
-    uids = []
     paths = {}
     timestamps = {}
 
     # Iterate over each run in the project
     for run in pbar:
+        pbar.set_description(f"Updating: {run.id}")
+
         # Continue only if 'hotkey' is in the run's configuration
         if 'hotkey' not in run.config: continue
         hotkey = run.config['hotkey']
@@ -156,11 +156,19 @@ def get_or_update_model_info(metagraph):
         # Define the local model directory and timestamp file paths
         model_dir = os.path.join(config.full_path, 'models', str(uid))
         timestamp_file = os.path.join(model_dir, 'timestamp.json')
+        model_path = os.path.join(model_dir, 'model.pth')
 
         # Function to determine if the model needs updating
-        def needs_updating(new_timestamp):
+        def needs_updating(model_path, new_timestamp):
+            # Check if we can load the local model.
+            try:
+                model = pretrain.model.get_model()
+                torch.load(model_path, map_location=torch.device(config.device))
+            except: return True
+            # Check if we have a timestamp file.
             if not os.path.exists(timestamp_file):
                 return True
+            # Check if the local timestamp is older.
             with open(timestamp_file, 'r') as f:
                 existing_timestamp = json.load(f)
             return existing_timestamp != new_timestamp
@@ -171,18 +179,18 @@ def get_or_update_model_info(metagraph):
             with open(timestamp_file, 'w') as f:
                 json.dump(remote_model_timestamp, f)
             model_artifact.download(replace=True, root=model_dir)
+            bt.logging.debug( f'Updated model under path: { model_dir } with timestamp: { remote_model_timestamp }')
 
         # Update model if necessary
-        if needs_updating(remote_model_timestamp):
+        if needs_updating(model_path, remote_model_timestamp):
             update_model_and_timestamp()
 
         # Add updated model info to the containers
-        uids.append(uid)
-        paths[uid] = os.path.join(model_dir, 'model.pth')
+        paths[uid] = model_path
         timestamps[uid] = remote_model_timestamp
 
     # Return the information of all updated models
-    return uids, paths, timestamps
+    return list(paths.keys()), paths, timestamps
 
 
 def compute_losses_per_page(uid: int, model_path: str, batches_per_page: Dict[int, List[torch.Tensor]], pbar) -> Dict[int, List[float]]:
@@ -199,6 +207,7 @@ def compute_losses_per_page(uid: int, model_path: str, batches_per_page: Dict[in
     Returns:
     Dict[int, List[float]]: A dictionary mapping each page to a list of loss values for the batches on that page.
     """
+    bt.logging.trace( f'Computing loss for uid: {uid} on model path: {model_path} for page batches: {list(batches_per_page.keys())}')
 
     # Load the pre-trained model from the specified path
     model = pretrain.model.get_model()
@@ -255,6 +264,7 @@ def run_step( wins_per_epoch, metagraph, global_step ):
     # Update all models from wandb runs and return a list of uids
     # their paths and timestamps.
     uids, paths, model_timestamps = get_or_update_model_info( metagraph )
+    bt.logging.trace( f'Runnning step with uids: {uids}, paths: {paths}, timestamps: {model_timestamps}')
 
     # Generate random pages for evaluation and prepare batches for each page
     pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages)]
@@ -270,8 +280,8 @@ def run_step( wins_per_epoch, metagraph, global_step ):
     losses_per_page_per_uid = { uid: None for uid in uids }
     pbar = tqdm( uids, desc="Loss:", leave=False)
     for uid_i in pbar:
-        model_path = paths[ uid ]
-        losses_per_page_per_uid[ uid_i ] = compute_losses_per_page( uid, model_path, pages, batches_per_page )
+        model_path = paths[ uid_i ]
+        losses_per_page_per_uid[ uid_i ] = compute_losses_per_page( uid_i, model_path, batches_per_page, pbar )
 
     # Compute average loss per page
     average_loss_per_uid_per_page = { uid: {} for uid in uids }
@@ -311,7 +321,8 @@ def run_step( wins_per_epoch, metagraph, global_step ):
             for batch, _ in enumerate( batches_per_page[page] ):
                 if is_winning_loss_with_timestamps( uid, page, batch ):
                     total_wins_per_uid_per_page[ uid ][ page ] += 1
-                    wins_per_epoch[ uid ] += 1 if uid in wins_per_epoch else 0
+                    if uid in wins_per_epoch: wins_per_epoch[ uid ] += 1 
+                    else: wins_per_epoch[ uid ] = 0
 
     # Build step log
     step_log = {
@@ -327,12 +338,12 @@ def run_step( wins_per_epoch, metagraph, global_step ):
             'timestamp': model_timestamps[ uid ],
         }
         for page in pages:
-            uid_log[ page ] = {
+            uid_log[ str(page) ] = {
                 'page': page,
                 'losses': losses_per_page_per_uid[ uid ][ page ],
                 'average_loss': average_loss_per_uid_per_page[ uid ][page],
                 'wins': total_wins_per_uid_per_page[ uid ][ page ],
-                'win_rate': total_wins_per_uid_per_page[ uid ][ page ] / batches_per_page[ page ]
+                'win_rate': total_wins_per_uid_per_page[ uid ][ page ] / len( batches_per_page[ page ] )
             }
         step_log[ str(uid) ] = uid_log
 
