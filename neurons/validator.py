@@ -330,7 +330,7 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
     def is_winning_loss_with_timestamps( this_uid, page_j, batch_k ):
         this_loss = losses_per_page_per_uid[ this_uid ][page_j][batch_k]
         if this_uid == global_best_uid:
-            this_loss = this_loss * pretrain.epsilon
+            this_loss *= (1 - pretrain.epsilon)
         this_timestamp = metadata[ this_uid ]['timestamp']
         for other_uid in uids:
             other_loss = losses_per_page_per_uid[ other_uid ][ page_j ][ batch_k ]
@@ -349,7 +349,7 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
                 if is_winning_loss_with_timestamps( uid, page, batch ):
                     total_wins_per_uid_per_page[ uid ][ page ] += 1
                     if uid in wins_per_epoch: wins_per_epoch[ uid ] += 1 
-                    else: wins_per_epoch[ uid ] = 0
+                    else: wins_per_epoch[ uid ] = 1
 
     # Build step log
     step_log = {
@@ -401,7 +401,8 @@ def run_epoch( wins_per_epoch, global_step ):
         weights = weights,
         wait_for_inclusion=False,
     )
-    bt.logging.success(f"Set weights: {weights.tolist()}")
+    bt.logging.success(f"Set weights successfully")
+    bt.logging.trace(f"Weights info: {weights.tolist()}")
 
 # === Validating loop ===
 epoch_step = 0 
@@ -426,13 +427,13 @@ while True:
             # is defined as the model with the lowest loss on a given batch.
             run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, global_step )
             metagraph = subtensor.metagraph( pretrain.NETUID )
-            bt.logging.success(f"{metagraph.block.item() - last_epoch } / {config.blocks_per_epoch} blocks until next epoch.")
+            bt.logging.debug(f"{metagraph.block.item() - last_epoch } / {config.blocks_per_epoch} blocks until next epoch.")
             global_step += 1
 
         # Update global best loss and uid.
         for uid in losses_per_epoch.keys():
             epoch_average_loss = sum(losses_per_epoch[uid])/len(losses_per_epoch[uid])
-            if epoch_average_loss < global_best_loss:
+            if epoch_average_loss < global_best_loss * (1 - pretrain.epsilon):
                 global_best_uid = uid
                 global_best_loss = epoch_average_loss
         if config.wandb.on: wandb.log( {"global_best_uid": global_best_uid, "global_best_loss":global_best_loss }, step = global_step )
