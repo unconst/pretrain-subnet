@@ -102,74 +102,87 @@ if config.wandb.on:
     wandb.init(project="openpretraining", entity="opentensor-dev")
 
 
-def get_or_update_model_info( metagraph ):
+def get_or_update_model_info(metagraph):
+    """
+    This function updates local model files by synchronizing with models registered in the metagraph
+    and available on Weights & Biases (wandb). It checks the legitimacy of each model's signature,
+    downloads models that are either new or updated, and keeps track of their timestamps and paths.
     
-    # Access the wandb files.
-    api = wandb.Api( timeout = 100 )
+    Args:
+    metagraph (Metagraph): An object representing the metagraph of the models to be synchronized.
+    
+    Returns:
+    tuple: A tuple containing lists of uids, paths, and timestamps of the updated models.
+    """
+    
+    # Initialize Weights & Biases API client with a timeout setting
+    api = wandb.Api(timeout=100)
+    # Retrieve runs from the wandb project
     runs = api.runs("opentensor-dev/openpretraining")
-    pbar = tqdm( runs , desc="Getting runs:", leave=False )
+    # Use tqdm to show progress bar for the iteration over runs
+    pbar = tqdm(runs, desc="Getting runs:", leave=False)
 
+    # Initialize containers for the model information
     uids = []
     paths = {}
     timestamps = {}
-    for run in pbar:
 
-        # Get hotkey.
+    # Iterate over each run in the project
+    for run in pbar:
+        # Continue only if 'hotkey' is in the run's configuration
         if 'hotkey' not in run.config: continue
         hotkey = run.config['hotkey']
 
-        # Filter models not registered
+        # Skip models that are not registered in the metagraph
         if hotkey not in metagraph.hotkeys: continue
-        uid = metagraph.hotkeys.index( hotkey )
+        uid = metagraph.hotkeys.index(hotkey)
 
-        # Check signature.
+        # Ensure a 'signature' exists and verify its legitimacy
         if 'signature' not in run.config: continue
         signature = run.config['signature']
-        keypair = bt.Keypair( ss58_address = hotkey )
-        is_legit = keypair.verify( run.id, bytes.fromhex( signature ) )
-        if not is_legit: continue
+        keypair = bt.Keypair(ss58_address=hotkey)
+        if not keypair.verify(run.id, bytes.fromhex(signature)): continue
 
-        # Check for model
-        try:
-            model_artifact = run.file('model.pth')
-        except: continue 
+        # Attempt to access the model artifact file
+        try: model_artifact = run.file('model.pth')
+        except: continue
 
-        # Check if run is stale.
+        # Convert the updatedAt string to a timestamp
         remote_model_timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-        if uid in timestamps and timestamps[ uid ] > remote_model_timestamp:
-            continue
 
-        # Build model paths.  
-        model_dir = f'{config.full_path}/models/{uid}/'
-        timestamp_file = f'{model_dir}timestamp.json'
+        # Skip if the model is stale
+        if uid in timestamps and timestamps[uid] > remote_model_timestamp: continue
 
-        # Check if model needs updating
-        def needs_updating( new_timestamp ):
-            # Check if model exists locally.
-            if not os.path.exists( timestamp_file ): return True
-            with open( timestamp_file, 'r' ) as f:
+        # Define the local model directory and timestamp file paths
+        model_dir = os.path.join(config.full_path, 'models', str(uid))
+        timestamp_file = os.path.join(model_dir, 'timestamp.json')
+
+        # Function to determine if the model needs updating
+        def needs_updating(new_timestamp):
+            if not os.path.exists(timestamp_file):
+                return True
+            with open(timestamp_file, 'r') as f:
                 existing_timestamp = json.load(f)
-            if existing_timestamp == new_timestamp:
-                return False
+            return existing_timestamp != new_timestamp
 
+        # Function to update the model file and its timestamp
         def update_model_and_timestamp():
-            # If the timestamp does not match or the file does not exist, update the timestamp ===
             os.makedirs(model_dir, exist_ok=True)  # Ensure the directory exists
             with open(timestamp_file, 'w') as f:
                 json.dump(remote_model_timestamp, f)
-            # Replace model.
             model_artifact.download(replace=True, root=model_dir)
-            
-        if needs_updating( remote_model_timestamp ):
-            update_model_and_timestamp( )
 
-        # Add items to dicts.
-        uids.append( uid )
-        paths[ uid ] = model_dir + ARTIFACT_NAME
-        timestamps[ uid ] = remote_model_timestamp
+        # Update model if necessary
+        if needs_updating(remote_model_timestamp):
+            update_model_and_timestamp()
 
-    # Returns model info for all updated models.
-    return uid, paths, timestamps 
+        # Add updated model info to the containers
+        uids.append(uid)
+        paths[uid] = os.path.join(model_dir, 'model.pth')
+        timestamps[uid] = remote_model_timestamp
+
+    # Return the information of all updated models
+    return uids, paths, timestamps
 
 def compute_losses_per_page( uid, model_path, batches_per_page: Dict[int, List[torch.Tensor]], pbar ):
 
@@ -199,7 +212,7 @@ def compute_losses_per_page( uid, model_path, batches_per_page: Dict[int, List[t
     return losses_per_page
     
 
-def run_step( wins_per_epoch, metagraph, wandb_step ):
+def run_step( wins_per_epoch, metagraph, global_step ):
     """
         Executes a single validation step.
         - 1. Generates random pages from Falcon Refined web for evaluation.
@@ -218,7 +231,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
 
     # Update all models from wandb runs and return a list of uids
     # their paths and timestamps.
-    uids, paths, model_timestamps = get_or_update_model_info()
+    uids, paths, model_timestamps = get_or_update_model_info( metagraph )
 
     # Get next batches
     pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages)]
@@ -304,7 +317,7 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
     bt.logging.success(f"Step results: {step_log}")
     with open ( config.full_path + "/step_results.json", "a") as f:
         json.dump(step_log, f)
-    if config.wandb.on: wandb.log( step_log, step = wandb_step )
+    if config.wandb.on: wandb.log( step_log, step = global_step )
 
 def run_epoch( wins_per_epoch, global_step ):
     """
