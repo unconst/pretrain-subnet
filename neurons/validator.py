@@ -216,8 +216,8 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
 
     """
 
-    # Update all models and return the uids of all valid models 
-    # to evaluate this step.
+    # Update all models from wandb runs and return a list of uids
+    # their paths and timestamps.
     uids, paths, model_timestamps = get_or_update_model_info()
 
     # Get next batches
@@ -238,17 +238,12 @@ def run_step( wins_per_epoch, metagraph, wandb_step ):
         losses_per_page_per_uid[ uid_i ] = compute_losses_per_page( uid, model_path, pages, batches_per_page )
 
     # Compute average loss per page
-    best_average_loss_per_page = { page: math.inf for page in pages }
-    best_average_loss_uid_page = { page: None for page in pages }
     average_loss_per_uid_per_page = { uid: {} for uid in uids }
     for uid_i in uids:
         for page_j in pages:
             losses = losses_per_page_per_uid[ uid_i ][ page_j ]
             average_loss = sum(losses)/len(losses)
             average_loss_per_uid_per_page[ uid_i ][ page_j ] = average_loss
-            if average_loss < best_average_loss_per_page[ page ]:
-                best_average_loss_per_page[ page ] = average_loss
-                best_average_loss_uid_page[ page ] = uid_i
 
     # Compute best average loss
     best_average_loss = math.inf
