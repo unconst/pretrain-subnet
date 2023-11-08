@@ -333,8 +333,8 @@ def run_epoch( wins_per_epoch, global_step ):
     bt.logging.success(f"Set weights: {weights.tolist()}")
 
 # === Validating loop ===
+epoch_step = 0 
 global_step = 0
-epoch = 0 
 last_epoch = metagraph.block.item()
 bt.logging.success(f"Starting validator loop")
 while True:
@@ -354,7 +354,7 @@ while True:
         # Finish epoch.
         run_epoch( wins_per_epoch, global_step )
         last_epoch = metagraph.block.item()
-        epoch += 1
+        epoch_step += 1
 
     except KeyboardInterrupt:
         bt.logging.info("KeyboardInterrupt caught, gracefully closing the wandb run...")
