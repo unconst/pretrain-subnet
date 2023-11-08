@@ -21,7 +21,7 @@ Bittensor subnet 9 rewards miners for producing pretrained models of structure G
     2. Validators periodically check and pull the latest hosted models hosted.
     3. Validators run a continuous eval on pulled models and perform the validation system outlined in neurons/validator.py 
     
-#### Validation
+## Validation
 
 Miners are evaluated based on the number of times their loss on a random batch duing a 360 block epoch are lower than all other miners. 
 To perform well, miners must attain the lowest loss on the largest number of random batches sampled from the 900M page, 3T token dataset Falcon Refined Wed.
