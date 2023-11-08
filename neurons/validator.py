@@ -149,30 +149,33 @@ def update_models(metagraph):
         model_path = os.path.join(model_dir, 'model.pth')
 
         # Function to determine if the model needs updating
-        def needs_updating(model_path, new_timestamp):
+        def needs_updating():
             # Check if we can load the local model.
             try:
-                torch.load(model_path, map_location=torch.device(config.device))
-            except: return True
+                torch.load( model_path )
+            except:
+                bt.logging.trace(f'Model path corrupted, needs redownloading with path: {model_path}') 
+                return True
             # Check if we have a timestamp file.
             if not os.path.exists(timestamp_file):
+                bt.logging.trace(f'No timestamp, needs downloading with path') 
                 return True
             # Check if the local timestamp is older.
             with open(timestamp_file, 'r') as f:
                 existing_timestamp = json.load(f)
-            return existing_timestamp != new_timestamp
+            # Check timestamp.
+            if existing_timestamp < remote_model_timestamp:
+                bt.logging.trace(f'Existing timestamp: {existing_timestamp} is older than newer timestamp: {remote_model_timestamp}') 
+                return True
+            return False
 
         # Function to update the model file and its timestamp
-        def update_model_and_timestamp():
+        if needs_updating():
             os.makedirs(model_dir, exist_ok=True)  # Ensure the directory exists
             with open(timestamp_file, 'w') as f:
                 json.dump(remote_model_timestamp, f)
             model_artifact.download(replace=True, root=model_dir)
             bt.logging.debug( f'Updated model under path: { model_dir } with timestamp: { remote_model_timestamp }')
-
-        # Update model if necessary
-        if needs_updating(model_path, remote_model_timestamp):
-            update_model_and_timestamp()
 
 def get_model_paths_and_timestamps(metagraph):
     """
@@ -191,7 +194,7 @@ def get_model_paths_and_timestamps(metagraph):
     timestamps = {}
     
     # Iterate over each UID in the metagraph.
-    for uid in metagraph.uids:
+    for uid in metagraph.uids.tolist():
         try:
             # Construct the paths for the model directory and timestamp file.
             model_dir = os.path.join(config.full_path, 'models', str(uid))
@@ -199,7 +202,7 @@ def get_model_paths_and_timestamps(metagraph):
             model_path = os.path.join(model_dir, 'model.pth')
 
             # Attempt to load the model with the specified path and device configuration.
-            torch.load(model_path, map_location=torch.device(config.device))
+            torch.load( model_path )
             
             # Attempt to load the timestamp from the JSON file.
             with open(timestamp_file, 'r') as f:
@@ -221,14 +224,14 @@ def compute_losses_per_page(uid: int, model_path: str, batches_per_page: Dict[in
     Computes the loss for each page of batches using the given pre-trained model.
     
     Args:
-    uid (int): The unique identifier for the current model.
-    model_path (str): The file path to the pre-trained model.
-    batches_per_page (Dict[int, List[torch.Tensor]]): A dictionary where each key is a page number
-        and each value is a list of batch tensors to be processed by the model.
-    pbar: A tqdm progress bar instance for real-time progress updates.
+        uid (int): The unique identifier for the current model.
+        model_path (str): The file path to the pre-trained model.
+        batches_per_page (Dict[int, List[torch.Tensor]]): A dictionary where each key is a page number
+            and each value is a list of batch tensors to be processed by the model.
+        pbar: A tqdm progress bar instance for real-time progress updates.
     
     Returns:
-    Dict[int, List[float]]: A dictionary mapping each page to a list of loss values for the batches on that page.
+        Dict[int, List[float]]: A dictionary mapping each page to a list of loss values for the batches on that page.
     """
     bt.logging.trace( f'Computing loss for uid: {uid} on model path: {model_path} for page batches: {list(batches_per_page.keys())}')
 
