@@ -92,17 +92,13 @@ if config.wandb.on:
     config.signature = wallet.hotkey.sign( wandb_run.id.encode() ).hex()
     wandb.config.update( config, allow_val_change=True )
 
-def get_or_update_model_info(metagraph):
+def update_models(metagraph):
     """
-    This function updates local model files by synchronizing with models registered in the metagraph
-    and available on Weights & Biases (wandb). It checks the legitimacy of each model's signature,
-    downloads models that are either new or updated, and keeps track of their timestamps and paths.
-    
-    Args:
-    metagraph (Metagraph): An object representing the metagraph of the models to be synchronized.
-    
-    Returns:
-    tuple: A tuple containing lists of uids, paths, and timestamps of the updated models.
+        This function updates local model files by synchronizing with models registered in the metagraph
+        and available on Weights & Biases (wandb). It checks the legitimacy of each model's signature,
+        downloads models that are either new or updated, and keeps track of their timestamps and paths.
+        Args:
+            metagraph (Metagraph): An object representing the metagraph of the models to be synchronized.
     """
     
     # Initialize Weights & Biases API client with a timeout setting
@@ -156,7 +152,6 @@ def get_or_update_model_info(metagraph):
         def needs_updating(model_path, new_timestamp):
             # Check if we can load the local model.
             try:
-                model = pretrain.model.get_model()
                 torch.load(model_path, map_location=torch.device(config.device))
             except: return True
             # Check if we have a timestamp file.
@@ -179,11 +174,45 @@ def get_or_update_model_info(metagraph):
         if needs_updating(model_path, remote_model_timestamp):
             update_model_and_timestamp()
 
-        # Add updated model info to the containers
-        paths[uid] = model_path
-        timestamps[uid] = remote_model_timestamp
+def get_model_paths_and_timestamps(metagraph):
+    """
+        Retrieves the file paths to model checkpoints and their associated timestamps for each UID in the metagraph.
 
-    # Return the information of all updated models
+    Args:
+        metagraph (object): An object containing UIDs for models.
+    
+    Returns:
+        tuple: A tuple containing a list of UIDs that were successfully processed, 
+            a dictionary mapping UIDs to their model file paths, 
+            and a dictionary mapping UIDs to their timestamp data.
+    """
+    # Initialize dictionaries for model paths and timestamps.
+    paths = {}
+    timestamps = {}
+    
+    # Iterate over each UID in the metagraph.
+    for uid in metagraph.uids:
+        try:
+            # Construct the paths for the model directory and timestamp file.
+            model_dir = os.path.join(config.full_path, 'models', str(uid))
+            timestamp_file = os.path.join(model_dir, 'timestamp.json')
+            model_path = os.path.join(model_dir, 'model.pth')
+
+            # Attempt to load the model with the specified path and device configuration.
+            torch.load(model_path, map_location=torch.device(config.device))
+            
+            # Attempt to load the timestamp from the JSON file.
+            with open(timestamp_file, 'r') as f:
+                timestamp  = json.load(f)
+        except:
+            # Skip this UID if any error occurs during loading of model or timestamp.
+            continue
+        
+        # Store the successful paths and timestamps in the dictionaries.
+        paths[uid] = model_path
+        timestamps[uid] = timestamp
+
+    # Return the UIDs, paths, and timestamps.
     return list(paths.keys()), paths, timestamps
 
 
@@ -259,7 +288,7 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
 
     # Update all models from wandb runs and return a list of uids
     # their paths and timestamps.
-    uids, paths, model_timestamps = get_or_update_model_info( metagraph )
+    uids, paths, model_timestamps = get_model_paths_and_timestamps( metagraph )
     bt.logging.trace( f'Runnning step with uids: {uids}, paths: {paths}, timestamps: {model_timestamps}')
 
     # Generate random pages for evaluation and prepare batches for each page
@@ -392,6 +421,9 @@ while True:
         # Init a new dict for counters.
         wins_per_epoch = {}
         losses_per_epoch = {}
+
+        # Update all local models at beginning of epoch.
+        update_models( metagraph )
     
         while metagraph.block.item() - last_epoch < config.blocks_per_epoch:
             # Updates models (if needed) runs an eval step over each model
