@@ -53,49 +53,54 @@ def get_miner_runs( metagraph ):
     miner_runs = {}
     model_timestamps = {}
     for run in pbar:
-        pbar.set_description(f"Checking: {run.id}")
-        # Check network existence.
-        hotkey = run.config['hotkey']
-        if hotkey not in metagraph.hotkeys: 
-            bt.logging.trace(f'{hotkey} not in metagraph')
-            continue
-        uid = metagraph.hotkeys.index( hotkey )
-        bt.logging.trace(f'checking uid: {uid}')
+        try:
+            pbar.set_description(f"Checking: {run.id}")
+            # Check network existence.
+            hotkey = run.config['hotkey']
+            if hotkey not in metagraph.hotkeys: 
+                bt.logging.trace(f'{hotkey} not in metagraph')
+                continue
+            uid = metagraph.hotkeys.index( hotkey )
+            bt.logging.trace(f'checking uid: {uid}')
 
-        if 'signature' not in run.config: 
-            bt.logging.trace(f'signature not in config')
-            continue
-        signature = run.config['signature']
+            if 'signature' not in run.config: 
+                bt.logging.trace(f'signature not in config')
+                continue
+            signature = run.config['signature']
 
-        # Check signature
-        keypair = bt.Keypair( ss58_address = hotkey )
-        is_legit = keypair.verify( run.id, bytes.fromhex( signature ) )
-        if not is_legit: 
-            bt.logging.trace(f'signature is false.')
-            continue
+            # Check signature
+            keypair = bt.Keypair( ss58_address = hotkey )
+            is_legit = keypair.verify( run.id, bytes.fromhex( signature ) )
+            if not is_legit: 
+                bt.logging.trace(f'signature is false.')
+                continue
 
-        # Check for model
-        try: model_artifact = run.file('model.pth')
-        except: 
-            bt.logging.trace(f'no file in run.')
-            continue
+            # Check for model
+            try: model_artifact = run.file('model.pth')
+            except: 
+                bt.logging.trace(f'no file in run.')
+                continue
 
-        # Check if it is the latest model
-        model_timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-        if hotkey in model_timestamps and model_timestamps[hotkey] > model_timestamp:
-            bt.logging.trace(f'has newer timestamp.')
-            continue
-        else:
-            model_timestamps[hotkey] = model_timestamp
+            # Check if it is the latest model
+            model_timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
+            if hotkey in model_timestamps and model_timestamps[hotkey] > model_timestamp:
+                bt.logging.trace(f'has newer timestamp.')
+                continue
+            else:
+                model_timestamps[hotkey] = model_timestamp
 
-        # Set run as valid with and latest.
-        miner_runs[uid] = {
-            'uid': uid, 
-            'emission': metagraph.E[uid].item(),
-            'run': run.id, 
-            'model_artifact': "model.pth", 
-            'timestamp': model_timestamp, 
-        }
+            # Set run as valid with and latest.
+            miner_runs[uid] = {
+                'uid': uid, 
+                'emission': metagraph.E[uid].item(),
+                'run': run.id, 
+                'model_artifact': "model.pth", 
+                'timestamp': model_timestamp, 
+            }
+        except Exception as e:
+            print (e)
+            # Skip this UID if any error occurs during loading of model or timestamp.
+            continue
 
     return miner_runs
 
@@ -114,27 +119,32 @@ def get_validator_runs( metagraph ):
     pbar = tqdm( runs , desc="Getting runs:", leave=False )
     vali_runs = {}
     for run in pbar:
-        pbar.set_description(f"Checking: {run.id}")
+        try:
+            pbar.set_description(f"Checking: {run.id}")
 
-        hotkey = run.config['hotkey']
-        if hotkey not in metagraph.hotkeys: continue
-        uid = metagraph.hotkeys.index( hotkey )
+            hotkey = run.config['hotkey']
+            if hotkey not in metagraph.hotkeys: continue
+            uid = metagraph.hotkeys.index( hotkey )
 
-        # Find signature or continue
-        if 'signature' not in run.config: continue
-        signature = run.config['signature']
+            # Find signature or continue
+            if 'signature' not in run.config: continue
+            signature = run.config['signature']
 
-        # Check signature
-        keypair = bt.Keypair( ss58_address = hotkey )
-        is_legit = keypair.verify( run.id, bytes.fromhex( signature ) )
-        if not is_legit: continue
+            # Check signature
+            keypair = bt.Keypair( ss58_address = hotkey )
+            is_legit = keypair.verify( run.id, bytes.fromhex( signature ) )
+            if not is_legit: continue
 
-        # Set run as valid with and latest.
-        vali_runs[uid] = {
-            'uid': uid, 
-            'hotkey': hotkey,
-            'state': metagraph.S[uid].item(),
-            'run': run, 
-        }
+            # Set run as valid with and latest.
+            vali_runs[uid] = {
+                'uid': uid, 
+                'hotkey': hotkey,
+                'state': metagraph.S[uid].item(),
+                'run': run, 
+            }
+        except Exception as e:
+            print (e)
+            # Skip this UID if any error occurs during loading of model or timestamp.
+            continue
 
     return vali_runs

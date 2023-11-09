@@ -56,22 +56,19 @@ def get_config():
     parser.add_argument("--continue_id", type=str, default=None, help='If passed continues from the model on the passed run.' )  
 
     # Set the number of epochs
-    parser.add_argument("--num_epochs", type=int, default=1, help="Number of training epochs")
+    parser.add_argument("--num_epochs", type = int, default = -1, help="Number of training epochs (-1 is infinite)")
 
     # Training lr.
-    parser.add_argument("--lr", type=float, default=1e-6, help="Learning rate.")
+    parser.add_argument("--lr", type = float, default = 1e-7, help="Learning rate.")
 
     # Training batch size
-    parser.add_argument("--bs", type=int, default=pretrain.batch_size, help="Batch size")
+    parser.add_argument("--bs", type = int, default = pretrain.batch_size, help="Batch size")
 
     # Training sequence length
-    parser.add_argument("--sl", type=int, default=pretrain.sequence_length, help="Sequence length")
-
-    # Training bs.
-    parser.add_argument("--accs", type=int, default=5, help="Accs per step.")
+    parser.add_argument("--sl", type = int, default = pretrain.sequence_length, help="Sequence length")
 
     # Set the number of pages trained per epoch
-    parser.add_argument("--pages_per_epoch", type=int, default=1, help="Number of pages trained on per epoch")
+    parser.add_argument("--pages_per_epoch", type = int, default=1, help="Number of pages trained on per epoch")
 
     # Include wallet and logging arguments from bittensor
     bt.wallet.add_args(parser)
@@ -174,7 +171,7 @@ import random
 best_avg_loss = float('inf')
 
 # Initialize your wandb run
-run_name = f'miner-{my_uid}' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
+run_name = f'miner-{my_uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
 config.uid = my_uid
 config.hotkey = wallet.hotkey.ss58_address
 config.run_name = run_name
@@ -218,7 +215,9 @@ wandb.save( config.model_path )
 bt.logging.success('Pushed artifact to the wandb run.')
 
 # Start the training loop
-for epoch in range(config.num_epochs):
+epoch_step = 0
+global_step = 0
+while epoch_step < config.num_epochs or config.num_epochs == -1:
     # Initialize loss accumulator for the epoch
     epoch_loss = 0.0
 
@@ -240,32 +239,30 @@ for epoch in range(config.num_epochs):
         
         # Forward pass: compute the model output and loss
         outputs = model(inputs, labels=inputs)
-        
-        # Accumulate the loss for the epoch
-        epoch_loss += outputs.loss.item() 
-        
+               
         # Backward pass: compute the gradient of the loss with respect to model parameters
-        loss = outputs.loss / config.accs
-        loss.backward()
+        outputs.loss.backward()
         
         # Clear the memory cache to avoid CUDA out of memory issues
         torch.cuda.empty_cache()
         
-        # Check if we have accumulated enoough batches.
-        if (i + 1) % config.accs == 0:
-
-            # Update model parameters
-            optimizer.step()
+        # Update model parameters
+        optimizer.step()
+        
+        # Step loss
+        wandb.log( { 'loss': outputs.loss.detach() } )
         
         # Log the loss for the current step
         n_batches += 1
+        global_step += 1
         bt.logging.success(f'Step: {i} loss: {outputs.loss.item()}')
 
     # Calculate the average loss for the epoch
     avg_loss = epoch_loss / n_batches
-    
+
     # Log the average loss for the epoch
-    bt.logging.success(f'Epoch: {epoch} average loss: {avg_loss}')
+    bt.logging.success(f'Epoch: {epoch_step} average loss: {avg_loss}')
+    epoch_step += 1
 
     # Check if the average loss of this epoch is the best we've seen so far
     if avg_loss < best_avg_loss:
@@ -273,7 +270,7 @@ for epoch in range(config.num_epochs):
         bt.logging.success(f'New best average loss: {best_avg_loss}. Saving model...')
         
         # Save the model state to the specified path
-        torch.save(model.state_dict(), config.model_path)
+        torch.save( model.state_dict(), config.model_path )
 
         # Save the new best model to wandb.
         wandb.save( config.model_path )

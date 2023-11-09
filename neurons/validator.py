@@ -456,7 +456,7 @@ def run_epoch( wins_per_epoch, global_step ):
     # === Compute weights from wins ===
     weights = torch.zeros( len(metagraph.hotkeys) )
     for uid in wins_per_epoch:
-        weights[uid] = wins_per_epoch[uid] / sum( wins_per_epoch.values() )
+        weights[uid] = (wins_per_epoch[uid] + 1)/ sum( wins_per_epoch.values() )
     bt.logging.debug(f"wins_per_epoch = {wins_per_epoch} ------- global best = {global_best_uid}: {round(global_best_loss, 4)}")
     wins_per_epoch = {}
 
