@@ -40,7 +40,14 @@ from datetime import datetime
 
 def get_miner_runs( metagraph ):
     api = wandb.Api( timeout = 100 )
-    runs = api.runs("opentensor-dev/openpretraining")
+    runs = api.runs(
+        "opentensor-dev/openpretraining",
+        filters = { 
+            "config.version": __version__,
+            "config.type": "miner",
+            "config.hotkey": {"$regex": "^.+$"}
+        } 
+    )
     pbar = tqdm( runs , desc="Getting runs:", leave=False )
     miner_runs = {}
     model_timestamps = {}
@@ -92,19 +99,20 @@ def get_miner_runs( metagraph ):
 def get_validator_runs( metagraph ):
     api = wandb.Api( timeout = 100 )
     runs = api.runs("opentensor-dev/openpretraining")
+    runs = api.runs(
+        "opentensor-dev/openpretraining",
+        filters = { 
+            "config.version": __version__,
+            "config.type": "validator",
+            "config.hotkey": {"$regex": "^.+$"}
+        } 
+    )
     pbar = tqdm( runs , desc="Getting runs:", leave=False )
     vali_runs = {}
     for run in pbar:
         pbar.set_description(f"Checking: {run.id}")
 
-        # Filter out non miner runs.
-        if 'validator' not in run.name: continue
-
-        # Find hotkey of continue
-        if 'hotkey' not in run.config: continue
         hotkey = run.config['hotkey']
-
-        # Filter models not registered
         if hotkey not in metagraph.hotkeys: continue
         uid = metagraph.hotkeys.index( hotkey )
 
