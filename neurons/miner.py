@@ -166,6 +166,8 @@ run_name = f'miner-{my_uid}' + ''.join(random.choice( string.ascii_uppercase + s
 config.uid = my_uid
 config.hotkey = wallet.hotkey.ss58_address
 config.run_name = run_name
+config.version = pretrain.__version__
+config.type = 'miner'
 if config.continue_id:
     # Attempts to continue run from previous id.
     bt.logging.success(f'Continuing wandb run from id {config.continue_id}')

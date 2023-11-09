@@ -24,8 +24,8 @@ config = GPT2Config()
 def get_model():
     config = GPT2Config(
         n_head = 12,
-        n_layer = 24,
-        n_embd = 12,
+        n_layer = 14,
+        n_embd = 768,
     )
     return GPT2LMHeadModel(config)
 

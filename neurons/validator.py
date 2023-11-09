@@ -104,28 +104,30 @@ def update_models(metagraph):
     # Initialize Weights & Biases API client with a timeout setting
     api = wandb.Api(timeout=100)
     # Retrieve runs from the wandb project
-    runs = api.runs("opentensor-dev/openpretraining")
+    runs = api.runs(
+        "opentensor-dev/openpretraining",
+        filters = { 
+            "config.version": pretrain.__version__,
+            "config.type": "miner",
+            "config.hotkey": {"$regex": "^.+$"}
+        } 
+    )
+    bt.logging.trace( f'Got runs: {[r for r in runs]}' )
+
     # Use tqdm to show progress bar for the iteration over runs
     pbar = tqdm(runs, desc="Getting runs:", leave=False)
 
-    # Initialize containers for the model information
-    paths = {}
-    timestamps = {}
-
     # Iterate over each run in the project
+    has_updated = {}
     for run in pbar:
         pbar.set_description(f"Updating: {run.id}")
-
-        # Filter out non miner runs.
-        if 'miner' not in run.name: continue
-
-        # Continue only if 'hotkey' is in the run's configuration
-        if 'hotkey' not in run.config: continue
-        hotkey = run.config['hotkey']
+        bt.logging.trace(f'Updating: {run.id}')
 
         # Skip models that are not registered in the metagraph
+        hotkey = run.config['hotkey']
         if hotkey not in metagraph.hotkeys: continue
         uid = metagraph.hotkeys.index(hotkey)
+        bt.logging.trace(f'uid: {uid}')
 
         # Ensure a 'signature' exists and verify its legitimacy
         if 'signature' not in run.config: continue
@@ -133,17 +135,28 @@ def update_models(metagraph):
         keypair = bt.Keypair(ss58_address=hotkey)
         if not keypair.verify(run.id, bytes.fromhex(signature)): continue
 
+        # Check if we have updated this uid already:
+        if uid in has_updated: 
+            bt.logging.trace(f'already updated this uid')
+            continue
+        else: has_updated[uid] = True
+
         # Attempt to access the model artifact file
         try: model_artifact = run.file('model.pth')
         except: continue
+        bt.logging.trace(f'model_artifact: {model_artifact}')
 
         # Convert the updatedAt string to a timestamp
         remote_model_timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
+        bt.logging.trace(f'remote_model_timestamp: {remote_model_timestamp}')
 
         # Define the local model directory and timestamp file paths
         model_dir = os.path.join(config.full_path, 'models', str(uid))
         metadata_file = os.path.join(model_dir, 'metadata.json')
         model_path = os.path.join(model_dir, 'model.pth')
+        bt.logging.trace(f'model_dir: {model_dir}')
+        bt.logging.trace(f'metadata_file: {metadata_file}')
+        bt.logging.trace(f'model_path: {model_path}')
 
         # Function to determine if the model needs updating
         def needs_updating():
@@ -164,7 +177,9 @@ def update_models(metagraph):
             if existing_timestamp < remote_model_timestamp:
                 bt.logging.trace(f'Existing timestamp: {existing_timestamp} is older than newer timestamp: {remote_model_timestamp}') 
                 return True
-            return False
+            else:
+                bt.logging.trace(f'Existing timestamp: {existing_timestamp} is newer than older timestamp: {remote_model_timestamp}') 
+                return False
 
         # Function to update the model file and its timestamp
         if needs_updating():
@@ -175,9 +190,13 @@ def update_models(metagraph):
                         'timestamp': remote_model_timestamp, 
                         'runid': run.id,
                         'model_path': model_path,
+                        'version': run.config['version']
                     }, f)
             model_artifact.download(replace=True, root=model_dir)
             bt.logging.debug( f'Updated model under path: { model_dir } with timestamp: { remote_model_timestamp }')
+        else:
+            bt.logging.trace( f'Didnt update model under path: { model_dir } with timestamp: { remote_model_timestamp }')
+
 
 def get_uid_metadata(metagraph):
     """
@@ -198,10 +217,36 @@ def get_uid_metadata(metagraph):
         try:
             # Fill metadata from files and check if we can load weights.
             model_dir = os.path.join(config.full_path, 'models', str(uid))
-            torch.load( os.path.join(model_dir, 'model.pth') )
-            with open(os.path.join(model_dir, 'metadata.json'), 'r') as f: 
-                metadata[uid] = json.load(f)
-        except:
+            try:
+                model_path = os.path.join(model_dir, 'model.pth')
+                model_weights = torch.load( model_path )
+            except Exception as e:
+                bt.logging.trace(f'Cant load weights under: {model_path}')
+                continue
+            try:
+                model = pretrain.model.get_model()
+                model.load_state_dict(model_weights)
+            except Exception as e:
+                bt.logging.trace(f'Cant load weights into model')
+                continue
+            try:
+                with open(os.path.join(model_dir, 'metadata.json'), 'r') as f: 
+                    meta = json.load(f)
+            except Exception as e:
+                bt.logging.trace(f'Cant load metadata from json.')
+                continue
+            if 'version' not in meta or 'timestamp' not in meta or 'runid' not in meta:
+                bt.logging.trace(f'metadata is malformed: {meta}')
+                continue
+            if meta['version'] != pretrain.__version__:
+                version = meta['version']
+                bt.logging.trace(f'Model verison is out of date, with version: {version}')
+                continue
+            else:
+                # Valid metadata.
+                metadata[uid] = meta
+        except Exception as e:
+            print (e)
             # Skip this UID if any error occurs during loading of model or timestamp.
             continue
     # Return metadata.
@@ -289,7 +334,7 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
     # their paths and timestamps.
     metadata = get_uid_metadata( metagraph )
     uids = list( metadata.keys() )
-    bt.logging.trace( f'Runnning step with uids: {uids}, metadata: {metadata}')
+    bt.logging.debug( f'Runnning step with uids: {uids}, metadata: {metadata}')
 
     # Generate random pages for evaluation and prepare batches for each page
     pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages)]
