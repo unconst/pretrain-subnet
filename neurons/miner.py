@@ -107,7 +107,6 @@ print(config)
 
 # Create bittensor objects and check uid.
 bt.logging( config = config )
-bt.logging.success( config )
 wallet = bt.wallet( config = config ) 
 subtensor = bt.subtensor( config = config )
 metagraph = subtensor.metagraph( pretrain.NETUID )
@@ -250,12 +249,13 @@ while epoch_step < config.num_epochs or config.num_epochs == -1:
         optimizer.step()
         
         # Step loss
-        wandb.log( { 'loss': outputs.loss.detach() } )
+        wandb.log( { 'loss': outputs.loss.detach(), 'n_batches': n_batches }, step = global_step )
         
         # Log the loss for the current step
         n_batches += 1
         global_step += 1
-        bt.logging.success(f'Step: {i} loss: {outputs.loss.item()}')
+        epoch_loss += outputs.loss.detach().item()
+        bt.logging.success(f'Step: {i} loss: {outputs.loss.detach().item()}')
 
     # Calculate the average loss for the epoch
     avg_loss = epoch_loss / n_batches
