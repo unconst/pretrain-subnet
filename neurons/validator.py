@@ -465,7 +465,7 @@ def run_epoch( wins_per_epoch, global_step ):
         wait_for_inclusion=False,
     )
     bt.logging.success(f"Set weights successfully")
-    bt.logging.trace(f"Weights info: {weights.tolist()}")
+    bt.logging.debug(f"Weights info: {weights.tolist()}")
 
 # === Validating loop ===
 epoch_step = 0 

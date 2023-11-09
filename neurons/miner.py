@@ -58,6 +58,18 @@ def get_config():
     # Set the number of epochs
     parser.add_argument("--num_epochs", type=int, default=1, help="Number of training epochs")
 
+    # Training lr.
+    parser.add_argument("--lr", type=float, default=1e-6, help="Learning rate.")
+
+    # Training batch size
+    parser.add_argument("--bs", type=int, default=pretrain.batch_size, help="Batch size")
+
+    # Training sequence length
+    parser.add_argument("--sl", type=int, default=pretrain.sequence_length, help="Sequence length")
+
+    # Training bs.
+    parser.add_argument("--accs", type=int, default=5, help="Accs per step.")
+
     # Set the number of pages trained per epoch
     parser.add_argument("--pages_per_epoch", type=int, default=1, help="Number of pages trained on per epoch")
 
@@ -154,7 +166,7 @@ model.train()  # Set the model to training mode
 model.to(config.device)  # Move the model to the specified device
 
 # Initialize the optimizer
-optimizer = torch.optim.AdamW( model.parameters(), lr = 0.000001, weight_decay=0.01)
+optimizer = torch.optim.AdamW( model.parameters(), lr = config.lr, weight_decay=0.01)
 
 import random
 
@@ -213,11 +225,16 @@ for epoch in range(config.num_epochs):
     # Prepare the data loader with random pages for each epoch
     bt.logging.success( f"Loading {config.pages_per_epoch} pages for training this epoch" )
     random_pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range( config.pages_per_epoch )]
-    loader = pretrain.dataset.SubsetFalconLoader(batch_size=pretrain.batch_size, sequence_length=pretrain.sequence_length, pages=random_pages)
+    loader = pretrain.dataset.SubsetFalconLoader(
+        batch_size = config.bs, 
+        sequence_length = config.sl, 
+        pages = random_pages
+    )
 
     # Enumerate over the data loader
     n_batches = 0
     for i, batch in enumerate(loader):
+
         # Move the input batch to the device
         inputs = batch.to(model.device)
         
@@ -225,16 +242,20 @@ for epoch in range(config.num_epochs):
         outputs = model(inputs, labels=inputs)
         
         # Accumulate the loss for the epoch
-        epoch_loss += outputs.loss.item()
+        epoch_loss += outputs.loss.item() 
         
         # Backward pass: compute the gradient of the loss with respect to model parameters
-        outputs.loss.backward()
+        loss = outputs.loss / config.accs
+        loss.backward()
         
         # Clear the memory cache to avoid CUDA out of memory issues
         torch.cuda.empty_cache()
         
-        # Update model parameters
-        optimizer.step()
+        # Check if we have accumulated enoough batches.
+        if (i + 1) % config.accs == 0:
+
+            # Update model parameters
+            optimizer.step()
         
         # Log the loss for the current step
         n_batches += 1
