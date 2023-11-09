@@ -67,7 +67,8 @@ A Psuedo code for the algorithm can be read bellow:
         # Weights are computed based on the ratio of wins a model attains during the epoch.
         weights = zeros()
         for miner_uid in wins.keys()
-            weights = wins[miner_uid] / sum(wins.values())
+            # Adds a communistic +1 score for all active miners.
+            weights = (wins[miner_uid] + 1)/ sum(wins.values())
 
         # Set weights on the chain.
         set_weights( weight )
