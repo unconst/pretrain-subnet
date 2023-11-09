@@ -78,6 +78,7 @@ if config.wandb.on:
     config.uid = my_uid
     config.hotkey = wallet.hotkey.ss58_address
     config.run_name = run_name
+    config.version = pretrain.__version__
     config.type = "validator"
     wandb_run =  wandb.init(
         name = run_name,
