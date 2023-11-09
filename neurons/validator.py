@@ -378,9 +378,6 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
 
     # Sink step log.
     bt.logging.success(f"Step results: {step_log}")
-    with open ( config.full_path + "/step_results.json", "a") as f:
-        json.dump(step_log, f)
-
     original_format_json = json.dumps(step_log)
     uids = step_log['uids']
     uid_data = step_log['uid_data']
