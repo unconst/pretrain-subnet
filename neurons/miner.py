@@ -218,6 +218,7 @@ wandb.save( config.model_path )
 bt.logging.success('Pushed artifact to the wandb run.')
 
 # Start the training loop
+global_step = 0
 for epoch in range(config.num_epochs):
     # Initialize loss accumulator for the epoch
     epoch_loss = 0.0
@@ -259,10 +260,12 @@ for epoch in range(config.num_epochs):
         
         # Log the loss for the current step
         n_batches += 1
+        global_step += 1
         bt.logging.success(f'Step: {i} loss: {outputs.loss.item()}')
 
     # Calculate the average loss for the epoch
     avg_loss = epoch_loss / n_batches
+    wandb.log( { 'loss': avg_loss } )
     
     # Log the average loss for the epoch
     bt.logging.success(f'Epoch: {epoch} average loss: {avg_loss}')
