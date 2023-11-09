@@ -26,7 +26,8 @@ __spec_version__ = (
 )
 NETUID = 9
 
-epsilon = 0.03
+best_uid_epsilon = 0.03
+per_loss_epsilon = 0.06
 n_eval_pages = 2
 batch_size = 3
 sequence_length = 512
