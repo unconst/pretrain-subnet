@@ -93,7 +93,7 @@ if config.wandb.on:
     config.signature = wallet.hotkey.sign( wandb_run.id.encode() ).hex()
     wandb.config.update( config, allow_val_change=True )
 
-def update_models(metagraph):
+def update_models(metagraph, blacklisted_models):
     """
         This function updates local model files by synchronizing with models registered in the metagraph
         and available on Weights & Biases (wandb). It checks the legitimacy of each model's signature,
@@ -194,6 +194,8 @@ def update_models(metagraph):
                             'model_path': model_path,
                             'version': run.config['version']
                         }, f)
+                if uid in blacklisted_models:
+                    blacklisted_models.remove(uid)
                 model_artifact.download(replace=True, root=model_dir)
                 bt.logging.debug( f'Updated model under path: { model_dir } with timestamp: { remote_model_timestamp }')
             else:
@@ -316,7 +318,7 @@ def compute_losses_per_page(uid: int, model_path: str, batches_per_page: Dict[in
     return losses_per_page
     
 
-def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, global_step ):
+def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, global_step, blacklisted_models ):
     """
         Executes a single validation step.
         - 1. Updates local models using wandb data.
@@ -338,7 +340,7 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
     # Update all models from wandb runs and return a list of uids
     # their paths and timestamps.
     metadata = get_uid_metadata( metagraph )
-    uids = list( metadata.keys() )
+    uids = [uid for uid in metadata if uid not in blacklisted_models]
     bt.logging.debug( f'Runnning step with uids: {uids}, metadata: {metadata}')
 
     # Generate random pages for evaluation and prepare batches for each page
@@ -407,6 +409,8 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
                 if is_winning_loss_with_timestamps( uid, page, batch ):
                     total_wins_per_uid_per_page[ uid ][ page ] += 1
                     wins_per_epoch[ uid ] += 1 
+        if wins_per_epoch[ uid ] == 0:
+            blacklisted_models.append(uid)
 
     # Build step log
     step_log = {
@@ -477,6 +481,7 @@ global_step = 0
 # Record the global best uid and loss
 global_best_uid = max(metagraph.I[uid].item() for uid in list(  get_uid_metadata( metagraph ).keys() ))
 global_best_loss = math.inf
+blacklisted_models = []
 last_epoch = metagraph.block.item()
 bt.logging.success(f"Starting validator loop")
 while True:
@@ -486,7 +491,7 @@ while True:
         losses_per_epoch = {}
 
         # Update all local models at beginning of epoch.
-        update_models( metagraph )
+        update_models( metagraph, blacklisted_models )
     
         while metagraph.block.item() - last_epoch < config.blocks_per_epoch:
             # Updates models (if needed) runs an eval step over each model
