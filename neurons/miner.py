@@ -154,7 +154,7 @@ model.train()  # Set the model to training mode
 model.to(config.device)  # Move the model to the specified device
 
 # Initialize the optimizer
-optimizer = torch.optim.AdamW(model.parameters(), lr=0.000001, weight_decay=0.01)
+optimizer = torch.optim.AdamW( model.parameters(), lr = 0.0001, weight_decay=0.01)
 
 import random
 
@@ -166,6 +166,8 @@ run_name = f'miner-{my_uid}' + ''.join(random.choice( string.ascii_uppercase + s
 config.uid = my_uid
 config.hotkey = wallet.hotkey.ss58_address
 config.run_name = run_name
+config.version = pretrain.__version__
+config.type = 'miner'
 if config.continue_id:
     # Attempts to continue run from previous id.
     bt.logging.success(f'Continuing wandb run from id {config.continue_id}')
