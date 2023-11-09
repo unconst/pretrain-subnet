@@ -170,6 +170,7 @@ import random
 best_avg_loss = float('inf')
 
 # Initialize your wandb run
+# NOTE: removing the "miner-" from this line will mean your miner is not picked up by validators.
 run_name = f'miner-{my_uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
 config.uid = my_uid
 config.hotkey = wallet.hotkey.ss58_address

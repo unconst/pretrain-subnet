@@ -401,12 +401,12 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
     # Compute total wins per uid per page 
     total_wins_per_uid_per_page = { uid: { page: 0 for page in pages } for uid in uids }
     for uid in uids:
+        wins_per_epoch[ uid ] = 0
         for page in pages:
             for batch, _ in enumerate( batches_per_page[page] ):
                 if is_winning_loss_with_timestamps( uid, page, batch ):
                     total_wins_per_uid_per_page[ uid ][ page ] += 1
-                    if uid in wins_per_epoch: wins_per_epoch[ uid ] += 1 
-                    else: wins_per_epoch[ uid ] = 1
+                    wins_per_epoch[ uid ] += 1 
 
     # Build step log
     step_log = {
