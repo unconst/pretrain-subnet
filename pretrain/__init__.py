@@ -53,36 +53,39 @@ def get_miner_runs( metagraph ):
     model_timestamps = {}
     for run in pbar:
         pbar.set_description(f"Checking: {run.id}")
-
-        # Filter out non miner runs.
-        if 'miner' not in run.name: continue
-
-        # Find hotkey of continue
-        if 'hotkey' not in run.config: continue
+        # Check network existence.
         hotkey = run.config['hotkey']
-
-        # Filter models not registered
-        if hotkey not in metagraph.hotkeys: continue
+        if hotkey not in metagraph.hotkeys: 
+            bt.logging.trace(f'{hotkey} not in metagraph')
+            continue
         uid = metagraph.hotkeys.index( hotkey )
+        bt.logging.trace(f'checking uid: {uid}')
 
-        # Find signature or continue
-        if 'signature' not in run.config: continue
+        if 'signature' not in run.config: 
+            bt.logging.trace(f'signature not in config')
+            continue
         signature = run.config['signature']
 
         # Check signature
         keypair = bt.Keypair( ss58_address = hotkey )
         is_legit = keypair.verify( run.id, bytes.fromhex( signature ) )
-        if not is_legit: continue
+        if not is_legit: 
+            bt.logging.trace(f'signature is false.')
+            continue
 
         # Check for model
-        try:
-            model_artifact = run.file('model.pth')
-        except: continue
+        try: model_artifact = run.file('model.pth')
+        except: 
+            bt.logging.trace(f'no file in run.')
+            continue
 
         # Check if it is the latest model
         model_timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
         if hotkey in model_timestamps and model_timestamps[hotkey] > model_timestamp:
+            bt.logging.trace(f'has newer timestamp.')
             continue
+        else:
+            model_timestamps[hotkey] = model_timestamp
 
         # Set run as valid with and latest.
         miner_runs[uid] = {
