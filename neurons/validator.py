@@ -147,8 +147,8 @@ def update_models(metagraph):
         bt.logging.trace(f'model_artifact: {model_artifact}')
 
         # Convert the updatedAt string to a timestamp
-        remote_model_timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-        bt.logging.trace(f'remote_model_timestamp: {remote_model_timestamp}')
+        try: remote_model_timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
+        except: continue
 
         # Define the local model directory and timestamp file paths
         model_dir = os.path.join(config.full_path, 'models', str(uid))
@@ -413,21 +413,31 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
         'uid_data': {}
     }
     for uid in uids:
+        average_losses = [average_loss_per_uid_per_page[uid][pagek] for pagek in pages]
+        average_loss = sum(average_losses) / len(average_losses)
+        win_rate = sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / total_batches
+        win_total = sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ])
         step_log['uid_data'][ str(uid) ] = {
             'uid': uid,
             'runid': metadata[ uid ]['runid'],
             'timestamp': metadata[ uid ]['timestamp'],
-            'average_loss': sum ( [average_loss_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / total_batches,
-            'average_losses': [ average_loss_per_uid_per_page[ uid ][ pagek ] for pagek in pages ],
-            'win_rate': sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / total_batches,
-            'win_total': sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ])
+            'average_losses': average_losses,
+            'average_loss': average_loss,
+            'win_rate': win_rate,
+            'win_total': win_total,
         }
 
     # Sink step log.
     bt.logging.success(f"Step results: {step_log}")
-    with open ( config.full_path + "/step_results.json", "a") as f:
-        json.dump(step_log, f)
-    if config.wandb.on: wandb.log( step_log, step = global_step )
+    original_format_json = json.dumps(step_log)
+    uids = step_log['uids']
+    uid_data = step_log['uid_data']
+
+    # Create a new dictionary with the required format
+    graphed_data = {
+        'uid_data': {str(uid): uid_data[str(uid)]['average_loss'] for uid in uids}
+    }
+    if config.wandb.on:wandb.log({ **graphed_data, "original_format_json": original_format_json}, step=global_step)
 
 def run_epoch( wins_per_epoch, global_step ):
     """
@@ -442,7 +452,7 @@ def run_epoch( wins_per_epoch, global_step ):
     weights = torch.zeros( len(metagraph.hotkeys) )
     for uid in wins_per_epoch:
         weights[uid] = wins_per_epoch[uid] / sum( wins_per_epoch.values() )
-        if config.wandb.on: wandb.log( {f"wins_per_epoch/{uid}": wins_per_epoch[uid]/ sum(wins_per_epoch.values())}, step = global_step )
+    bt.logging.debug(f"wins_per_epoch = {wins_per_epoch} ------- global best = {global_best_uid}: {round(global_best_loss, 4)}")
     wins_per_epoch = {}
 
     # === Set weights ===
