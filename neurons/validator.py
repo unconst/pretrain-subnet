@@ -383,7 +383,7 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
     def is_winning_loss_with_timestamps( this_uid, page_j, batch_k ):
         this_loss = losses_per_page_per_uid[ this_uid ][page_j][batch_k]
         if this_uid == global_best_uid:
-            this_loss *= (1 - pretrain.epsilon)
+            this_loss *= (1 - pretrain.per_loss_epsilon)
         this_timestamp = metadata[ this_uid ]['timestamp']
         for other_uid in uids:
             other_loss = losses_per_page_per_uid[ other_uid ][ page_j ][ batch_k ]
@@ -465,7 +465,7 @@ def run_epoch( wins_per_epoch, global_step ):
         wait_for_inclusion=False,
     )
     bt.logging.success(f"Set weights successfully")
-    bt.logging.trace(f"Weights info: {weights.tolist()}")
+    bt.logging.debug(f"Weights info: {weights.tolist()}")
 
 # === Validating loop ===
 epoch_step = 0 
@@ -496,7 +496,7 @@ while True:
         # Update global best loss and uid.
         for uid in losses_per_epoch.keys():
             epoch_average_loss = sum(losses_per_epoch[uid])/len(losses_per_epoch[uid])
-            if epoch_average_loss < global_best_loss * (1 - pretrain.epsilon):
+            if epoch_average_loss < global_best_loss * (1 - pretrain.best_uid_epsilon):
                 global_best_uid = uid
                 global_best_loss = epoch_average_loss
         if config.wandb.on: wandb.log( {"global_best_uid": global_best_uid, "global_best_loss":global_best_loss }, step = global_step )
