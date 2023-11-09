@@ -224,12 +224,19 @@ def compute_losses_per_page(uid: int, model_path: str, batches_per_page: Dict[in
     """
     bt.logging.trace( f'Computing loss for uid: {uid} on model path: {model_path} for page batches: {list(batches_per_page.keys())}')
 
-    # Load the pre-trained model from the specified path
-    model = pretrain.model.get_model()
-    model_weights = torch.load(model_path, map_location=torch.device(config.device))
-    model.load_state_dict(model_weights)
-    model.eval()  # Set the model to evaluation mode
-    model.to(config.device)  # Move the model to the appropriate device
+    try:
+        # Load the pre-trained model from the specified path
+        model = pretrain.model.get_model()
+        model_weights = torch.load(model_path, map_location=torch.device(config.device))
+        model.load_state_dict(model_weights)
+        model.eval()  # Set the model to evaluation mode
+        model.to(config.device)  # Move the model to the appropriate device
+    except Exception as e:
+        bt.logging.debug(f"Error loading model under path {model_path} with error: {e}")
+        inf_losses = {}
+        for page, batches in batches_per_page.items():
+            inf_losses[page] = [math.inf for _ in batches]
+        return inf_losses
 
     # Initialize a dictionary to store loss values for each page
     losses_per_page = {}

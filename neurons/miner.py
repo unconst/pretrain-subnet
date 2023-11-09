@@ -154,7 +154,7 @@ model.train()  # Set the model to training mode
 model.to(config.device)  # Move the model to the specified device
 
 # Initialize the optimizer
-optimizer = torch.optim.AdamW(model.parameters(), lr=0.000001, weight_decay=0.01)
+optimizer = torch.optim.AdamW( model.parameters(), lr = 0.0001, weight_decay=0.01)
 
 import random
 

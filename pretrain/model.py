@@ -17,12 +17,15 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-from transformers import GPT2LMHeadModel, GPT2Config
-from transformers import GPT2Tokenizer, GPT2LMHeadModel
+from transformers import GPT2Config, GPT2LMHeadModel
 
-model_name = 'distilgpt2'
-# --- Model Arch
+config = GPT2Config()
+
 def get_model():
-    tokenizer = GPT2Tokenizer.from_pretrained(model_name)
-    model = GPT2LMHeadModel.from_pretrained(model_name)
-    return model
+    config = GPT2Config(
+        n_head = 12,
+        n_layer = 24,
+        n_embd = 12,
+    )
+    return GPT2LMHeadModel(config)
+
