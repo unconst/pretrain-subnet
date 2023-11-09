@@ -121,83 +121,87 @@ def update_models(metagraph):
     # Iterate over each run in the project
     has_updated = {}
     for run in pbar:
-        pbar.set_description(f"Updating: {run.id}")
-        bt.logging.trace(f'Updating: {run.id}')
+        try:
+            pbar.set_description(f"Updating: {run.id}")
+            bt.logging.trace(f'Updating: {run.id}')
 
-        # Skip models that are not registered in the metagraph
-        hotkey = run.config['hotkey']
-        if hotkey not in metagraph.hotkeys: continue
-        uid = metagraph.hotkeys.index(hotkey)
-        bt.logging.trace(f'uid: {uid}')
+            # Skip models that are not registered in the metagraph
+            hotkey = run.config['hotkey']
+            if hotkey not in metagraph.hotkeys: continue
+            uid = metagraph.hotkeys.index(hotkey)
+            bt.logging.trace(f'uid: {uid}')
 
-        # Ensure a 'signature' exists and verify its legitimacy
-        if 'signature' not in run.config: continue
-        signature = run.config['signature']
-        keypair = bt.Keypair(ss58_address=hotkey)
-        if not keypair.verify(run.id, bytes.fromhex(signature)): continue
+            # Ensure a 'signature' exists and verify its legitimacy
+            if 'signature' not in run.config: continue
+            signature = run.config['signature']
+            keypair = bt.Keypair(ss58_address=hotkey)
+            if not keypair.verify(run.id, bytes.fromhex(signature)): continue
 
-        # Check if we have updated this uid already:
-        if uid in has_updated: 
-            bt.logging.trace(f'already updated this uid')
-            continue
-        else: has_updated[uid] = True
+            # Check if we have updated this uid already:
+            if uid in has_updated: 
+                bt.logging.trace(f'already updated this uid')
+                continue
+            else: has_updated[uid] = True
 
-        # Attempt to access the model artifact file
-        try: model_artifact = run.file('model.pth')
-        except: continue
-        bt.logging.trace(f'model_artifact: {model_artifact}')
+            # Attempt to access the model artifact file
+            try: model_artifact = run.file('model.pth')
+            except: continue
+            bt.logging.trace(f'model_artifact: {model_artifact}')
 
-        # Convert the updatedAt string to a timestamp
-        try: remote_model_timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-        except: continue
+            # Convert the updatedAt string to a timestamp
+            try: remote_model_timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
+            except: continue
 
-        # Define the local model directory and timestamp file paths
-        model_dir = os.path.join(config.full_path, 'models', str(uid))
-        metadata_file = os.path.join(model_dir, 'metadata.json')
-        model_path = os.path.join(model_dir, 'model.pth')
-        bt.logging.trace(f'model_dir: {model_dir}')
-        bt.logging.trace(f'metadata_file: {metadata_file}')
-        bt.logging.trace(f'model_path: {model_path}')
+            # Define the local model directory and timestamp file paths
+            model_dir = os.path.join(config.full_path, 'models', str(uid))
+            metadata_file = os.path.join(model_dir, 'metadata.json')
+            model_path = os.path.join(model_dir, 'model.pth')
+            bt.logging.trace(f'model_dir: {model_dir}')
+            bt.logging.trace(f'metadata_file: {metadata_file}')
+            bt.logging.trace(f'model_path: {model_path}')
 
-        # Function to determine if the model needs updating
-        def needs_updating():
-            # Check if we can load the local model.
-            try:
-                torch.load( model_path )
-            except:
-                bt.logging.trace(f'Model path corrupted, needs redownloading with path: {model_path}') 
-                return True
-            # Check if we have a timestamp file.
-            if not os.path.exists(metadata_file):
-                bt.logging.trace(f'No timestamp, needs downloading with path') 
-                return True
-            # Check if the local timestamp is older.
-            with open(metadata_file, 'r') as f:
-                existing_timestamp = json.load(f)['timestamp']
-            # Check timestamp.
-            if existing_timestamp < remote_model_timestamp:
-                bt.logging.trace(f'Existing timestamp: {existing_timestamp} is older than newer timestamp: {remote_model_timestamp}') 
-                return True
+            # Function to determine if the model needs updating
+            def needs_updating():
+                # Check if we can load the local model.
+                try:
+                    torch.load( model_path )
+                except:
+                    bt.logging.trace(f'Model path corrupted, needs redownloading with path: {model_path}') 
+                    return True
+                # Check if we have a timestamp file.
+                if not os.path.exists(metadata_file):
+                    bt.logging.trace(f'No timestamp, needs downloading with path') 
+                    return True
+                # Check if the local timestamp is older.
+                with open(metadata_file, 'r') as f:
+                    existing_timestamp = json.load(f)['timestamp']
+                # Check timestamp.
+                if existing_timestamp < remote_model_timestamp:
+                    bt.logging.trace(f'Existing timestamp: {existing_timestamp} is older than newer timestamp: {remote_model_timestamp}') 
+                    return True
+                else:
+                    bt.logging.trace(f'Existing timestamp: {existing_timestamp} is newer than older timestamp: {remote_model_timestamp}') 
+                    return False
+
+            # Function to update the model file and its timestamp
+            if needs_updating():
+                os.makedirs(model_dir, exist_ok=True)  # Ensure the directory exists
+                with open(metadata_file, 'w') as f: 
+                    json.dump( 
+                        { 
+                            'timestamp': remote_model_timestamp, 
+                            'runid': run.id,
+                            'model_path': model_path,
+                            'version': run.config['version']
+                        }, f)
+                model_artifact.download(replace=True, root=model_dir)
+                bt.logging.debug( f'Updated model under path: { model_dir } with timestamp: { remote_model_timestamp }')
             else:
-                bt.logging.trace(f'Existing timestamp: {existing_timestamp} is newer than older timestamp: {remote_model_timestamp}') 
-                return False
+                bt.logging.trace( f'Didnt update model under path: { model_dir } with timestamp: { remote_model_timestamp }')
 
-        # Function to update the model file and its timestamp
-        if needs_updating():
-            os.makedirs(model_dir, exist_ok=True)  # Ensure the directory exists
-            with open(metadata_file, 'w') as f: 
-                json.dump( 
-                    { 
-                        'timestamp': remote_model_timestamp, 
-                        'runid': run.id,
-                        'model_path': model_path,
-                        'version': run.config['version']
-                    }, f)
-            model_artifact.download(replace=True, root=model_dir)
-            bt.logging.debug( f'Updated model under path: { model_dir } with timestamp: { remote_model_timestamp }')
-        else:
-            bt.logging.trace( f'Didnt update model under path: { model_dir } with timestamp: { remote_model_timestamp }')
-
+        except Exception as e:
+            bt.logging.error(f'Error updating run with error: {e}')
+            continue
 
 def get_uid_metadata(metagraph):
     """
@@ -397,12 +401,12 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
     # Compute total wins per uid per page 
     total_wins_per_uid_per_page = { uid: { page: 0 for page in pages } for uid in uids }
     for uid in uids:
+        wins_per_epoch[ uid ] = 0
         for page in pages:
             for batch, _ in enumerate( batches_per_page[page] ):
                 if is_winning_loss_with_timestamps( uid, page, batch ):
                     total_wins_per_uid_per_page[ uid ][ page ] += 1
-                    if uid in wins_per_epoch: wins_per_epoch[ uid ] += 1 
-                    else: wins_per_epoch[ uid ] = 1
+                    wins_per_epoch[ uid ] += 1 
 
     # Build step log
     step_log = {
@@ -452,7 +456,7 @@ def run_epoch( wins_per_epoch, global_step ):
     # === Compute weights from wins ===
     weights = torch.zeros( len(metagraph.hotkeys) )
     for uid in wins_per_epoch:
-        weights[uid] = wins_per_epoch[uid] / sum( wins_per_epoch.values() )
+        weights[uid] = (wins_per_epoch[uid] + 1)/ sum( wins_per_epoch.values() )
     bt.logging.debug(f"wins_per_epoch = {wins_per_epoch} ------- global best = {global_best_uid}: {round(global_best_loss, 4)}")
     wins_per_epoch = {}
 
