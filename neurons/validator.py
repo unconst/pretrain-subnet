@@ -366,9 +366,10 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
         average_loss = sum(average_losses) / len(average_losses)
         win_rate = sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / total_batches
         win_total = sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ])
-        step_log[ str(uid) ] = {
+        step_log['uid_data'][ str(uid) ] = {
             'uid': uid,
-            'timestamp': model_timestamps[ uid ],
+            'runid': metadata[ uid ]['runid'],
+            'timestamp': metadata[ uid ]['timestamp'],
             'average_losses': average_losses,
             'average_loss': average_loss,
             'win_rate': win_rate,
@@ -381,8 +382,14 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
         json.dump(step_log, f)
 
     original_format_json = json.dumps(step_log)
-    step_log
-    if config.wandb.on:wandb.log({ **step_log, "original_format_json": original_format_json}, step=global_step)
+    uids = step_log['uids']
+    uid_data = step_log['uid_data']
+
+    # Create a new dictionary with the required format
+    graphed_data = {
+        'uid_data': {str(uid): uid_data[str(uid)]['average_loss'] for uid in uids}
+    }
+    if config.wandb.on:wandb.log({ **graphed_data, "original_format_json": original_format_json}, step=global_step)
 
 def run_epoch( wins_per_epoch, global_step ):
     """
