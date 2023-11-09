@@ -475,7 +475,7 @@ def run_epoch( wins_per_epoch, global_step ):
 epoch_step = 0 
 global_step = 0
 # Record the global best uid and loss
-global_best_uid = min(metagraph.I[uid].item() for uid in list(  get_uid_metadata( metagraph ).keys() ))
+global_best_uid = max(metagraph.I[uid].item() for uid in list(  get_uid_metadata( metagraph ).keys() ))
 global_best_loss = math.inf
 last_epoch = metagraph.block.item()
 bt.logging.success(f"Starting validator loop")
