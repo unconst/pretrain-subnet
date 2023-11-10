@@ -205,7 +205,46 @@ def update_models(metagraph, blacklisted_models):
             bt.logging.error(f'Error updating run with error: {e}')
             continue
 
-def get_uid_metadata(metagraph):
+def get_metadata_for_uid( uid : int, metadata ):
+    try:
+        # Fill metadata from files and check if we can load weights.
+        model_dir = os.path.join(config.full_path, 'models', str(uid))
+        try:
+            model_path = os.path.join(model_dir, 'model.pth')
+            model_weights = torch.load( model_path )
+        except Exception as e:
+            bt.logging.trace(f'Cant load weights under: {model_path}')
+            continue
+        try:
+            model = pretrain.model.get_model()
+            model.load_state_dict(model_weights)
+        except Exception as e:
+            bt.logging.trace(f'Cant load weights into model')
+            continue
+        try:
+            with open(os.path.join(model_dir, 'metadata.json'), 'r') as f: 
+                meta = json.load(f)
+        except Exception as e:
+            bt.logging.trace(f'Cant load metadata from json.')
+            continue
+        if 'version' not in meta or 'timestamp' not in meta or 'runid' not in meta:
+            bt.logging.trace(f'metadata is malformed: {meta}')
+            continue
+        if meta['version'] != pretrain.__version__:
+            version = meta['version']
+            bt.logging.trace(f'Model verison is out of date, with version: {version}')
+            continue
+        else:
+            # Valid metadata.
+            metadata[uid] = meta
+    except Exception as e:
+        print (e)
+        # Skip this UID if any error occurs during loading of model or timestamp.
+        continue
+
+    return metadata
+
+def get_uid_metadata(uids):
     """
         Retrieves the file paths to model checkpoints and their associated timestamps for each UID in the metagraph.
 
@@ -217,46 +256,10 @@ def get_uid_metadata(metagraph):
             a dictionary mapping UIDs to their model file paths, 
             and a dictionary mapping UIDs to their timestamp data.
     """
-    # Initialize dictionaries for model paths and timestamps.
     metadata = {}
-    # Iterate over each UID in the metagraph.
-    for uid in metagraph.uids.tolist():
-        try:
-            # Fill metadata from files and check if we can load weights.
-            model_dir = os.path.join(config.full_path, 'models', str(uid))
-            try:
-                model_path = os.path.join(model_dir, 'model.pth')
-                model_weights = torch.load( model_path )
-            except Exception as e:
-                bt.logging.trace(f'Cant load weights under: {model_path}')
-                continue
-            try:
-                model = pretrain.model.get_model()
-                model.load_state_dict(model_weights)
-            except Exception as e:
-                bt.logging.trace(f'Cant load weights into model')
-                continue
-            try:
-                with open(os.path.join(model_dir, 'metadata.json'), 'r') as f: 
-                    meta = json.load(f)
-            except Exception as e:
-                bt.logging.trace(f'Cant load metadata from json.')
-                continue
-            if 'version' not in meta or 'timestamp' not in meta or 'runid' not in meta:
-                bt.logging.trace(f'metadata is malformed: {meta}')
-                continue
-            if meta['version'] != pretrain.__version__:
-                version = meta['version']
-                bt.logging.trace(f'Model verison is out of date, with version: {version}')
-                continue
-            else:
-                # Valid metadata.
-                metadata[uid] = meta
-        except Exception as e:
-            print (e)
-            # Skip this UID if any error occurs during loading of model or timestamp.
-            continue
-    # Return metadata.
+    for uid in uids:
+        get_metadata_for_uid(uid, metadata):
+
     return metadata
 
 
@@ -319,7 +322,7 @@ def compute_losses_per_page(uid: int, model_path: str, batches_per_page: Dict[in
     return losses_per_page
     
 
-def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, global_step, blacklisted_models ):
+def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, global_step, blacklisted_models, metadata ):
     """
         Executes a single validation step.
         - 1. Updates local models using wandb data.
@@ -340,7 +343,6 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
 
     # Update all models from wandb runs and return a list of uids
     # their paths and timestamps.
-    metadata = get_uid_metadata( metagraph )
     uids = [uid for uid in metadata if uid not in blacklisted_models]
     bt.logging.debug( f'Runnning step with uids: {uids}, metadata: {metadata}')
 
@@ -471,10 +473,10 @@ def run_epoch( wins_per_epoch, global_step ):
     bt.logging.success(f"Set weights successfully")
     bt.logging.debug(f"Weights info: {weights.tolist()}")
 
-def get_best_uid():
-    global_best_uid = max(get_uid_metadata(metagraph), key=lambda uid: metagraph.I[uid].item())
+def get_best_uid(metadata):
+    global_best_uid = max(metadata), key=lambda uid: metagraph.I[uid].item())
     bt.logging.info(f"initial global best uid is {global_best_uid}")
-    losses_dict = compute_losses_per_page(global_best_uid, get_uid_metadata( metagraph )[ global_best_uid ]['model_path'], batches_per_page)
+    losses_dict = compute_losses_per_page(global_best_uid, metadata[ global_best_uid ]['model_path'], batches_per_page)
     total_losses = [value for values in losses_dict.values() for value in values]
     global_best_loss = sum(total_losses) / len(total_losses)
     bt.logging.info(f"initial global best loss is {global_best_loss}")
@@ -485,6 +487,7 @@ def get_best_uid():
 epoch_step = 0 
 global_step = 0
 last_epoch = metagraph.block.item()
+metadata = get_uid_metadata(metagraph.uids.tolist())
 bt.logging.success(f"Starting validator loop")
 pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages)]
 batches_per_page = {
@@ -494,6 +497,7 @@ batches_per_page = {
             pages=[page]
         )) for page in pages
     }
+
 total_batches = sum([ len(b) for b in batches_per_page.values()] )
 while True:
     try:
