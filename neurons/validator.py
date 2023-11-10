@@ -260,7 +260,7 @@ def get_uid_metadata(metagraph):
     return metadata
 
 
-def compute_losses_per_page(uid: int, model_path: str, batches_per_page: Dict[int, List[torch.Tensor]], pbar) -> Dict[int, List[float]]:
+def compute_losses_per_page(uid: int, model_path: str, batches_per_page: Dict[int, List[torch.Tensor]], pbar=None) -> Dict[int, List[float]]:
     """
     Computes the loss for each page of batches using the given pre-trained model.
     
@@ -305,7 +305,8 @@ def compute_losses_per_page(uid: int, model_path: str, batches_per_page: Dict[in
                 outputs = model(inputs, labels=inputs)
                 loss = outputs.loss.item()  # Get the scalar loss value
                 page_losses.append(loss)
-                pbar.set_description(f"Loss: {uid} - {loss:.4f}")
+                if pbar is not None:
+                    pbar.set_description(f"Loss: {uid} - {loss:.4f}")
             except Exception as e:
                 # Log the exception and append infinity to indicate failure
                 bt.logging.error(f"Exception occurred: {e}")
@@ -441,7 +442,7 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
     graphed_data = {
         'uid_data': {str(uid): uid_data[str(uid)]['average_loss'] for uid in uids}
     }
-    if config.wandb.on:wandb.log({ **graphed_data, "original_format_json": original_format_json}, step=global_step)
+    if config.wandb.on: wandb.log({ **graphed_data, "original_format_json": original_format_json}, step=global_step)
 
 def run_epoch( wins_per_epoch, global_step ):
     """
@@ -473,8 +474,7 @@ def run_epoch( wins_per_epoch, global_step ):
 def get_best_uid():
     global_best_uid = max(get_uid_metadata(metagraph), key=lambda uid: metagraph.I[uid].item())
     bt.logging.info(f"initial global best uid is {global_best_uid}")
-    pbar = tqdm(runs, desc="Evaluating Best", leave=False)
-    global_best_loss = compute_losses_per_page(global_best_uid, model_paths[global_best_uid], batches_per_page, pbar)
+    global_best_loss = compute_losses_per_page(global_best_uid, model_paths[global_best_uid], batches_per_page)
     bt.logging.info(f"initial global best loss is {global_best_loss}")
 
 

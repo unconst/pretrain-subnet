@@ -93,6 +93,7 @@ def get_miner_runs( metagraph ):
             miner_runs[uid] = {
                 'uid': uid, 
                 'emission': metagraph.E[uid].item(),
+                'incentive': metagraph.I[uid].item()
                 'run': run.id, 
                 'model_artifact': "model.pth", 
                 'timestamp': model_timestamp, 
