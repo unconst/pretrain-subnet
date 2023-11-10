@@ -514,7 +514,7 @@ while True:
             # Updates models (if needed) runs an eval step over each model
             # Records the number of 'wins' per model in the step. A wins
             # is defined as the model with the lowest loss on a given batch.
-            run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, global_step, blacklisted_models )
+            run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, global_step, blacklisted_models, metadata )
             metagraph = subtensor.metagraph( pretrain.NETUID )
             bt.logging.debug(f"{metagraph.block.item() - last_epoch } / {config.blocks_per_epoch} blocks until next epoch.")
             global_step += 1
