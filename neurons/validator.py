@@ -412,6 +412,7 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
         if wins_per_epoch[ uid ] == 0:
             blacklisted_models.append(uid)
 
+    bt.logging.debug(f"adding {blacklisted_models} uids to ")
     # Build step log
     step_log = {
         'timestamp': time.time(),
@@ -475,13 +476,14 @@ def run_epoch( wins_per_epoch, global_step ):
     bt.logging.success(f"Set weights successfully")
     bt.logging.debug(f"Weights info: {weights.tolist()}")
 
+def get_best_uid():
+    blacklisted_models = []
+    global_best_uid = torch.tensor([metagraph.I[uid].item() for uid in list(  get_uid_metadata( metagraph ).keys() )]).argmax().item()
+    global_best_loss = 
+
 # === Validating loop ===
 epoch_step = 0 
 global_step = 0
-# Record the global best uid and loss
-global_best_uid = max(metagraph.I[uid].item() for uid in list(  get_uid_metadata( metagraph ).keys() ))
-global_best_loss = math.inf
-blacklisted_models = []
 last_epoch = metagraph.block.item()
 bt.logging.success(f"Starting validator loop")
 while True:
@@ -491,6 +493,7 @@ while True:
         losses_per_epoch = {}
 
         # Update all local models at beginning of epoch.
+        get_best_uid()
         update_models( metagraph, blacklisted_models )
     
         while metagraph.block.item() - last_epoch < config.blocks_per_epoch:
