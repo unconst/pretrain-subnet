@@ -34,6 +34,7 @@ from datetime import datetime
 from typing import Dict, List
 
 # Global artifact name
+UPDATE_TIMEOUT = 60*60*6
 ARTIFACT_NAME:str = "model.pth"
 
 def get_config():
@@ -93,7 +94,7 @@ if config.wandb.on:
     config.signature = wallet.hotkey.sign( wandb_run.id.encode() ).hex()
     wandb.config.update( config, allow_val_change=True )
 
-def update_models(metagraph, blacklisted_models):
+def update_models( metagraph ):
     """
         This function updates local model files by synchronizing with models registered in the metagraph
         and available on Weights & Biases (wandb). It checks the legitimacy of each model's signature,
@@ -174,13 +175,19 @@ def update_models(metagraph, blacklisted_models):
                     return True
                 # Check if the local timestamp is older.
                 with open(metadata_file, 'r') as f:
-                    existing_timestamp = json.load(f)['timestamp']
+                    metadata = json.load(f)
+
+                # Dont update until UPDATE_TIMEOUT has passed between updates.
+                if 'last_update' in metadata and time.time() - metadata['last_update'] < UPDATE_TIMEOUT:
+                    return False
+
                 # Check timestamp.
-                if existing_timestamp < remote_model_timestamp:
-                    bt.logging.trace(f'Existing timestamp: {existing_timestamp} is older than newer timestamp: {remote_model_timestamp}') 
+                existing_timeout = metadata['timestamp']
+                if existing_timeout < remote_model_timestamp:
+                    bt.logging.trace(f'Existing timestamp: { existing_timeout } is older than newer timestamp: {remote_model_timestamp}') 
                     return True
                 else:
-                    bt.logging.trace(f'Existing timestamp: {existing_timestamp} is newer than older timestamp: {remote_model_timestamp}') 
+                    bt.logging.trace(f'Existing timestamp: { existing_timeout } is newer than older timestamp: {remote_model_timestamp}') 
                     return False
 
             # Function to update the model file and its timestamp
@@ -192,10 +199,10 @@ def update_models(metagraph, blacklisted_models):
                             'timestamp': remote_model_timestamp, 
                             'runid': run.id,
                             'model_path': model_path,
-                            'version': run.config['version']
+                            'version': run.config['version'],
+                            'blacklisted': False,
+                            'last_update': time.time()
                         }, f)
-                if uid in blacklisted_models:
-                    blacklisted_models.remove(uid)
                 model_artifact.download(replace=True, root=model_dir)
                 bt.logging.debug( f'Updated model under path: { model_dir } with timestamp: { remote_model_timestamp }')
             else:
@@ -205,7 +212,12 @@ def update_models(metagraph, blacklisted_models):
             bt.logging.error(f'Error updating run with error: {e}')
             continue
 
-def get_metadata_for_uid( uid : int, metadata ):
+def get_metadata_for_uid( uid: int ):
+    """
+        Retrieves the file path to the model checkpoint for uid with associated timestamps and verion.
+    Args:
+        uid: Uid to find metadata on.    
+    """
     try:
         # Fill metadata from files and check if we can load weights.
         model_dir = os.path.join(config.full_path, 'models', str(uid))
@@ -214,54 +226,33 @@ def get_metadata_for_uid( uid : int, metadata ):
             model_weights = torch.load( model_path )
         except Exception as e:
             bt.logging.trace(f'Cant load weights under: {model_path}')
-            continue
+            return None
         try:
             model = pretrain.model.get_model()
             model.load_state_dict(model_weights)
         except Exception as e:
             bt.logging.trace(f'Cant load weights into model')
-            continue
+            return None
         try:
             with open(os.path.join(model_dir, 'metadata.json'), 'r') as f: 
                 meta = json.load(f)
         except Exception as e:
             bt.logging.trace(f'Cant load metadata from json.')
-            continue
+            return None
         if 'version' not in meta or 'timestamp' not in meta or 'runid' not in meta:
             bt.logging.trace(f'metadata is malformed: {meta}')
-            continue
+            return None
         if meta['version'] != pretrain.__version__:
             version = meta['version']
             bt.logging.trace(f'Model verison is out of date, with version: {version}')
-            continue
+            return None
         else:
             # Valid metadata.
-            metadata[uid] = meta
+            return meta
     except Exception as e:
         print (e)
         # Skip this UID if any error occurs during loading of model or timestamp.
-        continue
-
-    return metadata
-
-def get_uid_metadata(uids):
-    """
-        Retrieves the file paths to model checkpoints and their associated timestamps for each UID in the metagraph.
-
-    Args:
-        metagraph (object): An object containing UIDs for models.
-    
-    Returns:
-        tuple: A tuple containing a list of UIDs that were successfully processed, 
-            a dictionary mapping UIDs to their model file paths, 
-            and a dictionary mapping UIDs to their timestamp data.
-    """
-    metadata = {}
-    for uid in uids:
-        get_metadata_for_uid(uid, metadata):
-
-    return metadata
-
+        return None
 
 def compute_losses_per_page(uid: int, model_path: str, batches_per_page: Dict[int, List[torch.Tensor]], pbar=None) -> Dict[int, List[float]]:
     """
@@ -322,7 +313,7 @@ def compute_losses_per_page(uid: int, model_path: str, batches_per_page: Dict[in
     return losses_per_page
     
 
-def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, global_step, blacklisted_models, metadata ):
+def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, global_step, metadata ):
     """
         Executes a single validation step.
         - 1. Updates local models using wandb data.
@@ -343,12 +334,16 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
 
     # Update all models from wandb runs and return a list of uids
     # their paths and timestamps.
-    uids = [uid for uid in metadata if uid not in blacklisted_models]
+    metadata = {uid: get_metadata_for_uid( uid ) for uid in metagraph.uids.tolist() }
+    uids = []
+    for uid, meta in metadata.items():
+        if meta == None: continue
+        elif 'blacklist' in meta and meta['blacklist']: continue
+        else: uids.append( uid )
     bt.logging.debug( f'Runnning step with uids: {uids}, metadata: {metadata}')
 
     # Generate random pages for evaluation and prepare batches for each page
     pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages)]
-
     total_batches = sum([ len(b) for b in batches_per_page.values()] )
     
     # Compute losses per page
@@ -371,7 +366,6 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
             else:
                 losses_per_epoch[ uid_i ] = [average_loss]
 
-
     # Compute best average loss
     best_average_loss = math.inf
     best_average_loss_uid = None
@@ -385,16 +379,18 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
     # batch, in case of ties takes uid with better timestamp.
     def is_winning_loss_with_timestamps( this_uid, page_j, batch_k ):
         this_loss = losses_per_page_per_uid[ this_uid ][page_j][batch_k]
-        if this_uid == global_best_uid:
-            this_loss *= (1 - pretrain.per_loss_epsilon)
         this_timestamp = metadata[ this_uid ]['timestamp']
         for other_uid in uids:
             other_loss = losses_per_page_per_uid[ other_uid ][ page_j ][ batch_k ]
             other_timestamp = metadata[ other_uid ]['timestamp']
+            if this_timestamp > other_timestamp:
+                other_loss *= (1 - 0.03)
+            if this_timestamp < other_timestamp:
+                this_loss *= (1 - 0.03)
             if this_loss > other_loss:
                 return False
-            elif this_loss == other_loss and this_timestamp > other_timestamp:
-                return False
+            else:
+                return True
         return True
 
     # Compute total wins per uid per page 
@@ -406,10 +402,15 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
                 if is_winning_loss_with_timestamps( uid, page, batch ):
                     total_wins_per_uid_per_page[ uid ][ page ] += 1
                     wins_per_epoch[ uid ] += 1 
-        if wins_per_epoch[ uid ] == 0:
-            blacklisted_models.append(uid)
 
-    bt.logging.debug(f"adding {blacklisted_models} uids to ")
+        # Blacklist model if zero wins. (to reduce compute)
+        # until it has been updated again.
+        if wins_per_epoch[ uid ] == 0:
+            with open(metadata[uid], 'wr') as f:
+                to_update = json.load(f)
+                to_update['blacklist'] = True
+                json.dumps( to_update )
+
     # Build step log
     step_log = {
         'timestamp': time.time(),
@@ -457,9 +458,10 @@ def run_epoch( wins_per_epoch, global_step ):
     """
     # === Compute weights from wins ===
     weights = torch.zeros( len(metagraph.hotkeys) )
+    add = 0.05
+    total_add = len( list( wins_per_epoch.keys() ) ) * add
     for uid in wins_per_epoch:
-        weights[uid] = (wins_per_epoch[uid] + 1)/ sum( wins_per_epoch.values() )
-    bt.logging.debug(f"wins_per_epoch = {wins_per_epoch} ------- global best = {global_best_uid}: {round(global_best_loss, 4)}")
+        weights[uid] = ( wins_per_epoch[uid] + add ) / sum( wins_per_epoch.values() + total_add)
     wins_per_epoch = {}
 
     # === Set weights ===
@@ -473,21 +475,10 @@ def run_epoch( wins_per_epoch, global_step ):
     bt.logging.success(f"Set weights successfully")
     bt.logging.debug(f"Weights info: {weights.tolist()}")
 
-def get_best_uid(metadata):
-    global_best_uid = max(metadata), key=lambda uid: metagraph.I[uid].item())
-    bt.logging.info(f"initial global best uid is {global_best_uid}")
-    losses_dict = compute_losses_per_page(global_best_uid, metadata[ global_best_uid ]['model_path'], batches_per_page)
-    total_losses = [value for values in losses_dict.values() for value in values]
-    global_best_loss = sum(total_losses) / len(total_losses)
-    bt.logging.info(f"initial global best loss is {global_best_loss}")
-    return global_best_uid, global_best_loss
-
-
 # === Validating loop ===
 epoch_step = 0 
 global_step = 0
 last_epoch = metagraph.block.item()
-metadata = get_uid_metadata(metagraph.uids.tolist())
 bt.logging.success(f"Starting validator loop")
 pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages)]
 batches_per_page = {
@@ -504,31 +495,21 @@ while True:
         # Init a new dict for counters.
         wins_per_epoch = {}
         losses_per_epoch = {}
-        blacklisted_models = []
-        # Update all local models at beginning of epoch.
-        metagraph = subtensor.metagraph( pretrain.NETUID )
-        # update_models( metagraph, blacklisted_models )
-        global_best_uid, global_best_loss = get_best_uid()
+
+        update_models( metagraph )
     
         while metagraph.block.item() - last_epoch < config.blocks_per_epoch:
             # Updates models (if needed) runs an eval step over each model
             # Records the number of 'wins' per model in the step. A wins
             # is defined as the model with the lowest loss on a given batch.
-            run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, global_step, blacklisted_models )
+            run_step( wins_per_epoch, losses_per_epoch, metagraph, global_step )
             metagraph = subtensor.metagraph( pretrain.NETUID )
             bt.logging.debug(f"{metagraph.block.item() - last_epoch } / {config.blocks_per_epoch} blocks until next epoch.")
             global_step += 1
 
-        # Update global best loss and uid.
-        for uid in losses_per_epoch.keys():
-            epoch_average_loss = sum(losses_per_epoch[uid])/len(losses_per_epoch[uid])
-            if epoch_average_loss < global_best_loss * (1 - pretrain.best_uid_epsilon):
-                global_best_uid = uid
-                global_best_loss = epoch_average_loss
-        if config.wandb.on: wandb.log( {"global_best_uid": global_best_uid, "global_best_loss":global_best_loss }, step = global_step )
-
         # Finish epoch.
         run_epoch( wins_per_epoch, global_step )
+        metagraph = subtensor.metagraph( pretrain.NETUID )
         last_epoch = metagraph.block.item()
         epoch_step += 1
 
