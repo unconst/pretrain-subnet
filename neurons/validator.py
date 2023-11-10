@@ -476,7 +476,7 @@ def get_best_uid():
     bt.logging.info(f"initial global best uid is {global_best_uid}")
     losses_dict = compute_losses_per_page(global_best_uid, get_uid_metadata( metagraph )[ global_best_uid ]['model_path'], batches_per_page)
     total_losses = [value for values in losses_dict.values() for value in values]
-    global_best_loss = sum(total_values) / len(total_values)
+    global_best_loss = sum(total_losses) / len(total_losses)
     bt.logging.info(f"initial global best loss is {global_best_loss}")
     return global_best_uid, global_best_loss
 
