@@ -345,13 +345,7 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
 
     # Generate random pages for evaluation and prepare batches for each page
     pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages)]
-    batches_per_page = {
-        page: list(pretrain.dataset.SubsetFalconLoader(
-            batch_size=pretrain.batch_size,
-            sequence_length=pretrain.sequence_length,
-            pages=[page]
-        )) for page in pages
-    }
+
     total_batches = sum([ len(b) for b in batches_per_page.values()] )
     
     # Compute losses per page
@@ -477,30 +471,43 @@ def run_epoch( wins_per_epoch, global_step ):
     bt.logging.debug(f"Weights info: {weights.tolist()}")
 
 def get_best_uid():
-    blacklisted_models = []
-    global_best_uid = torch.tensor([metagraph.I[uid].item() for uid in list(  get_uid_metadata( metagraph ).keys() )]).argmax().item()
-    global_best_loss = 
+    global_best_uid = max(get_uid_metadata(metagraph), key=lambda uid: metagraph.I[uid].item())
+    bt.logging.info(f"initial global best uid is {global_best_uid}")
+    pbar = tqdm(runs, desc="Evaluating Best", leave=False)
+    global_best_loss = compute_losses_per_page(global_best_uid, model_paths[global_best_uid], batches_per_page, pbar)
+    bt.logging.info(f"initial global best loss is {global_best_loss}")
+
 
 # === Validating loop ===
 epoch_step = 0 
 global_step = 0
 last_epoch = metagraph.block.item()
 bt.logging.success(f"Starting validator loop")
+pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages)]
+batches_per_page = {
+        page: list(pretrain.dataset.SubsetFalconLoader(
+            batch_size=pretrain.batch_size,
+            sequence_length=pretrain.sequence_length,
+            pages=[page]
+        )) for page in pages
+    }
+total_batches = sum([ len(b) for b in batches_per_page.values()] )
 while True:
     try:
         # Init a new dict for counters.
         wins_per_epoch = {}
         losses_per_epoch = {}
-
+        blacklisted_models = []
         # Update all local models at beginning of epoch.
-        get_best_uid()
+        metagraph = subtensor.metagraph( pretrain.NETUID )
         update_models( metagraph, blacklisted_models )
+        get_best_uid()
     
         while metagraph.block.item() - last_epoch < config.blocks_per_epoch:
             # Updates models (if needed) runs an eval step over each model
             # Records the number of 'wins' per model in the step. A wins
             # is defined as the model with the lowest loss on a given batch.
-            run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, global_step )
+            run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, global_step, blacklisted_models )
             metagraph = subtensor.metagraph( pretrain.NETUID )
             bt.logging.debug(f"{metagraph.block.item() - last_epoch } / {config.blocks_per_epoch} blocks until next epoch.")
             global_step += 1
