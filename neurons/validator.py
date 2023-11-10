@@ -474,8 +474,9 @@ def run_epoch( wins_per_epoch, global_step ):
 def get_best_uid():
     global_best_uid = max(get_uid_metadata(metagraph), key=lambda uid: metagraph.I[uid].item())
     bt.logging.info(f"initial global best uid is {global_best_uid}")
-    global_best_loss = compute_losses_per_page(global_best_uid, model_paths[global_best_uid], batches_per_page)
+    global_best_loss = compute_losses_per_page(global_best_uid, get_uid_metadata( metagraph )[ global_best_uid ]['model_path'], batches_per_page)
     bt.logging.info(f"initial global best loss is {global_best_loss}")
+    return global_best_uid, global_best_loss
 
 
 # === Validating loop ===
@@ -501,7 +502,7 @@ while True:
         # Update all local models at beginning of epoch.
         metagraph = subtensor.metagraph( pretrain.NETUID )
         update_models( metagraph, blacklisted_models )
-        get_best_uid()
+        global_best_uid, global_best_loss = get_best_uid()
     
         while metagraph.block.item() - last_epoch < config.blocks_per_epoch:
             # Updates models (if needed) runs an eval step over each model
