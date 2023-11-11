@@ -21,6 +21,7 @@ import os
 import json
 import threading
 import queue
+import concurrent.futures
 import math
 import time
 import wandb
@@ -260,7 +261,8 @@ def check_for_new_uids(api, sorted_uids):
                     }
                 }
             )
-            if runs is not None:
+            if runs is not None: #need to fix this logic, cause we still have to verify signiture, etc
+                # update_model(i) figure this out
                 new_uids.append(i)
     return new_uids
 
@@ -308,45 +310,6 @@ def get_metadata_for_uid( uid: int ):
         print (e)
         # Skip this UID if any error occurs during loading of model or timestamp.
         return None
-
-def update_metadata(uids, max_threads=10):
-    metadata = {}
-    metadata_lock = threading.Lock()
-    uid_queue = queue.Queue()
-
-    # Worker function for threads
-    def worker():
-        while True:
-            uid = uid_queue.get()
-            if uid is None:
-                # Sentinel value received, exit thread
-                break
-            data = get_metadata_for_uid(uid)
-            with metadata_lock:
-                metadata[uid] = data
-            uid_queue.task_done()
-
-    # Start a pool of worker threads
-    threads = [threading.Thread(target=worker) for _ in range(max_threads)]
-    for thread in threads:
-        thread.start()
-
-    # Enqueue all UIDs
-    for uid in uids:
-        uid_queue.put(uid)
-
-    # Signal threads to exit by putting None as sentinel value
-    for i in range(max_threads):
-        uid_queue.put(None)
-
-    # Wait for all tasks in the queue to be processed
-    uid_queue.join()
-
-    # Wait for all threads to exit
-    for thread in threads:
-        thread.join()
-
-    return metadata
 
 def compute_losses_per_page(uid: int, model_path: str, batches_per_page: Dict[int, List[torch.Tensor]], pbar=None) -> Dict[int, List[float]]:
     """
@@ -428,12 +391,11 @@ def run_step( wins_per_epoch, losses_per_epoch, metagraph, global_step ):
     # Update all models from wandb runs and return a list of uids
     # their paths and timestamps.
     bt.logging.info(f"using {sorted_uids} to evaluate")
-    metadata = update_metadata(sorted_uids)
+    metadata = {uid: get_metadata_for_uid(uid) for uid in tqdm(sorted_uids, desc="Fetching Metadata")} # move this to the update models loop and it runs once every loop (6 hours)?
     uids = []
     for uid, meta in metadata.items():
-        if meta == None: continue
-        elif 'blacklist' in meta and meta['blacklist']: continue
-        else: uids.append( uid )
+        if meta is not None and not meta.get('blacklisted', False):
+            uids.append(uid)
     bt.logging.debug( f'Runnning step with uids: {uids}, metadata: {metadata}')
 
     # Generate random pages for evaluation and prepare batches for each page
@@ -448,6 +410,7 @@ def run_step( wins_per_epoch, losses_per_epoch, metagraph, global_step ):
     total_batches = sum([ len(b) for b in batches_per_page.values()] )
     
     # Compute losses per page
+    bt.logging.debug(f"computing losses on {uids}")
     losses_per_page_per_uid = { uid: None for uid in uids }
     pbar = tqdm( uids, desc="Loss:", leave=False)
     for uid_i in pbar:
@@ -506,11 +469,13 @@ def run_step( wins_per_epoch, losses_per_epoch, metagraph, global_step ):
 
         # Blacklist model if zero wins. (to reduce compute)
         # until it has been updated again.
-        if wins_per_epoch[ uid ] == 0:
-            with open(metadata[uid], 'wr') as f:
+        if wins_per_epoch[uid] == 0:
+            metadata_file = os.path.join(os.path.join(config.full_path, 'models', str(uid)), 'metadata.json')
+            with open(metadata_file, 'r') as f:
                 to_update = json.load(f)
-                to_update['blacklist'] = True
-                json.dumps( to_update )
+            to_update['blacklisted'] = True
+            with open(metadata_file, 'w') as f:
+                json.dump(to_update, f)
 
     # Build step log
     step_log = {
@@ -522,19 +487,22 @@ def run_step( wins_per_epoch, losses_per_epoch, metagraph, global_step ):
         'uid_data': {}
     }
     for uid in uids:
-        average_losses = [average_loss_per_uid_per_page[uid][pagek] for pagek in pages]
-        average_loss = sum(average_losses) / len(average_losses)
-        win_rate = sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / total_batches
-        win_total = sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ])
-        step_log['uid_data'][ str(uid) ] = {
-            'uid': uid,
-            'runid': metadata[ uid ]['runid'],
-            'timestamp': metadata[ uid ]['timestamp'],
-            'average_losses': average_losses,
-            'average_loss': average_loss,
-            'win_rate': win_rate,
-            'win_total': win_total,
-        }
+        try:
+            average_losses = [average_loss_per_uid_per_page[uid][pagek] for pagek in pages]
+            average_loss = sum(average_losses) / len(average_losses)
+            win_rate = sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / total_batches
+            win_total = sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ])
+            step_log['uid_data'][ str(uid) ] = {
+                'uid': uid,
+                'runid': metadata[ uid ]['runid'],
+                'timestamp': metadata[ uid ]['timestamp'],
+                'average_losses': average_losses,
+                'average_loss': average_loss,
+                'win_rate': win_rate,
+                'win_total': win_total,
+            }
+        except:
+            continue
 
     # Sink step log.
     bt.logging.success(f"Step results: {step_log}")
