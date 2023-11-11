@@ -59,7 +59,7 @@ def get_config():
     parser.add_argument("--num_epochs", type = int, default = -1, help="Number of training epochs (-1 is infinite)")
 
     # Training lr.
-    parser.add_argument("--lr", type = float, default = 0.0000005, help="Learning rate.")
+    parser.add_argument("--lr", type = float, default = 0.000001, help="Learning rate.")
 
     # Training batch size
     parser.add_argument("--bs", type = int, default = pretrain.batch_size, help="Batch size")
@@ -119,12 +119,12 @@ bt.logging.success( f'You are registered with address: {wallet.hotkey.ss58_addre
 # Initialize and configure the model for pretraining
 model = pretrain.model.get_model()  # Get the model from the pretrain module
 torch.save(model.state_dict(), config.model_path)
+api = wandb.Api( timeout = 100 )
 
 
 def get_run_from_id( run_id ):
     run_path = f"opentensor-dev/openpretraining/{run_id}"
     bt.logging.success(f'Loading model from path: {run_path}')
-    api = wandb.Api( timeout = 100 )
     return api.run(run_path)
 
 # Optionall load the model from the passed run id:
@@ -141,9 +141,19 @@ if config.load_run_id != None:
 # Model is pulled from best on network
 elif config.load_best:
     bt.logging.success(f'Loading based on --config.load_best')
-    all_valid_runs = pretrain.get_miner_runs( metagraph )
-    sorted_valid_runs = sorted( list( all_valid_runs.values()), key=lambda x: x['incentive'])
-    load_model_from_run( get_run_from_id(sorted_valid_runs[0]['run']) )
+    best_uid = max(range(256), key=lambda uid: metagraph.I[uid].item())
+    print(f"best uid is {best_uid}")
+    runs = api.runs(
+        "opentensor-dev/openpretraining",
+        filters={
+            "config.version": pretrain.__version__,
+            "config.type": "miner",
+            "config.run_name": {
+                "$regex": f"miner-{best_uid}-.*"
+            }
+        }
+    )
+    load_model_from_run( get_run_from_id(runs[0].id) )
 
 elif config.continue_id:
     run = get_run_from_id( config.continue_id  )
