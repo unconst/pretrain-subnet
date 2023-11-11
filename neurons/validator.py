@@ -318,7 +318,7 @@ class Validator:
         console.print(table)
 
         # Sink step log.
-        # bt.logging.success(f"Step results: {step_log}")
+        bt.logging.trace(f"Step results: {step_log}")
         original_format_json = json.dumps(step_log)
         uids = step_log['uids']
         uid_data = step_log['uid_data']
