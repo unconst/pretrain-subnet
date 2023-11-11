@@ -98,13 +98,14 @@ class Validator:
         if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys: raise Exception("You are not registered. Use `btcli s recycle_register` to register.")
         self.uid = self.metagraph.hotkeys.index( self.wallet.hotkey.ss58_address )
         bt.logging.success( f'You are registered with address: {self.wallet.hotkey.ss58_address} and uid: {self.uid}' )
+        self.init_wandb()
 
         # === Running args ===
         self.epoch_step = 0 
         self.global_step = 0
         self.last_epoch = self.metagraph.block.item()
         self.last_update_check = {}
-        self.shouldeval = { uid: uid in self.metagraph.I.topk(10).indices.tolist() for uid in self.metagraph.uids.tolist()  }
+        self.shouldeval = { uid: uid in self.metagraph.I.topk(3).indices.tolist() for uid in self.metagraph.uids.tolist()  }
         self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
 
     def update_models( self ):
@@ -236,28 +237,17 @@ class Validator:
 
         # Function returns True if this uid has lowest loss across all other uids on this 
         # batch, in case of ties takes uid with better timestamp.
-        def is_win( this_uid, other_uid, page_j, batch_k ):
-            this_loss = losses_per_page_per_uid[ this_uid ][ page_j ][ batch_k ]
-            other_loss = losses_per_page_per_uid[ other_uid ][ page_j ][ batch_k ]
-            print( this_uid, other_uid, this_loss, other_loss)
-            if this_loss >= other_loss:
-                return False
-            else:
-                return True
-            # this_timestamp = self.metadata[ this_uid ]['timestamp']
-            # other_timestamp = self.metadata[ other_uid ]['timestamp']
-            # if this_timestamp > other_timestamp:
-            #     other_loss *= (1 - 0.03)
-            # elif this_timestamp < other_timestamp:
-            #     this_loss *= (1 - 0.03)
-            # if this_loss > other_loss:
-            #     return True
-            # else:
-            #     return False
         def is_winning_loss_with_timestamps( this_uid, page_j, batch_k ):
+            this_loss = losses_per_page_per_uid[ this_uid ][ page_j ][ batch_k ]
+            this_timestamp = self.metadata[ this_uid ]['timestamp']
             for other_uid in uids:
-                if not is_win( this_uid, other_uid, page_j, batch_k ):
-                    bt.logging.success(f'Failed {this_uid} {other_uid} {page_j} {batch_k} {losses_per_page_per_uid[ this_uid ][ page_j ][ batch_k ]} {losses_per_page_per_uid[ other_uid ][ page_j ][ batch_k ]}')
+                other_loss = losses_per_page_per_uid[ other_uid ][ page_j ][ batch_k ]
+                other_timestamp = self.metadata[ other_uid ]['timestamp']
+                if this_timestamp > other_timestamp:
+                    other_loss *= (1 - 0.03)
+                elif this_timestamp < other_timestamp:
+                    this_loss *= (1 - 0.03)
+                if this_loss > other_loss:
                     return False
             return True
 
@@ -294,6 +284,7 @@ class Validator:
                     'uid': uid,
                     'runid': self.metadata[ uid ]['runid'],
                     'timestamp': self.metadata[ uid ]['timestamp'],
+                    'last_update': self.metadata[ uid ]['last_update'],
                     'average_losses': average_losses,
                     'average_loss': average_loss,
                     'win_rate': win_rate,
@@ -307,21 +298,27 @@ class Validator:
         print ('losses_per_page_per_uid',average_loss_per_uid_per_page)
         table = Table(title="Step")
         table.add_column("uid", justify="right", style="cyan", no_wrap=True)
-        table.add_column("average_losses", style="magenta")
+        table.add_column("average_loss", style="magenta")
         table.add_column("win_rate", style="magenta")
         table.add_column("win_total", style="magenta")
+        table.add_column("last_update", style="magenta")
+        table.add_column("timestamp", style="magenta")
+        table.add_column("blacklist", style="magenta")
         for uid in uids:
             table.add_row(
                 str(uid), 
                 str(step_log['uid_data'][ str(uid) ]['average_loss']), 
                 str(step_log['uid_data'][ str(uid) ]['win_rate']),
-                str(step_log['uid_data'][ str(uid) ]['win_total'])
+                str(step_log['uid_data'][ str(uid) ]['win_total']),
+                str(step_log['uid_data'][ str(uid) ]['last_update']),
+                str(step_log['uid_data'][ str(uid) ]['timestamp']),
+                str(not self.shouldeval[ this_uid ]),
             )
         console = Console()
         console.print(table)
 
         # Sink step log.
-        bt.logging.success(f"Step results: {step_log}")
+        # bt.logging.success(f"Step results: {step_log}")
         original_format_json = json.dumps(step_log)
         uids = step_log['uids']
         uid_data = step_log['uid_data']
