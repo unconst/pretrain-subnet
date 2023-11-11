@@ -273,7 +273,6 @@ def get_metadata_for_uid( uid: int ):
         uid: Uid to find metadata on.    
     """
     start_time = time.time()
-    bt.logging.info(f"starting get_metadata_for_uid at {time.time()}")
     try:
         # Fill metadata from files and check if we can load weights.
         model_dir = os.path.join(config.full_path, 'models', str(uid))
@@ -304,7 +303,6 @@ def get_metadata_for_uid( uid: int ):
             return None
         else:
             # Valid metadata.
-            bt.logging.info(f"time taken to get_metadata_for_uid: {time.time() - start_time} seconds")
             return meta
     except Exception as e:
         print (e)
@@ -390,6 +388,7 @@ def run_step( wins_per_epoch, losses_per_epoch, metagraph, global_step ):
 
     # Update all models from wandb runs and return a list of uids
     # their paths and timestamps.
+    # add a while loop until sorted_uids is defined here
     bt.logging.info(f"using {sorted_uids} to evaluate")
     metadata = {uid: get_metadata_for_uid(uid) for uid in tqdm(sorted_uids, desc="Fetching Metadata")} # move this to the update models loop and it runs once every loop (6 hours)?
     uids = []
@@ -530,7 +529,8 @@ def run_epoch( wins_per_epoch, global_step ):
     add = 0.05
     total_add = len( list( wins_per_epoch.keys() ) ) * add
     for uid in wins_per_epoch:
-        weights[uid] = ( wins_per_epoch[uid] + add ) / sum( wins_per_epoch.values() + total_add)
+        total_wins = sum(wins_per_epoch.values())  # Sum of all wins
+        weights[uid] = (wins_per_epoch[uid] + add) / (total_wins + total_add)
     wins_per_epoch = {}
 
     # === Set weights ===
