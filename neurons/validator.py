@@ -19,6 +19,8 @@
 
 import os
 import json
+import threading
+import queue
 import math
 import time
 import wandb
@@ -94,27 +96,23 @@ if config.wandb.on:
     config.signature = wallet.hotkey.sign( wandb_run.id.encode() ).hex()
     wandb.config.update( config, allow_val_change=True )
 
-def update_models( metagraph ):
-    """
-        This function updates local model files by synchronizing with models registered in the metagraph
-        and available on Weights & Biases (wandb). It checks the legitimacy of each model's signature,
-        downloads models that are either new or updated, and keeps track of their timestamps and paths.
-        Args:
-            metagraph (Metagraph): An object representing the metagraph of the models to be synchronized.
-    """
-    
-    # Initialize Weights & Biases API client with a timeout setting
+
+def update_model(uid):
+    # Retrieve runs from the wandb project for that uid
     api = wandb.Api(timeout=100)
-    # Retrieve runs from the wandb project
     runs = api.runs(
         "opentensor-dev/openpretraining",
-        filters = { 
+        filters={
             "config.version": pretrain.__version__,
             "config.type": "miner",
-            "config.hotkey": {"$regex": "^.+$"}
-        } 
+            "config.run_name": {
+                "$regex": f"miner-{uid}-.*"
+            }
+        }
     )
-    bt.logging.trace( f'Got runs: {[r for r in runs]}' )
+
+    run_ids = [run.id for run in runs]
+    bt.logging.trace(f'Got runs: {run_ids} for uid {uid}')
 
     # Use tqdm to show progress bar for the iteration over runs
     pbar = tqdm(runs, desc="Getting runs:", leave=False)
@@ -126,17 +124,12 @@ def update_models( metagraph ):
             pbar.set_description(f"Updating: {run.id}")
             bt.logging.trace(f'Updating: {run.id}')
 
-            # Skip models that are not registered in the metagraph
+            # Skip models that are not registered in the metagraph or don't have signature
             hotkey = run.config['hotkey']
-            if hotkey not in metagraph.hotkeys: continue
-            uid = metagraph.hotkeys.index(hotkey)
-            bt.logging.trace(f'uid: {uid}')
+            if hotkey not in metagraph.hotkeys or 'signature' not in run.config: continue
 
-            # Ensure a 'signature' exists and verify its legitimacy
-            if 'signature' not in run.config: continue
-            signature = run.config['signature']
-            keypair = bt.Keypair(ss58_address=hotkey)
-            if not keypair.verify(run.id, bytes.fromhex(signature)): continue
+            # Check that signature is correct
+            if not bt.Keypair(ss58_address=hotkey).verify(run.id, bytes.fromhex(run.config['signature'])): continue
 
             # Check if we have updated this uid already:
             if uid in has_updated: 
@@ -147,7 +140,6 @@ def update_models( metagraph ):
             # Attempt to access the model artifact file
             try: model_artifact = run.file('model.pth')
             except: continue
-            bt.logging.trace(f'model_artifact: {model_artifact}')
 
             # Convert the updatedAt string to a timestamp
             try: remote_model_timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
@@ -209,8 +201,68 @@ def update_models( metagraph ):
                 bt.logging.trace( f'Didnt update model under path: { model_dir } with timestamp: { remote_model_timestamp }')
 
         except Exception as e:
-            bt.logging.error(f'Error updating run with error: {e}')
+            bt.logging.error(f'Error updating run with error: {e}\n {traceback.format_exc()}')
             continue
+
+
+def update_models(metagraph):
+    """
+    This function updates local model files by synchronizing with models registered in the metagraph
+    and available on Weights & Biases (wandb). It checks the legitimacy of each model's signature,
+    downloads models that are either new or updated, and keeps track of their timestamps and paths.
+    Args:
+        metagraph (Metagraph): An object representing the metagraph of the models to be synchronized.
+    """
+    # Initial Setup: Get UIDs with existing metadata files
+    global sorted_uids
+    model_timestamps = {}
+    for hotkey in metagraph.hotkeys:
+        uid = metagraph.hotkeys.index(hotkey)
+        model_dir = os.path.join(config.full_path, 'models', str(uid))
+        metadata_file = os.path.join(model_dir, 'metadata.json')
+        if os.path.exists(metadata_file):
+            with open(metadata_file, 'r') as f:
+                metadata = json.load(f)
+            model_timestamps[uid] = metadata.get('timestamp', 0)
+
+    # Sort UIDs based on last updated timestamp
+    sorted_uids = sorted(model_timestamps, key=model_timestamps.get)
+
+    while True:
+        # Loop Through Sorted UIDs
+        for uid in sorted_uids:
+            current_time = time.time()
+            if current_time - model_timestamps.get(uid, 0) >= UPDATE_TIMEOUT:
+                update_model(uid) # Update the timestamp in the metadata file, etc.
+
+            time_to_sleep = UPDATE_TIMEOUT - (current_time - model_timestamps.get(uid, 0))
+            time.sleep(max(0, time_to_sleep))
+
+        # Check for New UIDs from wandb
+        new_uids = check_for_new_uids(api, sorted_uids) 
+        for new_uid in new_uids:
+            if new_uid not in model_timestamps:
+                update_model(new_uid)  # This will create a metadata file if it doesn't exist
+                sorted_uids.append(new_uid)
+                sorted_uids.sort(key=lambda uid: model_timestamps.get(uid, 0))
+
+def check_for_new_uids(api, sorted_uids):
+    new_uids = []
+    for i in range(len(256)):
+        if i not in sorted_uids:
+            runs = api.runs(
+                "opentensor-dev/openpretraining",
+                filters={
+                    "config.version": pretrain.__version__,
+                    "config.type": "miner",
+                    "config.run_name": {
+                        "$regex": f"miner-{i}-.*"
+                    }
+                }
+            )
+            if runs is not None:
+                new_uids.append(i)
+    return new_uids
 
 def get_metadata_for_uid( uid: int ):
     """
@@ -218,6 +270,8 @@ def get_metadata_for_uid( uid: int ):
     Args:
         uid: Uid to find metadata on.    
     """
+    start_time = time.time()
+    bt.logging.info(f"starting get_metadata_for_uid at {time.time()}")
     try:
         # Fill metadata from files and check if we can load weights.
         model_dir = os.path.join(config.full_path, 'models', str(uid))
@@ -248,11 +302,51 @@ def get_metadata_for_uid( uid: int ):
             return None
         else:
             # Valid metadata.
+            bt.logging.info(f"time taken to get_metadata_for_uid: {time.time() - start_time} seconds")
             return meta
     except Exception as e:
         print (e)
         # Skip this UID if any error occurs during loading of model or timestamp.
         return None
+
+def update_metadata(uids, max_threads=10):
+    metadata = {}
+    metadata_lock = threading.Lock()
+    uid_queue = queue.Queue()
+
+    # Worker function for threads
+    def worker():
+        while True:
+            uid = uid_queue.get()
+            if uid is None:
+                # Sentinel value received, exit thread
+                break
+            data = get_metadata_for_uid(uid)
+            with metadata_lock:
+                metadata[uid] = data
+            uid_queue.task_done()
+
+    # Start a pool of worker threads
+    threads = [threading.Thread(target=worker) for _ in range(max_threads)]
+    for thread in threads:
+        thread.start()
+
+    # Enqueue all UIDs
+    for uid in uids:
+        uid_queue.put(uid)
+
+    # Signal threads to exit by putting None as sentinel value
+    for i in range(max_threads):
+        uid_queue.put(None)
+
+    # Wait for all tasks in the queue to be processed
+    uid_queue.join()
+
+    # Wait for all threads to exit
+    for thread in threads:
+        thread.join()
+
+    return metadata
 
 def compute_losses_per_page(uid: int, model_path: str, batches_per_page: Dict[int, List[torch.Tensor]], pbar=None) -> Dict[int, List[float]]:
     """
@@ -313,7 +407,7 @@ def compute_losses_per_page(uid: int, model_path: str, batches_per_page: Dict[in
     return losses_per_page
     
 
-def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, global_step, metadata ):
+def run_step( wins_per_epoch, losses_per_epoch, metagraph, global_step ):
     """
         Executes a single validation step.
         - 1. Updates local models using wandb data.
@@ -326,7 +420,6 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
         Parameters:
         - wins_per_epoch (dict): A dictionary to record the number of wins per UID.
         - losses_per_epoch (dict): A dictionary to record all losses in epoch.
-        - global_best_uid (int): Uid with lowest global loss at beginning of epoch.
         - metagraph (object): An object representing the meta information of models.
         - wandb_step (int): The current step number for logging in weights and biases.
 
@@ -334,7 +427,8 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
 
     # Update all models from wandb runs and return a list of uids
     # their paths and timestamps.
-    metadata = {uid: get_metadata_for_uid( uid ) for uid in metagraph.uids.tolist() }
+    bt.logging.info(f"using {sorted_uids} to evaluate")
+    metadata = update_metadata(sorted_uids)
     uids = []
     for uid, meta in metadata.items():
         if meta == None: continue
@@ -344,6 +438,13 @@ def run_step( wins_per_epoch, losses_per_epoch, global_best_uid, metagraph, glob
 
     # Generate random pages for evaluation and prepare batches for each page
     pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages)]
+    batches_per_page = {
+        page: list(pretrain.dataset.SubsetFalconLoader(
+            batch_size=pretrain.batch_size,
+            sequence_length=pretrain.sequence_length,
+            pages=[page]
+        )) for page in pages
+    }
     total_batches = sum([ len(b) for b in batches_per_page.values()] )
     
     # Compute losses per page
@@ -480,29 +581,20 @@ epoch_step = 0
 global_step = 0
 last_epoch = metagraph.block.item()
 bt.logging.success(f"Starting validator loop")
-pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages)]
-batches_per_page = {
-        page: list(pretrain.dataset.SubsetFalconLoader(
-            batch_size=pretrain.batch_size,
-            sequence_length=pretrain.sequence_length,
-            pages=[page]
-        )) for page in pages
-    }
 
-total_batches = sum([ len(b) for b in batches_per_page.values()] )
+thread = threading.Thread(target=update_models, args=(metagraph,))
+thread.start()
 while True:
     try:
         # Init a new dict for counters.
         wins_per_epoch = {}
         losses_per_epoch = {}
-
-        update_models( metagraph )
     
         while metagraph.block.item() - last_epoch < config.blocks_per_epoch:
             # Updates models (if needed) runs an eval step over each model
             # Records the number of 'wins' per model in the step. A wins
             # is defined as the model with the lowest loss on a given batch.
-            run_step( wins_per_epoch, losses_per_epoch, metagraph, global_step, metadata )
+            run_step( wins_per_epoch, losses_per_epoch, metagraph, global_step )
             metagraph = subtensor.metagraph( pretrain.NETUID )
             bt.logging.debug(f"{metagraph.block.item() - last_epoch } / {config.blocks_per_epoch} blocks until next epoch.")
             global_step += 1
