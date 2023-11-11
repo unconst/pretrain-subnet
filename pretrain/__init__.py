@@ -28,7 +28,7 @@ NETUID = 9
 
 best_uid_epsilon = 0.03
 per_loss_epsilon = 0.05
-n_eval_pages = 2
+n_eval_pages = 3
 batch_size = 3
 sequence_length = 512
 
