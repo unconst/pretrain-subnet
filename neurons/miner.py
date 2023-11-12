@@ -59,7 +59,11 @@ def get_config():
     parser.add_argument("--num_epochs", type = int, default = -1, help="Number of training epochs (-1 is infinite)")
 
     # Training lr.
+<<<<<<< HEAD
+    parser.add_argument("--lr", type = float, default = 0.0000001, help="Learning rate.")
+=======
     parser.add_argument("--lr", type = float, default = 0.000001, help="Learning rate.")
+>>>>>>> 47057673e0ba971a8c0d47ab9cde716c94676fef
 
     # Training batch size
     parser.add_argument("--bs", type = int, default = pretrain.batch_size, help="Batch size")
@@ -68,7 +72,11 @@ def get_config():
     parser.add_argument("--sl", type = int, default = pretrain.sequence_length, help="Sequence length")
 
     # Set the number of pages trained per epoch
+<<<<<<< HEAD
+    parser.add_argument("--pages_per_epoch", type = int, default=10, help="Number of pages trained on per epoch")
+=======
     parser.add_argument("--pages_per_epoch", type = int, default=5, help="Number of pages trained on per epoch")
+>>>>>>> 47057673e0ba971a8c0d47ab9cde716c94676fef
 
     # Include wallet and logging arguments from bittensor
     bt.wallet.add_args(parser)
@@ -141,6 +149,11 @@ if config.load_run_id != None:
 # Model is pulled from best on network
 elif config.load_best:
     bt.logging.success(f'Loading based on --config.load_best')
+<<<<<<< HEAD
+    all_valid_runs = pretrain.get_miner_runs( metagraph )
+    sorted_valid_runs = sorted( list( all_valid_runs.values()), key=lambda x: x['incentive'])
+    load_model_from_run( get_run_from_id(sorted_valid_runs[0]['run']) )
+=======
     best_uid = max(range(256), key=lambda uid: metagraph.I[uid].item())
     print(f"best uid is {best_uid}")
     runs = api.runs(
@@ -154,6 +167,7 @@ elif config.load_best:
         }
     )
     load_model_from_run( get_run_from_id(runs[0].id) )
+>>>>>>> 47057673e0ba971a8c0d47ab9cde716c94676fef
 
 elif config.continue_id:
     run = get_run_from_id( config.continue_id  )
