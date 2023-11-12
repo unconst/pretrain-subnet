@@ -35,7 +35,7 @@ from rich.table import Table
 from rich.console import Console
 
 # Global artifact name
-UPDATE_TIMEOUT = 60*60*6
+UPDATE_TIMEOUT = 60*60*2
 ARTIFACT_NAME:str = "model.pth"
 
 class Validator:
@@ -204,8 +204,6 @@ class Validator:
             )) for page in pages
         }
         total_batches = sum([ len(b) for b in batches_per_page.values()] )
-        bt.logging.trace(f"pages: {pages}")
-
         # Compute losses per page
         bt.logging.debug(f"computing losses on {uids}")
         losses_per_page_per_uid = { uid: None for uid in uids }
@@ -237,18 +235,25 @@ class Validator:
 
         # Function returns True if this uid has lowest loss across all other uids on this 
         # batch, in case of ties takes uid with better timestamp.
-        def is_winning_loss_with_timestamps( this_uid, page_j, batch_k ):
-            this_loss = losses_per_page_per_uid[ this_uid ][ page_j ][ batch_k ]
-            this_timestamp = self.metadata[ this_uid ]['timestamp']
+        # error was that it was returning as soon as it lost, and not checking against all other uids
+        def is_winning_loss_with_timestamps(this_uid, page_j, batch_k):
+            this_loss = losses_per_page_per_uid[this_uid][page_j][batch_k]
+            this_timestamp = self.metadata[this_uid]['timestamp']
+
             for other_uid in uids:
-                other_loss = losses_per_page_per_uid[ other_uid ][ page_j ][ batch_k ]
-                other_timestamp = self.metadata[ other_uid ]['timestamp']
-                if this_timestamp > other_timestamp:
-                    other_loss *= (1 - 0.03)
-                elif this_timestamp < other_timestamp:
-                    this_loss *= (1 - 0.03)
-                if this_loss > other_loss:
-                    return False
+                if other_uid != this_uid:
+                    other_loss = losses_per_page_per_uid[other_uid][page_j][batch_k]
+                    other_timestamp = self.metadata[other_uid]['timestamp']
+
+                    # Adjusting the losses based on timestamp
+                    adjusted_this_loss = this_loss * (1 - 0.03) if this_timestamp < other_timestamp else this_loss
+                    adjusted_other_loss = other_loss * (1 - 0.03) if other_timestamp < this_timestamp else other_loss
+
+                    # If this_uid's loss is greater than any other_uid's loss, return False
+                    if adjusted_this_loss > adjusted_other_loss:
+                        return False
+
+            # Return True only if this_uid's loss is less than all other UIDs' losses
             return True
 
         # Compute total wins per uid per page 
@@ -290,12 +295,9 @@ class Validator:
                     'win_rate': win_rate,
                     'win_total': win_total,
                 }
+
             except:
                 continue
-        print ('total_batches',total_batches)
-        print ('total_wins_per_uid_per_page',total_wins_per_uid_per_page)
-        print ('average_loss_per_uid_per_page',average_loss_per_uid_per_page)
-        print ('losses_per_page_per_uid',average_loss_per_uid_per_page)
         table = Table(title="Step")
         table.add_column("uid", justify="right", style="cyan", no_wrap=True)
         table.add_column("average_loss", style="magenta")
@@ -342,8 +344,8 @@ class Validator:
         weights = torch.zeros( len(self.metagraph.hotkeys) )
         add = 0.05
         total_add = len( list( self.wins_per_epoch.keys() ) ) * add
+        total_wins = sum(self.wins_per_epoch.values())  # Sum of all wins
         for uid in self.wins_per_epoch:
-            total_wins = sum(self.wins_per_epoch.values())  # Sum of all wins
             weights[uid] = (self.wins_per_epoch[uid] + add) / (total_wins + total_add)
 
         # === Set weights ===
@@ -355,11 +357,15 @@ class Validator:
             wait_for_inclusion=False,
         )
   
-        sorted_weights = sorted(enumerate(weights, start=1), key=lambda x: x[1], reverse=True)[:10]
+        sorted_weights = sorted(enumerate(weights, start=0), key=lambda x: x[1], reverse=True)
+        # Filter to keep only positive weights
+        positive_weights = [(uid, weight) for uid, weight in sorted_weights if weight > 0]
+        # Limit to top 20 (or less if there are not enough positive weights)
+        positive_weights = positive_weights[:20]
         table = Table(title="Top10 Weights")
         table.add_column("uid", justify="right", style="cyan", no_wrap=True)
         table.add_column("weight", style="magenta")
-        for uid, value in sorted_weights:
+        for uid, value in positive_weights:
             table.add_row(str(uid), str(value.item()))
         console = Console()
         console.print(table)

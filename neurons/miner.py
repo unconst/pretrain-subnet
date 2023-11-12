@@ -59,7 +59,7 @@ def get_config():
     parser.add_argument("--num_epochs", type = int, default = -1, help="Number of training epochs (-1 is infinite)")
 
     # Training lr.
-    parser.add_argument("--lr", type = float, default = 0.0000005, help="Learning rate.")
+    parser.add_argument("--lr", type = float, default = 0.0000001, help="Learning rate.")
 
     # Training batch size
     parser.add_argument("--bs", type = int, default = pretrain.batch_size, help="Batch size")
@@ -68,7 +68,7 @@ def get_config():
     parser.add_argument("--sl", type = int, default = pretrain.sequence_length, help="Sequence length")
 
     # Set the number of pages trained per epoch
-    parser.add_argument("--pages_per_epoch", type = int, default=5, help="Number of pages trained on per epoch")
+    parser.add_argument("--pages_per_epoch", type = int, default=10, help="Number of pages trained on per epoch")
 
     # Include wallet and logging arguments from bittensor
     bt.wallet.add_args(parser)

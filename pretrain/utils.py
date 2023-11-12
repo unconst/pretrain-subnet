@@ -127,7 +127,7 @@ def load_metadata_for_uid( uid: int ):
             with open(os.path.join(model_dir, 'metadata.json'), 'r') as f: 
                 meta = json.load(f)
         except Exception as e:
-            bt.logging.trace(f'Failed Metadata: uid:{uid}, no file under path:{model_dir}')
+            # bt.logging.trace(f'Failed Metadata: uid:{uid}, no file under path:{model_dir}')
             return None
         if 'version' not in meta or 'timestamp' not in meta or 'runid' not in meta:
             bt.logging.trace(f'Failed Metadata: uid:{uid}, metadata file corrupted.')
