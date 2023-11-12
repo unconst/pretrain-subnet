@@ -28,6 +28,7 @@ import random
 import argparse
 import pretrain
 import traceback
+import threading
 import bittensor as bt
 from tqdm import tqdm
 from typing import Dict, List
@@ -105,21 +106,27 @@ class Validator:
         self.global_step = 0
         self.last_epoch = self.metagraph.block.item()
         self.last_update_check = {}
-        self.shouldeval = { uid: uid in self.metagraph.I.topk(3).indices.tolist() for uid in self.metagraph.uids.tolist()  }
+        self.shouldeval = { uid: uid in self.metagraph.I.topk(10).indices.tolist() for uid in self.metagraph.uids.tolist()  }
         self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
+
+        # == Initialize the update thread ==
+        self.stop_event = threading.Event()
+        self.update_thread = threading.Thread(target=self.update_models, daemon=True)
+        self.update_thread.start()
+
+    def __del__(self):
+        self.stop_event.set()
+        self.update_thread.join()
 
     def update_models( self ):
-        return
-        # Go through sorted metadata, if the update interval has passed, update the model.
-        self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
-        pbar = tqdm( self.metadata.items(), desc="Updating", leave=False)
-
-        # Iterate through models checking to see if we should attempt and update.
-        for uid, meta in pbar:
-            pbar.set_description(f"Updating uid: {uid}")
-            if meta == None or time.time() - meta['last_update'] >= UPDATE_TIMEOUT:
-                pretrain.utils.update_model_for_uid( uid, self.metagraph )
-                self.shouldeval[ uid ] = True
+        while not self.stop_event.is_set():
+            # Go through sorted metadata, if the update interval has passed, update the model.
+            self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
+            for uid, meta in self.metadata.items():
+                if self.stop_event.is_set(): return
+                if meta == None or time.time() - meta['last_update'] >= UPDATE_TIMEOUT:
+                    pretrain.utils.update_model_for_uid( uid, self.metagraph )
+                    self.shouldeval[ uid ] = True
 
     def compute_losses_per_page( self, uid, batches_per_page: Dict[int, List[torch.Tensor]], pbar=None) -> Dict[int, List[float]]:
 
@@ -376,7 +383,6 @@ class Validator:
                 # Init a new dict for counters.
                 self.wins_per_epoch = {}
                 self.losses_per_epoch = {}
-                self.update_models()
             
                 while self.metagraph.block.item() - self.last_epoch < self.config.blocks_per_epoch:
                     self.run_step()
