@@ -114,11 +114,11 @@ class Validator:
         self.init_wandb()
 
         # === Running args ===
+        self.weights = torch.zeros_like(self.metagraph.S)
         self.epoch_step = 0 
         self.global_step = 0
         self.last_epoch = self.metagraph.block.item()
         self.last_update_check = {}
-        self.shouldeval = { uid: uid in self.metagraph.I.topk(10).indices.tolist() for uid in self.metagraph.uids.tolist()  }
         self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
 
         # == Initialize the update thread ==
@@ -138,7 +138,6 @@ class Validator:
                 if self.stop_event.is_set(): return
                 if meta == None or time.time() - meta['last_update'] >= UPDATE_TIMEOUT:
                     pretrain.utils.update_model_for_uid( uid, self.metagraph )
-                    self.shouldeval[ uid ] = True
 
     def compute_losses_per_page( self, uid, batches_per_page: Dict[int, List[torch.Tensor]], pbar=None) -> Dict[int, List[float]]:
 
@@ -197,7 +196,6 @@ class Validator:
 
             Parameters:
             - wins_per_epoch (dict): A dictionary to record the number of wins per UID.
-            - losses_per_epoch (dict): A dictionary to record all losses in epoch.
             - metagraph (object): An object representing the meta information of models.
             - wandb_step (int): The current step number for logging in weights and biases.
 
@@ -208,8 +206,8 @@ class Validator:
         # Get list of valid uids for step, valid uids must not be blacklisted 
         # and have a valid meta.
         uids = []
-        for uid, meta in self.metadata.items():
-            if meta != None and self.shouldeval[uid]: 
+        for uid in random.choices( list( self.metadata.keys() ), k = 10 ):
+            if self.metadata[ uid ] != None:
                 uids.append( uid ) 
         bt.logging.success( f'Runnning step with uids: {uids}')
 
@@ -238,10 +236,6 @@ class Validator:
                 losses = losses_per_page_per_uid[ uid_i ][ page_j ]
                 average_loss = sum(losses)/len(losses)
                 average_loss_per_uid_per_page[ uid_i ][ page_j ] = average_loss
-                if uid_i in self.losses_per_epoch:
-                    self.losses_per_epoch[ uid_i ].append(average_loss)
-                else:
-                    self.losses_per_epoch[ uid_i ] = [average_loss]
 
         # Compute best average loss
         best_average_loss = math.inf
@@ -252,7 +246,7 @@ class Validator:
                 best_average_loss = average_loss
                 best_average_loss_uid = uid_i
 
-        # Compute wins.
+        # Win function.
         def better( i, j, p, b ):
             il = losses_per_page_per_uid[ i ][ p ][ b ]
             jl = losses_per_page_per_uid[ j ][ p ][ b ]
@@ -263,6 +257,7 @@ class Validator:
             if il < jl: return True
             else: return False
 
+        # Compute wins this step.
         wins = { uid: 0 for uid in uids }
         win_rate = { uid: 0 for uid in uids }
         for i in uids:
@@ -273,18 +268,14 @@ class Validator:
                         wins[ i ] += 1 if better( i, j, p, b ) else 0
                         total_matches += 1
             win_rate[ i ] = wins[ i ] / total_matches
-            self.wins_per_epoch[ i ] = self.wins_per_epoch.get( i, 0 ) + wins[ i ]
-
-        # Uids with less than 50% win rate will be passed on the
-        # next run.
-        for i in uids:
-            if win_rate[i] < 0.5: 
-                self.shouldeval[i] = False
-
-        # Compute weights.
-        print (self.wins_per_epoch[ i ])
-        self.weights = self.compute_weights()
-        print( self.weights )
+   
+        # Compute and update weights.
+        temperature = 0.05
+        step_weights = torch.tensor([ win_rate[ uid ] for uid in uids ], dtype=torch.float32)
+        softmax_step_weights = torch.softmax( step_weights / temperature, dim=0 )
+        for i, uid in enumerate( uids ):
+            self.weights[ uid ] = softmax_step_weights[ i ]
+        self.weights /= self.weights.sum()
 
         # Build step log
         step_log = {
@@ -295,10 +286,7 @@ class Validator:
             'best_average_loss_uid': best_average_loss_uid,
             'uid_data': {}
         }
-        _, sorted_uids = self.weights.topk( k = len(uids))
-        print (sorted_uids)
-        for uid in sorted_uids.tolist():
-            print ( uid )
+        for uid in uids:
             try:
                 average_losses = [average_loss_per_uid_per_page[uid][pagek] for pagek in pages]
                 average_loss = sum(average_losses) / len(average_losses)
@@ -320,20 +308,18 @@ class Validator:
         table.add_column("average_loss", style="magenta")
         table.add_column("win_rate", style="magenta")
         table.add_column("win_total", style="magenta")
+        table.add_column("weights", style="magenta")
         table.add_column("last_update", style="magenta")
         table.add_column("timestamp", style="magenta")
-        table.add_column("wins_per_epoch", style="magenta")
-        table.add_column("blacklist", style="magenta")
         for uid in uids:
             table.add_row(
                 str(uid), 
                 str(step_log['uid_data'][ str(uid) ]['average_loss']), 
                 str(step_log['uid_data'][ str(uid) ]['win_rate']),
                 str(step_log['uid_data'][ str(uid) ]['win_total']),
-                str(step_log['uid_data'][ str(uid) ]['last_update']),
-                str(step_log['uid_data'][ str(uid) ]['timestamp']),
-                str( self.wins_per_epoch[uid] ),
-                str( not self.shouldeval[ uid ]),
+                str( self.weights[uid].item() ),
+                str( step_log['uid_data'][ str(uid) ]['last_update']),
+                str( step_log['uid_data'][ str(uid) ]['timestamp']),
             )
         console = Console()
         console.print(table)
@@ -350,21 +336,9 @@ class Validator:
         }
         if self.config.wandb.on: wandb.log({ **graphed_data, "original_format_json": original_format_json}, step=self.global_step)
 
-    def compute_weights( self ) -> torch.Tensor:
-        weights = torch.zeros_like( self.metagraph.S )
-        for uid in self.metagraph.uids.tolist():
-            weights[ uid ] = self.wins_per_epoch.get( uid, 0 )
-        weights -= torch.max( weights )
-        weights = torch.softmax( weights, 0)
-        return weights
-
     def run(self):
         while True:
-            try:
-                # Init a new dict for counters.
-                self.wins_per_epoch = {}
-                self.losses_per_epoch = {}
-            
+            try:            
                 while self.metagraph.block.item() - self.last_epoch < self.config.blocks_per_epoch:
                     self.run_step()
                     self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
