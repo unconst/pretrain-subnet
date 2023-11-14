@@ -48,7 +48,7 @@ class Validator:
         parser.add_argument( '--wandb.off', dest = 'wandb.on', action='store_false', help='Turn off wandb logging.' )
         parser.add_argument( '--blocks_per_epoch', type=int, default=360, help='Number of blocks to wait before setting weights.' )
         parser.add_argument( '--pages_per_eval', type=int, default=3, help='Number of pages used to eval each step.' )
-        parser.add_argument( '--sample_n', type=int, default=10, help='Number of uids to eval each step.' )
+        parser.add_argument( '--sample_n', type=int, default=256, help='Number of uids to eval each step.' )
         bt.subtensor.add_args(parser)
         bt.logging.add_args(parser)
         bt.wallet.add_args(parser)
@@ -301,11 +301,11 @@ class Validator:
         for uid in uids:
             table.add_row(
                 str(uid), 
-                str(step_log['uid_data'][ str(uid) ]['average_loss']), 
-                str(step_log['uid_data'][ str(uid) ]['win_rate']),
+                str( round(step_log['uid_data'][ str(uid) ]['average_loss'], 4)), 
+                str( round(step_log['uid_data'][ str(uid) ]['win_rate'], 4)),
                 str(step_log['uid_data'][ str(uid) ]['win_total']),
                 str( round(self.weights[uid].item(), 4) ),
-                str( step_log['uid_data'][ str(uid) ]['last_update']),
+                str( round(step_log['uid_data'][ str(uid) ]['last_update'], 0)),
                 str( step_log['uid_data'][ str(uid) ]['timestamp']),
             )
         console = Console()
@@ -317,7 +317,7 @@ class Validator:
         table.add_column("weight", style="magenta")
         for index, weight in list(zip(ui.tolist(), ws.tolist())):
             if weight > 0.001:
-                table.add_row(str(index), str(weight))
+                table.add_row(str(index), str(round(weight, 4)))
         console = Console()
         console.print(table)
 
