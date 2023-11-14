@@ -109,7 +109,7 @@ class Validator:
         self.dendrite = bt.dendrite( wallet = self.wallet )
         self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
         torch.backends.cudnn.benchmark = True
-        if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys: raise Exception("You are not registered. Use `btcli s recycle_register` to register.")
+        if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys: raise Exception("You are not registered. Use `btcli s register --netuid 9` to register.")
         self.uid = self.metagraph.hotkeys.index( self.wallet.hotkey.ss58_address )
         bt.logging.success( f'You are registered with address: {self.wallet.hotkey.ss58_address} and uid: {self.uid}' )
         self.init_wandb()
