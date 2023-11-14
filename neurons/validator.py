@@ -73,7 +73,7 @@ class Validator:
             self.config.hotkey = self.wallet.hotkey.ss58_address
             self.config.run_name = run_name
             self.config.type = "validator"
-            wandb_run =  wandb.init(
+            self.wandb_run =  wandb.init(
                 name = run_name,
                 anonymous = "allow",
                 reinit = False,
@@ -84,7 +84,7 @@ class Validator:
             )
             # Sign wandb run.
             wandb.init( project = pretrain.WANDB_PROJECT, entity="opentensor-dev" )
-            self.config.signature = self.wallet.hotkey.sign( wandb_run.id.encode() ).hex()
+            self.config.signature = self.wallet.hotkey.sign( self.wandb_run.id.encode() ).hex()
             wandb.config.update( self.config, allow_val_change=True )
 
     def __init__(self ):
