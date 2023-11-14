@@ -241,7 +241,6 @@ class Validator:
                 best_average_loss = average_loss
                 best_average_loss_uid = uid_i
 
-
         # Compute wins.
         def better( i, j, p, b ):
             il = losses_per_page_per_uid[ i ][ p ][ b ]
@@ -259,7 +258,7 @@ class Validator:
             total_matches = 0
             for j in uids:
                 for p in pages:
-                    for b, _ in enumerate( batches_per_page[page_j] ):
+                    for b, _ in enumerate( batches_per_page[ p ] ):
                         wins[i] += 1 if better( i, j, p, b ) else 0
                         total_matches += 1
             win_rate[ i ] = wins[ i ] / total_matches
