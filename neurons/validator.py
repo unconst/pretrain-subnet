@@ -47,6 +47,7 @@ class Validator:
         parser.add_argument( "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
         parser.add_argument( '--wandb.off', dest = 'wandb.on', action='store_false', help='Turn off wandb logging.' )
         parser.add_argument( '--blocks_per_epoch', type=int, default=360, help='Number of blocks to wait before setting weights.' )
+        parser.add_argument( '--pages_per_eval', type=int, default=3, help='Number of pages used to eval each step.' )
         bt.subtensor.add_args(parser)
         bt.logging.add_args(parser)
         bt.wallet.add_args(parser)
@@ -76,13 +77,13 @@ class Validator:
                 name = run_name,
                 anonymous = "allow",
                 reinit = False,
-                project = 'openpretraining',
+                project = 'pretraining-subnet',
                 entity = 'opentensor-dev',
                 config = self.config,
                 dir = self.config.full_path,
             )
             # Sign wandb run.
-            wandb.init( project = "openpretraining", entity="opentensor-dev" )
+            wandb.init( project = pretrain.WANDB_PROJECT, entity="opentensor-dev" )
             self.config.signature = self.wallet.hotkey.sign( wandb_run.id.encode() ).hex()
             wandb.config.update( self.config, allow_val_change=True )
 
@@ -202,7 +203,7 @@ class Validator:
         bt.logging.success( f'Runnning step with uids: {uids}')
 
         # Generate random pages for evaluation and prepare batches for each page
-        pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages)]
+        pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(self.config.pages_per_eval)]
         batches_per_page = {
             page: list(pretrain.dataset.SubsetFalconLoader(
                 batch_size = pretrain.batch_size,
@@ -240,42 +241,30 @@ class Validator:
                 best_average_loss = average_loss
                 best_average_loss_uid = uid_i
 
-        # Function returns True if this uid has lowest loss across all other uids on this 
-        # batch, in case of ties takes uid with better timestamp.
-        # error was that it was returning as soon as it lost, and not checking against all other uids
-        def is_winning_loss_with_timestamps(this_uid, page_j, batch_k):
-            this_loss = losses_per_page_per_uid[this_uid][page_j][batch_k]
-            this_timestamp = self.metadata[this_uid]['timestamp']
 
-            for other_uid in uids:
-                if other_uid != this_uid:
-                    other_loss = losses_per_page_per_uid[other_uid][page_j][batch_k]
-                    other_timestamp = self.metadata[other_uid]['timestamp']
+        # Compute wins.
+        def better( i, j, p, b ):
+            il = losses_per_page_per_uid[ i ][ p ][ b ]
+            jl = losses_per_page_per_uid[ j ][ p ][ b ]
+            it = self.metadata[ i ]['timestamp']
+            jt = self.metadata[ i ]['timestamp']
+            il = (1 - 0.03) * il if it < jt else il
+            jl = (1 - 0.03) * jl if it < jt else jl
+            if il < jl: return True
+            else: return False
 
-                    # Adjusting the losses based on timestamp
-                    adjusted_this_loss = this_loss * (1 - 0.03) if this_timestamp < other_timestamp else this_loss
-                    adjusted_other_loss = other_loss * (1 - 0.03) if other_timestamp < this_timestamp else other_loss
-
-                    # If this_uid's loss is greater than any other_uid's loss, return False
-                    if adjusted_this_loss > adjusted_other_loss:
-                        return False
-
-            # Return True only if this_uid's loss is less than all other UIDs' losses
-            return True
-
-        # Compute total wins per uid per page 
-        total_wins_per_uid_per_page = { uid: { page: 0 for page in pages } for uid in uids }
-        for this_uid in uids:
-            self.wins_per_epoch[ this_uid ] = 0
-            for page_j in pages:
-                for batch_k, _ in enumerate( batches_per_page[page_j] ):
-                    if is_winning_loss_with_timestamps( this_uid, page_j, batch_k ):
-                        total_wins_per_uid_per_page[ this_uid ][ page_j ] += 1
-                        self.wins_per_epoch[ this_uid ] += 1 
-
-            # We will not recheck if a miner has zero wins until the model is reupdated.
-            if self.wins_per_epoch[ this_uid ] == 0:
-                self.shouldeval[ this_uid ] = False
+        wins = { uid: 0 for uid in uids }
+        win_rate = { uid: 0 for uid in uids }
+        for i in uids:
+            total_matches = 0
+            for j in uids:
+                for p in pages:
+                    for b, _ in enumerate( batches_per_page[page_j] ):
+                        wins[i] += 1 if better( i, j, p, b ) else 0
+                        total_matches += 1
+            win_rate[ i ] = wins[ i ] / total_matches
+            self.wins_per_epoch[i] = self.wins_per_epoch.get(i, 0) + wins[i]
+        total_matches /= 2
 
         # Build step log
         step_log = {
@@ -290,8 +279,6 @@ class Validator:
             try:
                 average_losses = [average_loss_per_uid_per_page[uid][pagek] for pagek in pages]
                 average_loss = sum(average_losses) / len(average_losses)
-                win_rate = sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / total_batches
-                win_total = sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ])
                 step_log['uid_data'][ str(uid) ] = {
                     'uid': uid,
                     'runid': self.metadata[ uid ]['runid'],
@@ -299,8 +286,8 @@ class Validator:
                     'last_update': self.metadata[ uid ]['last_update'],
                     'average_losses': average_losses,
                     'average_loss': average_loss,
-                    'win_rate': win_rate,
-                    'win_total': win_total,
+                    'win_rate': win_rate[ uid ],
+                    'win_total': wins[ uid ],
                 }
 
             except:
@@ -312,6 +299,7 @@ class Validator:
         table.add_column("win_total", style="magenta")
         table.add_column("last_update", style="magenta")
         table.add_column("timestamp", style="magenta")
+        table.add_column("wins_per_epoch", style="magenta")
         table.add_column("blacklist", style="magenta")
         for uid in uids:
             table.add_row(
@@ -321,7 +309,8 @@ class Validator:
                 str(step_log['uid_data'][ str(uid) ]['win_total']),
                 str(step_log['uid_data'][ str(uid) ]['last_update']),
                 str(step_log['uid_data'][ str(uid) ]['timestamp']),
-                str(not self.shouldeval[ this_uid ]),
+                str( self.wins_per_epoch[uid] ),
+                str( not self.shouldeval[ uid ]),
             )
         console = Console()
         console.print(table)
@@ -369,7 +358,7 @@ class Validator:
         positive_weights = [(uid, weight) for uid, weight in sorted_weights if weight > 0]
         # Limit to top 20 (or less if there are not enough positive weights)
         positive_weights = positive_weights[:20]
-        table = Table(title="Top10 Weights")
+        table = Table(title="Top Weights")
         table.add_column("uid", justify="right", style="cyan", no_wrap=True)
         table.add_column("weight", style="magenta")
         for uid, value in positive_weights:

@@ -60,7 +60,7 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
     api = wandb.Api( timeout = 100 )
     expected_hotkey = metagraph.hotkeys[uid]
     runs = api.runs(
-        "opentensor-dev/openpretraining",
+        f"opentensor-dev/{pretrain.WANDB_PROJECT}",
         filters={
             "config.version": pretrain.__version__,
             "config.type": "miner",

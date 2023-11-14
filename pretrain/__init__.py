@@ -25,6 +25,7 @@ __spec_version__ = (
     + (1 * int(version_split[2]))
 )
 NETUID = 9
+WANDB_PROJECT = 'pretraining-subnet'
 
 best_uid_epsilon = 0.03
 per_loss_epsilon = 0.05
