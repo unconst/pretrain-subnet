@@ -48,6 +48,7 @@ class Validator:
         parser.add_argument( '--wandb.off', dest = 'wandb.on', action='store_false', help='Turn off wandb logging.' )
         parser.add_argument( '--blocks_per_epoch', type=int, default=360, help='Number of blocks to wait before setting weights.' )
         parser.add_argument( '--pages_per_eval', type=int, default=3, help='Number of pages used to eval each step.' )
+        parser.add_argument( '--sample_n', type=int, default=10, help='Number of uids to eval each step.' )
         bt.subtensor.add_args(parser)
         bt.logging.add_args(parser)
         bt.wallet.add_args(parser)
@@ -203,10 +204,9 @@ class Validator:
         # Load metadata.
         self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
 
-        # Get list of valid uids for step, valid uids must not be blacklisted 
-        # and have a valid meta.
+        # Select N random uids to sample.
         uids = []
-        while len(uids) < 10:
+        while len(uids) < self.config.sample_n:
             uid = random.choice( list( self.metadata.keys() ) )
             if uid not in uids and self.metadata[ uid ] != None:
                 uids.append( uid )
@@ -221,7 +221,7 @@ class Validator:
                 pages = [page]
             )) for page in pages
         }
-        total_batches = sum([ len(b) for b in batches_per_page.values()] )
+
         # Compute losses per page
         bt.logging.debug(f"computing losses on {uids}")
         losses_per_page_per_uid = { uid: None for uid in uids }
@@ -274,8 +274,9 @@ class Validator:
         temperature = 0.05
         step_weights = torch.tensor([ win_rate[ uid ] for uid in uids ], dtype=torch.float32)
         softmax_step_weights = torch.softmax( step_weights / temperature, dim=0 )
+        alpha = 0.7
         for i, uid in enumerate( uids ):
-            self.weights[ uid ] = softmax_step_weights[ i ]
+            self.weights[ uid ] = alpha * softmax_step_weights[ i ] + ( 1 - alpha ) * self.weights[ uid ]
         self.weights /= self.weights.sum()
 
         # Build step log
@@ -322,6 +323,16 @@ class Validator:
                 str( step_log['uid_data'][ str(uid) ]['last_update']),
                 str( step_log['uid_data'][ str(uid) ]['timestamp']),
             )
+        console = Console()
+        console.print(table)
+
+        ws, ui = self.weights.topk( len( self.weights ))
+        table = Table(title="Weights > 0.001")
+        table.add_column("uid", justify="right", style="cyan", no_wrap=True)
+        table.add_column("weight", style="magenta")
+        for index, weight in list(zip(ui.tolist(), ws.tolist())):
+            if weight > 0.001:
+                table.add_row(str(index), str(weight))
         console = Console()
         console.print(table)
 
