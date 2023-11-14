@@ -206,9 +206,10 @@ class Validator:
         # Get list of valid uids for step, valid uids must not be blacklisted 
         # and have a valid meta.
         uids = []
-        for uid in random.choices( list( self.metadata.keys() ), k = 10 ):
-            if self.metadata[ uid ] != None:
-                uids.append( uid ) 
+        while len(uids) < 10:
+            uid = random.choice( list( self.metadata.keys() ) )
+            if uid not in uids and self.metadata[ uid ] != None:
+                uids.append( uid )
         bt.logging.success( f'Runnning step with uids: {uids}')
 
         # Generate random pages for evaluation and prepare batches for each page
