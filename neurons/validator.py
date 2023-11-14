@@ -139,9 +139,9 @@ class Validator:
                 if self.stop_event.is_set(): return
                 if meta == None or time.time() - meta['last_update'] >= UPDATE_TIMEOUT:
                     pretrain.utils.update_model_for_uid( uid, self.metagraph )
+                time.sleep( 1 )
 
     def compute_losses_per_page( self, uid, batches_per_page: Dict[int, List[torch.Tensor]], pbar=None) -> Dict[int, List[float]]:
-
         try:
             # Load the pre-trained model from the specified path
             model_path = self.metadata[uid]['model_path']
@@ -187,28 +187,14 @@ class Validator:
         
     def run_step( self ):
         """
-            Executes a single validation step.
-            - 1. Updates local models using wandb data.
-            - 2. Generates random pages from Falcon Refined web for evaluation.
-            - 3. Computes losses for each batch and each UID to attain losses per batch per page
-            - 4. Determines the winning UID based on lowest average loss per batch.
-            - 5. Logs win percentages for each UID to wandb and screen.
-            - 6. Logs step results and updates weights and biases (wandb) if configured.
-
-            Parameters:
-            - wins_per_epoch (dict): A dictionary to record the number of wins per UID.
-            - metagraph (object): An object representing the meta information of models.
-            - wandb_step (int): The current step number for logging in weights and biases.
-
         """
         # Load metadata.
         self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
 
         # Select N random uids to sample.
         uids = []
-        while len(uids) < self.config.sample_n:
-            uid = random.choice( list( self.metadata.keys() ) )
-            if uid not in uids and self.metadata[ uid ] != None:
+        for uid in self.metadata.keys():
+            if self.metadata[ uid ] != None:
                 uids.append( uid )
         bt.logging.success( f'Runnning step with uids: {uids}')
 
@@ -274,9 +260,8 @@ class Validator:
         temperature = 0.05
         step_weights = torch.tensor([ win_rate[ uid ] for uid in uids ], dtype=torch.float32)
         softmax_step_weights = torch.softmax( step_weights / temperature, dim=0 )
-        alpha = 0.7
         for i, uid in enumerate( uids ):
-            self.weights[ uid ] = alpha * softmax_step_weights[ i ] + ( 1 - alpha ) * self.weights[ uid ]
+            self.weights[ uid ] = softmax_step_weights[ i ] 
         self.weights /= self.weights.sum()
 
         # Build step log

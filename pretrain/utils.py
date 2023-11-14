@@ -86,13 +86,8 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
             metadata_file = os.path.join( models_dir, 'metadata.json' )
             model_path = os.path.join( models_dir, 'model.pth' )
             timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-            current_meta = load_metadata_for_uid( uid )
-
-            # Check to see if model needs updating.
-            if current_meta != None and current_meta.get('timestamp', -1) == timestamp:
-                bt.logging.trace( f'Model is up to date: uid: {uid}, under path: {models_dir}, with timestamp: { timestamp }')
-                return
-            
+            current_meta = load_metadata_for_uid( uid )  
+                      
             # The run is valid, lets update it
             os.makedirs( models_dir , exist_ok=True)
             with open(metadata_file, 'w') as f: 
@@ -105,7 +100,13 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
                         'blacklisted': False,
                         'last_update': time.time()
                     }, f)
-            model_artifact.download( replace=True, root=models_dir)
+
+            # Check to see if model needs updating.
+            if current_meta != None and current_meta.get('timestamp', -1) == timestamp:
+                bt.logging.trace( f'Model is up to date: uid: {uid}, under path: {models_dir}, with timestamp: { timestamp }')
+                return
+            else:
+                model_artifact.download( replace=True, root=models_dir)
             bt.logging.success( f'Updated model: uid: {uid}, under path: {models_dir}, with timestamp: { timestamp }')
             return 
 
