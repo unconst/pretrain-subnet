@@ -68,13 +68,26 @@ class Validator:
 
     def init_wandb(self):
         if self.config.wandb.on:
-            run_name = f'validator-{self.uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
+            import json
+            run_id_file = self.config.full_path + '/run.json'
+            try:
+                with open( run_id_file, 'r' ) as f:
+                    self.run_id = json.load( f )['WANDB_RUN_ID']
+                    bt.logging.success(f'Continuing run, loaded run_id: {self.run_id}')
+            except Exception as e: 
+                self.run_id = wandb.util.generate_id()
+                bt.logging.success(f'First run, creating new run_id: {self.run_id} {e}')
+            with open( run_id_file, 'w' ) as f:
+                json.dump({'WANDB_RUN_ID': self.run_id}, f)
+                bt.logging.success(f'Saved: {self.run_id} to file.')
+            self.run_name = f'validator-{self.uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
             self.config.uid = self.uid
             self.config.hotkey = self.wallet.hotkey.ss58_address
-            self.config.run_name = run_name
+            self.config.run_name = self.run_name
             self.config.type = "validator"
-            self.wandb_run =  wandb.init(
-                name = run_name,
+            self.wandb_run = wandb.init(
+                id = self.run_id,
+                name = self.run_name,
                 anonymous = "allow",
                 reinit = False,
                 project = 'pretraining-subnet',
@@ -82,8 +95,6 @@ class Validator:
                 config = self.config,
                 dir = self.config.full_path,
             )
-            # Sign wandb run.
-            wandb.init( project = pretrain.WANDB_PROJECT, entity="opentensor-dev" )
             self.config.signature = self.wallet.hotkey.sign( self.wandb_run.id.encode() ).hex()
             wandb.config.update( self.config, allow_val_change=True )
 
@@ -259,11 +270,21 @@ class Validator:
             for j in uids:
                 for p in pages:
                     for b, _ in enumerate( batches_per_page[ p ] ):
-                        wins[i] += 1 if better( i, j, p, b ) else 0
+                        wins[ i ] += 1 if better( i, j, p, b ) else 0
                         total_matches += 1
             win_rate[ i ] = wins[ i ] / total_matches
-            self.wins_per_epoch[i] = self.wins_per_epoch.get(i, 0) + wins[i]
-        total_matches /= 2
+            self.wins_per_epoch[ i ] = self.wins_per_epoch.get( i, 0 ) + wins[ i ]
+
+        # Uids with less than 50% win rate will be passed on the
+        # next run.
+        for i in uids:
+            if win_rate[i] < 0.5: 
+                self.shouldeval[i] = False
+
+        # Compute weights.
+        print (self.wins_per_epoch[ i ])
+        self.weights = self.compute_weights()
+        print( self.weights )
 
         # Build step log
         step_log = {
@@ -274,7 +295,10 @@ class Validator:
             'best_average_loss_uid': best_average_loss_uid,
             'uid_data': {}
         }
-        for uid in uids:
+        _, sorted_uids = self.weights.topk( k = len(uids))
+        print (sorted_uids)
+        for uid in sorted_uids.tolist():
+            print ( uid )
             try:
                 average_losses = [average_loss_per_uid_per_page[uid][pagek] for pagek in pages]
                 average_loss = sum(average_losses) / len(average_losses)
@@ -287,8 +311,8 @@ class Validator:
                     'average_loss': average_loss,
                     'win_rate': win_rate[ uid ],
                     'win_total': wins[ uid ],
+                    'weight': self.weights[ uid ].item()
                 }
-
             except:
                 continue
         table = Table(title="Step")
@@ -326,44 +350,13 @@ class Validator:
         }
         if self.config.wandb.on: wandb.log({ **graphed_data, "original_format_json": original_format_json}, step=self.global_step)
 
-    def set_weights( self ):
-        """
-            Completes the validation epoch determining the weights that need to be set on chain
-            and firing off the extrinsic. 
-
-            Parameters:
-            - wins_per_epoch (dict): A dictionary to record the number of wins per UID.
-            - wandb_step (int): The current step number for logging in weights and biases.
-        """
-        # === Compute weights from wins ===
-        weights = torch.zeros( len(self.metagraph.hotkeys) )
-        add = 0.05
-        total_add = len( list( self.wins_per_epoch.keys() ) ) * add
-        total_wins = sum(self.wins_per_epoch.values())  # Sum of all wins
-        for uid in self.wins_per_epoch:
-            weights[uid] = (self.wins_per_epoch[uid] + add) / (total_wins + total_add)
-
-        # === Set weights ===
-        self.subtensor.set_weights(
-            netuid = pretrain.NETUID,
-            wallet = self.wallet,
-            uids = self.metagraph.uids,
-            weights = weights,
-            wait_for_inclusion=False,
-        )
-  
-        sorted_weights = sorted(enumerate(weights, start=0), key=lambda x: x[1], reverse=True)
-        # Filter to keep only positive weights
-        positive_weights = [(uid, weight) for uid, weight in sorted_weights if weight > 0]
-        # Limit to top 20 (or less if there are not enough positive weights)
-        positive_weights = positive_weights[:20]
-        table = Table(title="Top Weights")
-        table.add_column("uid", justify="right", style="cyan", no_wrap=True)
-        table.add_column("weight", style="magenta")
-        for uid, value in positive_weights:
-            table.add_row(str(uid), str(value.item()))
-        console = Console()
-        console.print(table)
+    def compute_weights( self ) -> torch.Tensor:
+        weights = torch.zeros_like( self.metagraph.S )
+        for uid in self.metagraph.uids.tolist():
+            weights[ uid ] = self.wins_per_epoch.get( uid, 0 )
+        weights -= torch.max( weights )
+        weights = torch.softmax( weights, 0)
+        return weights
 
     def run(self):
         while True:
@@ -379,7 +372,13 @@ class Validator:
                     self.global_step += 1
 
                 # Finish epoch.
-                self.set_weights( )
+                self.subtensor.set_weights(
+                    netuid = pretrain.NETUID,
+                    wallet = self.wallet,
+                    uids = self.metagraph.uids,
+                    weights = self.weights,
+                    wait_for_inclusion=False,
+                )
                 self.last_epoch = self.metagraph.block.item()
                 self.epoch_step += 1
 
