@@ -318,7 +318,7 @@ class Validator:
                 str(step_log['uid_data'][ str(uid) ]['average_loss']), 
                 str(step_log['uid_data'][ str(uid) ]['win_rate']),
                 str(step_log['uid_data'][ str(uid) ]['win_total']),
-                str( self.weights[uid].item() ),
+                str( round(self.weights[uid].item(), 4) ),
                 str( step_log['uid_data'][ str(uid) ]['last_update']),
                 str( step_log['uid_data'][ str(uid) ]['timestamp']),
             )
