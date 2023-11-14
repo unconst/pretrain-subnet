@@ -59,7 +59,7 @@ def get_config():
     parser.add_argument("--num_epochs", type = int, default = -1, help="Number of training epochs (-1 is infinite)")
 
     # Training lr.
-    parser.add_argument("--lr", type = float, default = 0.000001, help="Learning rate.")
+    parser.add_argument("--lr", type = float, default = 0.00001, help="Learning rate.")
 
     # Training batch size
     parser.add_argument("--bs", type = int, default = pretrain.batch_size, help="Batch size")
