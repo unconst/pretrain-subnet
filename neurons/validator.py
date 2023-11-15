@@ -109,7 +109,7 @@ class Validator:
         self.dendrite = bt.dendrite( wallet = self.wallet )
         self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
         torch.backends.cudnn.benchmark = True
-        if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys: raise Exception("You are not registered. Use `btcli s recycle_register` to register.")
+        if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys: raise Exception("You are not registered. Use `btcli s register` to register.")
         self.uid = self.metagraph.hotkeys.index( self.wallet.hotkey.ss58_address )
         bt.logging.success( f'You are registered with address: {self.wallet.hotkey.ss58_address} and uid: {self.uid}' )
         self.init_wandb()
@@ -121,6 +121,10 @@ class Validator:
         self.last_epoch = self.metagraph.block.item()
         self.last_update_check = {}
         self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
+        self.uids_to_eval = set()
+        for uid in self.metagraph.uids.tolist():
+            if uid in self.metagraph.I.topk(10)[1]:
+                self.uids_to_eval.add( uid )
 
         # == Initialize the update thread ==
         self.stop_event = threading.Event()
@@ -128,8 +132,9 @@ class Validator:
         self.update_thread.start()
 
     def __del__(self):
-        self.stop_event.set()
-        self.update_thread.join()
+        if hasattr( self, 'stop_event'):
+            self.stop_event.set()
+            self.update_thread.join()
 
     def update_models( self ):
         while not self.stop_event.is_set():
@@ -139,6 +144,7 @@ class Validator:
                 if self.stop_event.is_set(): return
                 if meta == None or time.time() - meta['last_update'] >= UPDATE_TIMEOUT:
                     pretrain.utils.update_model_for_uid( uid, self.metagraph )
+                    self.uids_to_eval.add( uid )
                 time.sleep( 1 )
 
     def compute_losses_per_page( self, uid, batches_per_page: Dict[int, List[torch.Tensor]], pbar=None) -> Dict[int, List[float]]:
@@ -151,7 +157,7 @@ class Validator:
             model.eval()  # Set the model to evaluation mode
             model.to(self.config.device)  # Move the model to the appropriate device
         except Exception as e:
-            bt.logging.debug(f"Error loading model under path {model_path} with error: {e}")
+            bt.logging.debug(f"Error loading {uid} model with error: {e}")
             inf_losses = {}
             for page, batches in batches_per_page.items():
                 inf_losses[page] = [math.inf for _ in batches]
@@ -190,10 +196,7 @@ class Validator:
         self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
 
         # Select N random uids to sample.
-        uids = []
-        for uid in self.metadata.keys():
-            if self.metadata[ uid ] != None:
-                uids.append( uid )
+        uids = [uid for uid in list( self.uids_to_eval ) if self.metadata[uid] != None]
         bt.logging.success( f'Runnning step with uids: {uids}')
 
         # Generate random pages for evaluation and prepare batches for each page
@@ -237,8 +240,10 @@ class Validator:
         def better( i, j, p, b ):
             il = losses_per_page_per_uid[ i ][ p ][ b ]
             jl = losses_per_page_per_uid[ j ][ p ][ b ]
+            if 'timestamp' not in self.metadata[ i ]: return False 
+            if 'timestamp' not in self.metadata[ j ]: return True 
             it = self.metadata[ i ]['timestamp']
-            jt = self.metadata[ i ]['timestamp']
+            jt = self.metadata[ j ]['timestamp']
             il = (1 - 0.03) * il if it < jt else il
             jl = (1 - 0.03) * jl if it < jt else jl
             if il < jl: return True
@@ -266,19 +271,8 @@ class Validator:
 
         # Blacklist bad miners
         for uid in uids:
-            if win_rate[uid] > 0.5:
-                # Open and read the metadata file
-                with open(self.metadata[uid], 'r') as file:
-                    data = json.load(file)
-
-                # Update the 'blacklisted' field
-                data['blacklisted'] = True
-
-                # Write the updated data back to the file
-                with open(self.metadata[uid], 'w') as file:
-                    json.dump(data, file, indent=4)
-
-
+            if win_rate[uid] < 0.5 and len( self.uids_to_eval ) > 10:
+                self.uids_to_eval.remove( uid )
 
         # Build step log
         step_log = {
