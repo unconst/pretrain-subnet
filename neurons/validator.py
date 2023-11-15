@@ -48,7 +48,7 @@ class Validator:
         parser.add_argument( '--wandb.off', dest = 'wandb.on', action='store_false', help='Turn off wandb logging.' )
         parser.add_argument( '--blocks_per_epoch', type=int, default=360, help='Number of blocks to wait before setting weights.' )
         parser.add_argument( '--pages_per_eval', type=int, default=3, help='Number of pages used to eval each step.' )
-        parser.add_argument( '--sample_n', type=int, default=256, help='Number of uids to eval each step.' )
+        parser.add_argument( '--sample_n', type=int, default=180, help='Number of uids to eval each step.' )
         bt.subtensor.add_args(parser)
         bt.logging.add_args(parser)
         bt.wallet.add_args(parser)
