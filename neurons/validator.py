@@ -266,7 +266,7 @@ class Validator:
 
         # Blacklist bad miners
         for uid in uids:
-            if win_rate[uid] > 0.5:
+            if win_rate[uid] < 0.5:
                 # Open and read the metadata file
                 with open(self.metadata[uid], 'r') as file:
                     data = json.load(file)
@@ -277,8 +277,6 @@ class Validator:
                 # Write the updated data back to the file
                 with open(self.metadata[uid], 'w') as file:
                     json.dump(data, file, indent=4)
-
-
 
         # Build step log
         step_log = {
