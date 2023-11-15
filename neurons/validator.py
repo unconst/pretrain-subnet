@@ -137,6 +137,8 @@ class Validator:
             self.update_thread.join()
 
     def update_models( self ):
+        # The below loop iterates across all miner uids and checks to see 
+        # if they should be updated.
         while not self.stop_event.is_set():
             # Go through sorted metadata, if the update interval has passed, update the model.
             self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
@@ -145,8 +147,7 @@ class Validator:
                 if pretrain.utils.update_model_for_uid( uid, self.metagraph ):
                     self.uids_to_eval.add( uid )
                     bt.logging.trace(f'uids to eval add: {uid}')
-                # time.sleep( UPDATE_TIMEOUT/(256*20) )
-                # time.sleep( 1 )
+                time.sleep( 10 )
 
     def compute_losses_per_page( self, uid, batches_per_page: Dict[int, List[torch.Tensor]] ) -> Dict[int, List[float]]:
         try:
@@ -194,12 +195,15 @@ class Validator:
         # Load metadata.
         self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
 
-        # Select N random uids to sample.
+        # Uids to eval is based on global uids to eval. Uids to eval is pruned every step
+        # based on the best 50% of miners with replacement when those model are updated during the
+        # update thread. uid to eval is bounded below at sample_min.
         uids = [uid for uid in list( self.uids_to_eval ) if self.metadata[uid] != None]
         random.shuffle( uids )
         bt.logging.success( f'Runnning step with uids: {uids}')
 
         # Generate random pages for evaluation and prepare batches for each page
+        # the dataset contains >900 million pages to eval over.
         pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(self.config.pages_per_eval)]
         batches_per_page = {
             page: list(pretrain.dataset.SubsetFalconLoader(
@@ -209,29 +213,30 @@ class Validator:
             )) for page in pages
         }
 
-        # Compute losses per page
+        # Compute losses per page and average losses for each uid.
         bt.logging.debug(f"computing losses on {uids}")
+        best_average_loss = math.inf
+        best_average_loss_uid = None
         losses_per_page_per_uid = { uid: None for uid in uids }
+        average_loss_per_uid_per_page = { uid: {} for uid in uids }
         for uid_i in uids:
+            # Compute losses across each batch of each page.
             losses = self.compute_losses_per_page( uid_i, batches_per_page )
             losses_per_page_per_uid[ uid_i ] = losses
 
-        # Compute average loss per page
-        average_loss_per_uid_per_page = { uid: {} for uid in uids }
-        for uid_i in uids:
+            # Compute average loss per page
             for page_j in pages:
-                losses = losses_per_page_per_uid[ uid_i ][ page_j ]
-                average_loss = sum(losses)/len(losses)
+                page_losses = losses[ page_j ]
+                average_loss = sum(page_losses)/len(page_losses)
                 average_loss_per_uid_per_page[ uid_i ][ page_j ] = average_loss
 
-        # Compute best average loss
-        best_average_loss = math.inf
-        best_average_loss_uid = None
-        for uid_i in uids:
-            average_loss = sum([ average_loss_per_uid_per_page[uid_i][page_j] for page_j in pages ] ) / len( pages )
-            if average_loss < best_average_loss:
-                best_average_loss = average_loss
+            # Compute best average loss.
+            total_average_loss = sum([ average_loss_per_uid_per_page[uid_i][page_j] for page_j in pages ] ) / len( pages )
+            if total_average_loss < best_average_loss:
+                best_average_loss = total_average_loss
                 best_average_loss_uid = uid_i
+    
+            bt.logging.debug( f'Computed loss for uid: {uid_i} with total average loss: {total_average_loss}')
 
         # Win function.
         # Determines the winner based on the epsilon adjusted loss
@@ -260,17 +265,22 @@ class Validator:
                         total_matches += 1
             win_rate[ i ] = wins[ i ] / total_matches
    
-        # Compute and update weights.
+        # Compute and update weights which is a temperatured softmax over wins.
+        alpha = 0.9
         temperature = 0.05
         step_weights = torch.tensor([ win_rate[ uid ] for uid in uids ], dtype=torch.float32)
         softmax_step_weights = torch.softmax( step_weights / temperature, dim=0 )
+        new_weights = self.weights.clone()
         for i, uid in enumerate( uids ):
-            self.weights[ uid ] = softmax_step_weights[ i ] 
-        self.weights.nan_to_num( 0.0 )
-        self.weights /= self.weights.sum()
-        self.weights.nan_to_num( 0.0 )
+            new_weights[ uid ] = softmax_step_weights[ i ] 
+        new_weights.nan_to_num( 0.0 )
+        new_weights /= new_weights.sum()
+        new_weights.nan_to_num( 0.0 )
+        self.weights = alpha * self.weights + ( 1 - alpha ) * new_weights
 
-        # Blacklist bad miners
+        # Blacklist bad miners. Here we remove uids from eval set 
+        # based on their win rate, this prunes miners down the sample min
+        # miner uids are replaced when their model is updated on wandb after a timeout.
         removed = 0
         size = len( list(self.uids_to_eval) )
         for uid in uids:
@@ -344,9 +354,12 @@ class Validator:
 
         # Create a new dictionary with the required format
         graphed_data = {
-            'uid_data': {str(uid): uid_data[str(uid)]['average_loss'] for uid in uids}
+            'uid_data': {str(uid): uid_data[str(uid)]['average_loss'] for uid in uids},
+            'weight_data': {str(uid): self.weights[uid].item() for uid in uids}
         }
-        if self.config.wandb.on: wandb.log({ **graphed_data, "original_format_json": original_format_json}, step=self.global_step)
+        if self.config.wandb.on: 
+            bt.logging.debug('Logging to Wandb')
+            self.wandb_run.log({ **graphed_data, "original_format_json": original_format_json}, step=self.global_step)
 
     def run(self):
         while True:
@@ -368,7 +381,14 @@ class Validator:
                         wait_for_inclusion=False,
                     )
                 except: pass
-                bt.logging.success(f"Successfully set weights: {self.weights}")
+                ws, ui = self.weights.topk( len( self.weights ) )
+                table = Table(title="All Weights")
+                table.add_column("uid", justify="right", style="cyan", no_wrap=True)
+                table.add_column("weight", style="magenta")
+                for index, weight in list(zip(ui.tolist(), ws.tolist())):
+                    table.add_row(str(index), str(round(weight, 4)))
+                console = Console()
+                console.print(table)
                 self.last_epoch = self.metagraph.block.item()
                 self.epoch_step += 1
 
