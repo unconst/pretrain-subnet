@@ -186,8 +186,6 @@ class Validator:
         return losses_per_page
         
     def run_step( self ):
-        """
-        """
         # Load metadata.
         self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
 
@@ -234,6 +232,8 @@ class Validator:
                 best_average_loss_uid = uid_i
 
         # Win function.
+        # Determines the winner based on the epsilon adjusted loss
+        # Models that were created earlier have a 3% decrease in loss
         def better( i, j, p, b ):
             il = losses_per_page_per_uid[ i ][ p ][ b ]
             jl = losses_per_page_per_uid[ j ][ p ][ b ]
@@ -264,6 +264,22 @@ class Validator:
             self.weights[ uid ] = softmax_step_weights[ i ] 
         self.weights /= self.weights.sum()
 
+        # Blacklist bad miners
+        for uid in uids:
+            if win_rate[uid] > 0.5:
+                # Open and read the metadata file
+                with open(self.metadata[uid], 'r') as file:
+                    data = json.load(file)
+
+                # Update the 'blacklisted' field
+                data['blacklisted'] = True
+
+                # Write the updated data back to the file
+                with open(self.metadata[uid], 'w') as file:
+                    json.dump(data, file, indent=4)
+
+
+
         # Build step log
         step_log = {
             'timestamp': time.time(),
@@ -282,6 +298,7 @@ class Validator:
                     'runid': self.metadata[ uid ]['runid'],
                     'timestamp': self.metadata[ uid ]['timestamp'],
                     'last_update': self.metadata[ uid ]['last_update'],
+                    'blacklisted': self.metadata[ uid ]['blacklisted'],
                     'average_losses': average_losses,
                     'average_loss': average_loss,
                     'win_rate': win_rate[ uid ],
