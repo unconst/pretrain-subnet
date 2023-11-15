@@ -145,7 +145,11 @@ class Validator:
                 if meta == None or time.time() - meta['last_update'] >= UPDATE_TIMEOUT:
                     if pretrain.utils.update_model_for_uid( uid, self.metagraph ):
                         self.uids_to_eval.add( uid )
+<<<<<<< Updated upstream
                 time.sleep( UPDATE_TIMEOUT/(256/4) )
+=======
+                time.sleep( UPDATE_TIMEOUT/256 )
+>>>>>>> Stashed changes
 
     def compute_losses_per_page( self, uid, batches_per_page: Dict[int, List[torch.Tensor]], pbar=None) -> Dict[int, List[float]]:
         try:
@@ -274,12 +278,13 @@ class Validator:
         removed = 0
         size = len( list(self.uids_to_eval) )
         for uid in uids:
+<<<<<<< HEAD
             if size - removed <= self.config.sample_min: break
             if win_rate[uid] < 0.5:
+=======
+            if win_rate[uid] < 0.5 and len( self.uids_to_eval ) > 10:
+>>>>>>> ad6c50932df6703fe0aac04251ea2f662124025e
                 self.uids_to_eval.remove( uid )
-                removed += 1
-                print('removed', uid )
-        print ( len( list(self.uids_to_eval) ))
 
         # Build step log
         step_log = {
@@ -368,6 +373,7 @@ class Validator:
                     weights = self.weights,
                     wait_for_inclusion=False,
                 )
+                bt.logging.success(f"Successfully set weights: {self.weights}")
                 self.last_epoch = self.metagraph.block.item()
                 self.epoch_step += 1
 
