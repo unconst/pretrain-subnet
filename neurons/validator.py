@@ -269,7 +269,9 @@ class Validator:
         softmax_step_weights = torch.softmax( step_weights / temperature, dim=0 )
         for i, uid in enumerate( uids ):
             self.weights[ uid ] = softmax_step_weights[ i ] 
+        self.weights.nan_to_num( 0.0 )
         self.weights /= self.weights.sum()
+        self.weights.nan_to_num( 0.0 )
 
         # Blacklist bad miners
         removed = 0
@@ -360,6 +362,7 @@ class Validator:
 
                 # Finish epoch.
                 try:
+                    self.weights.nan_to_num( 0.0 )
                     self.subtensor.set_weights(
                         netuid = pretrain.NETUID,
                         wallet = self.wallet,
