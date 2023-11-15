@@ -69,10 +69,16 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
             },
             "config.hotkey": expected_hotkey,
         },
-        per_page = 3,
+        # per_page = 3,
     )
+    models_dir = os.path.join( pretrain.netuid_dir, 'models', str(uid) )
+    metadata_file = os.path.join( models_dir, 'metadata.json' )
+    model_path = os.path.join( models_dir, 'model.pth' )
+
     # Iterate through runs. Newer runs first.
     for run in runs:
+        bt.logging.success(f'check run: {run.id}')
+
         # Check if the run is valid.
         valid, reason = check_run_validity( run, metagraph )
         if valid:
@@ -82,9 +88,6 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
             model_artifact = run.file('model.pth')
 
             # Define the local model directory and timestamp file paths
-            models_dir = os.path.join( pretrain.netuid_dir, 'models', str(uid) )
-            metadata_file = os.path.join( models_dir, 'metadata.json' )
-            model_path = os.path.join( models_dir, 'model.pth' )
             timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
             current_meta = load_metadata_for_uid( uid )  
                       

@@ -123,7 +123,7 @@ class Validator:
         self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
         self.uids_to_eval = set()
         for uid in self.metagraph.uids.tolist():
-            if uid in self.metagraph.I.topk( self.config.sample_min )[1]:
+            if self.metadata[uid] != None:
                 self.uids_to_eval.add( uid )
 
         # == Initialize the update thread ==
@@ -142,10 +142,11 @@ class Validator:
             self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
             for uid, meta in self.metadata.items():
                 if self.stop_event.is_set(): return
-                if meta == None or time.time() - meta['last_update'] >= UPDATE_TIMEOUT:
-                    if pretrain.utils.update_model_for_uid( uid, self.metagraph ):
-                        self.uids_to_eval.add( uid )
-                time.sleep( UPDATE_TIMEOUT/(256/4) )
+                if pretrain.utils.update_model_for_uid( uid, self.metagraph ):
+                    self.uids_to_eval.add( uid )
+                    bt.logging.trace(f'uids to eval add: {uid}')
+                # time.sleep( UPDATE_TIMEOUT/(256*20) )
+                # time.sleep( 1 )
 
     def compute_losses_per_page( self, uid, batches_per_page: Dict[int, List[torch.Tensor]], pbar=None) -> Dict[int, List[float]]:
         try:
@@ -358,13 +359,15 @@ class Validator:
                     self.global_step += 1
 
                 # Finish epoch.
-                self.subtensor.set_weights(
-                    netuid = pretrain.NETUID,
-                    wallet = self.wallet,
-                    uids = self.metagraph.uids,
-                    weights = self.weights,
-                    wait_for_inclusion=False,
-                )
+                try:
+                    self.subtensor.set_weights(
+                        netuid = pretrain.NETUID,
+                        wallet = self.wallet,
+                        uids = self.metagraph.uids,
+                        weights = self.weights,
+                        wait_for_inclusion=False,
+                    )
+                except: pass
                 bt.logging.success(f"Successfully set weights: {self.weights}")
                 self.last_epoch = self.metagraph.block.item()
                 self.epoch_step += 1
