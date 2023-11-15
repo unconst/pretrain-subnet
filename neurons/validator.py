@@ -272,7 +272,7 @@ class Validator:
         # Blacklist bad miners
         removed = 0
         size = len( list(self.uids_to_eval) )
-        for uid in uids:
+        for uid in random.shuffle( uids ):
             if size - removed <= 10: break
             if win_rate[uid] < 0.5:
                 self.uids_to_eval.remove( uid )
