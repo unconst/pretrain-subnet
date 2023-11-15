@@ -15,22 +15,23 @@
 
 # Introduction
 
-Bittensor subnet 9 rewards miners for producing pretrained models of structure GPT2 on the Falcon Refined Web dataset. It acts like a continuous benchmark where miners are paid out for attaining the best losses on randomly sampled pages of that dataset. The reward mechanism works as follows:
+Bittensor subnet 9 is currently designed to reward miners for producing producing pretrained models on the Falcon Refined Web dataset. It acts like a continuous benchmark where miners are paid out for attaining the best losses on randomly sampled pages of that dataset. 
+The reward mechanism works as follows.
 
-    1. Miner train and periodically host their model weights on a wandb account which is linked to their miner through the neurons/miner.py code. 
-    2. Validators periodically check and pull the latest hosted models.
-    3. Validators run a continuous eval on pulled models and perform the validation system outlined in neurons/validator.py 
-    
-## Validation
+    1. Miner train and periodically host their model weights on a wandb account which linked to their miner through the neurons/miner.py code. 
+    2. Validators periodically check and pull the latest models hosted on these miners which can be updated continuously by writing the models to ~/.bittensor/miners/<your cold wallet>/<your hot wallet>/netuid9/model.pth
+    3. Validators run a continuous eval on the models hosted by miners performing the validation system outlined in neurons/validator.py setting weights every epoch based on the performance of each miner on the Falcon dataset.
+
+#### Validation
 
 Miners are evaluated based on the number of times their loss on a random batch duing a 360 block epoch are lower than all other miners. 
-To perform well, miners must attain the lowest loss on the largest number of random batches sampled from the 900M page, 3T token dataset Falcon Refined Wed.
+To perform well miners must attain the lowest loss on the largest number of random batches sampled from the 900M page, 3T token dataset Falcon Refined Wed.
 
-All models are open and accessible via a wandb [project](https://wandb.ai/opentensor-dev/openpretraining) and this repo contains tools for downloading them and then
-serving them on your own miner. The drive to find the best miner at the earliest rate is ensured by having validators record the best global miner per epoch and assigning
-a miner ```epsilon``` reduction on the loss of this miner when calculating wins per batch.
+All models are open and accessible via a wandb [project](https://wandb.ai/opentensor-dev/pretraining-subnet) and this repo contains tools for downloading them and then
+serving them on your own miner, as well as getting data from validators about which model perform best on which pages of the Falcon Dataset.
 
-A Psuedo code for the algorithm can be read bellow:
+The drive to find the best miner at the earliest rate is ensured by having validators record the best global miner per epoch and assigning
+a miner ```epsilon``` reduction on the loss of the best miner from the previous epoch when calculating wins per batch.
 ```python
     epsilon = 0.03 # best miner epsilon reduction.
     while True:
@@ -67,8 +68,7 @@ A Psuedo code for the algorithm can be read bellow:
         # Weights are computed based on the ratio of wins a model attains during the epoch.
         weights = zeros()
         for miner_uid in wins.keys()
-            # Adds a communistic +1 score for all active miners.
-            weights = (wins[miner_uid] + 1)/ sum(wins.values())
+            weights = wins[miner_uid] / sum(wins.values())
 
         # Set weights on the chain.
         set_weights( weight )
@@ -78,9 +78,8 @@ A Psuedo code for the algorithm can be read bellow:
 
 ## Installing
 
-Before continuing, make you have at least python3.8. If you have issues installing python on your machine I recommend using conda as explained [here](https://bittensor.com/documentation/getting-started/installation). Once python is install, install *this* repository as below:
+Before mining make sure you have python3.8. Then install this repository.
 ```bash
-# Installs this local repository using python.
 git clone https://github.com/unconst/pretrain-subnet.git
 cd pretrain-subnet
 python -m pip install -e . 
@@ -90,11 +89,10 @@ python -m pip install -e .
 
 ## Subtensor
 
-Your node will run better if you are connecting to a local Bittensor chain entrypoint rather than using Opentensor's. 
-We recommend running a local node as follows and passing the ```--subtensor.network local``` flag all following commands i.e. for miners + validators.
-To install and run a local subtensor node follow the commands below with [Docker and Docker-Compose](https://docs.docker.com/engine/install/) previously installed.
+Your node will run better if you are connecting to a local Bittensor chain entrypoint node rather than using Opentensor's. 
+We recommend running a local node as follows and passing the ```--subtensor.network local``` flag to your running miners/validators. 
+To install and run a local subtensor node follow the commands below with Docker and Docker-Compose previously installed.
 ```bash
-# Installs your local subtensor chain endpoint and runs it on your machine. 
 git clone https://github.com/opentensor/subtensor.git
 cd subtensor
 docker compose up --detach
@@ -108,25 +106,25 @@ Miners + validator require a Bittensor coldkey and hotkey pair registered to net
 To create a wallet for either your validator or miner run the following command in your terminal. Make sure to save the mnemonic for
 both keys and store them in a safe place.
 ```bash
-# Creates your miner/validator cold + hotkey keys.
+# to create your miner/validator cold + hotkey keys.
 btcli w create --wallet.name ... --wallet.hotkey ... 
 btcli w list # to view your created keys.
 ```
 
 Registering a miner or a validator on subnet 9 requires the participant `recycle` TAO to pay for entrance. To register your key run the 
-following command. Before continuing make sure you have enough TAO to register.
+following command.
 ```bash
-# Registers your cold and associated hotkey to netuid 9. 
+# register your cold and associated hotkey to netuid 9
 btcli s register --wallet.name ... --wallet.hotkey ... --netuid 0 
 ```
----
 
+--- 
 ## Wandb
 
-Miner and validators make **heavy use** of weights and biases (wandb) in order to share model state and validation information. Both miners and validators must attain
+Miner and validators make heavy use of weights and biases in order to share model state and validation information. Both miners and validators must attain
 a wandb account from [wandb](https://wandb.ai/home) along with their wandb api key which can be found by following the instructions [here](https://docs.wandb.ai/quickstart).
 
-Models hosted by miners and corresponding validator information for runs can be found in this open wandb [project](https://wandb.ai/opentensor-dev/openpretraining). You can get access to all valid, signed and recent miners runs from other participants on the network as follows:
+Models hosted by miners and corresponding validator information for runs can be found in this open wandb [project](https://wandb.ai/opentensor-dev/pretraining-subnet). You can get access to all valid, signed and recent miners runs from participants on the network as follows:
 
 ```python
 >>> import pretrain
@@ -139,7 +137,7 @@ Models hosted by miners and corresponding validator information for runs can be 
             'uid': 238, 
             'hotkey': '5CchHAvd95HtTaxfviiC36wt1HFXU73Xq9Aom7NDZJnAiG8v', 
             'emission': 0.02, 
-            'run': <Run opentensor-dev/openpretraining/63j2ps12 (finished)>, 
+            'run': <Run opentensor-dev/pretraining-subnet/63j2ps12 (finished)>, 
             'model_artifact': <File model.pth () 312.5MiB>, 
             'timestamp': 1699448922
         }, 
@@ -147,7 +145,7 @@ Models hosted by miners and corresponding validator information for runs can be 
             'uid': 239, 
             'hotkey': '5CSczy1dp4EpvLARaVbgvq8DST6oJgqmSTTQJZ8iXhJpKwdZ', 
             'emission': 0.01, 
-            'run': <Run opentensor-dev/openpretraining/qp0w790l (finished)>, 
+            'run': <Run opentensor-dev/pretraining-subnet/qp0w790l (finished)>, 
             'model_artifact': <File model.pth () 312.5MiB>, 'timestamp': 1699448504
         } 
         ...
@@ -158,7 +156,7 @@ Models hosted by miners and corresponding validator information for runs can be 
 >> model.load_state_dict( model_weights )
 ```
 
-You can download all validation data from wandb which can be used to evaluate how miners are performing on each individual page of the Falcon Refined Web dataset.
+Alternatively, you can download all validation data from wandb which can be used to evaluate how miners are performing on each individual page of the Falcon Refined Web dataset.
 ```python
 >>> import pretrain
 >>> import bittensor as bt
@@ -170,7 +168,7 @@ You can download all validation data from wandb which can be used to evaluate ho
             'uid': 238, 
             'hotkey': '5CchHAvd95HtTaxfviiC36wt1HFXU73Xq9Aom7NDZJnAiG8v', 
             'stake': 123121, 
-            'run': <Run opentensor-dev/openpretraining/63j2ps12 (finished)>, 
+            'run': <Run opentensor-dev/pretraining-subnet/63j2ps12 (finished)>, 
         }, 
         ...
  }
@@ -189,24 +187,21 @@ By default, the miner trains from scratch and posts the model periodically as it
 python neurons/miner.py --wallet.name ... --wallet.hotkey ... --num_epochs 10 --pages_per_epoch 5
 ```
 
-Alternatively, you can scrape a model from an already performing miner on the network by passing its run id. This starts the training process from the checkpoint of another 
-miner. See this [page](https://wandb.ai/opentensor-dev/openpretraining) for the run_ids of other miners or use the above tools.
+Alternatively, you can scrape a model from an already miner on the network by passing its run id. This starts the training process from the checkpoint of another 
+miner.
 ```bash
 python neurons/miner.py --wallet.name ... --wallet.hotkey ... --num_epochs 10 --pages_per_epoch 5 --load_run_id ...
 ```
 
-The miner can automatically search the for runs which perform well directly from wanbd. Using the best scored model as its initial checkpoint. The pretraining
-subnet is *PRO* model sharing. We recommend miners scrape other participants models and often.
+The miner can automatically search the miner runs directly for the participant with the best score and use that as the main checkpoint. The pretraining
+subnet is PRO model sharing, so we recommend miners scrap other participants models and often.
 ```bash
 python neurons/miner.py --wallet.name ... --wallet.hotkey ... --num_epochs 10 --pages_per_epoch 5 --load_best
 ```
 
 Passing the ```--device``` option allows you to select which GPU to run on. You can also use ```--continue_id``` to continue from a training run you have already started.
-The model you train will be hosted on wandb. You can always view this model and others by visiting https://wandb.ai/opentensor-dev/openpretraining/runs/ where all participant 
+The model you train will be hosted on wandb. You can always view this model and others by visiting https://wandb.ai/opentensor-dev/pretrain.WANDB_PROJECT/runs/ where all participant 
 model are shared. 
-
-We strongly recommend you read, understand and adapt the miner code to your needs by reading ```neurons/miner.py```. For all serious attempts to get emission on this subnet you will
-likely NEED to do this.
 
 ---
 

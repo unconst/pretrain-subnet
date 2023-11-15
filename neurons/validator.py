@@ -47,6 +47,8 @@ class Validator:
         parser.add_argument( "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
         parser.add_argument( '--wandb.off', dest = 'wandb.on', action='store_false', help='Turn off wandb logging.' )
         parser.add_argument( '--blocks_per_epoch', type=int, default=360, help='Number of blocks to wait before setting weights.' )
+        parser.add_argument( '--pages_per_eval', type=int, default=3, help='Number of pages used to eval each step.' )
+        parser.add_argument( '--sample_min', type=int, default=10, help='Number of uids to eval each step.' )
         bt.subtensor.add_args(parser)
         bt.logging.add_args(parser)
         bt.wallet.add_args(parser)
@@ -67,23 +69,34 @@ class Validator:
 
     def init_wandb(self):
         if self.config.wandb.on:
-            run_name = f'validator-{self.uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
+            import json
+            run_id_file = self.config.full_path + '/run.json'
+            try:
+                with open( run_id_file, 'r' ) as f:
+                    self.run_id = json.load( f )['WANDB_RUN_ID']
+                    bt.logging.success(f'Continuing run, loaded run_id: {self.run_id}')
+            except Exception as e: 
+                self.run_id = wandb.util.generate_id()
+                bt.logging.success(f'First run, creating new run_id: {self.run_id} {e}')
+            with open( run_id_file, 'w' ) as f:
+                json.dump({'WANDB_RUN_ID': self.run_id}, f)
+                bt.logging.success(f'Saved: {self.run_id} to file.')
+            self.run_name = f'validator-{self.uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
             self.config.uid = self.uid
             self.config.hotkey = self.wallet.hotkey.ss58_address
-            self.config.run_name = run_name
+            self.config.run_name = self.run_name
             self.config.type = "validator"
-            wandb_run =  wandb.init(
-                name = run_name,
+            self.wandb_run = wandb.init(
+                id = self.run_id,
+                name = self.run_name,
                 anonymous = "allow",
                 reinit = False,
-                project = 'openpretraining',
+                project = pretrain.WANDB_PROJECT,
                 entity = 'opentensor-dev',
                 config = self.config,
                 dir = self.config.full_path,
             )
-            # Sign wandb run.
-            wandb.init( project = "openpretraining", entity="opentensor-dev" )
-            self.config.signature = self.wallet.hotkey.sign( wandb_run.id.encode() ).hex()
+            self.config.signature = self.wallet.hotkey.sign( self.wandb_run.id.encode() ).hex()
             wandb.config.update( self.config, allow_val_change=True )
 
     def __init__(self ):
@@ -96,18 +109,22 @@ class Validator:
         self.dendrite = bt.dendrite( wallet = self.wallet )
         self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
         torch.backends.cudnn.benchmark = True
-        if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys: raise Exception("You are not registered. Use `btcli s recycle_register` to register.")
+        if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys: raise Exception(f"You are not registered. Use `btcli s register --netuid {pretrain.NETUID}` to register.")
         self.uid = self.metagraph.hotkeys.index( self.wallet.hotkey.ss58_address )
         bt.logging.success( f'You are registered with address: {self.wallet.hotkey.ss58_address} and uid: {self.uid}' )
         self.init_wandb()
 
         # === Running args ===
+        self.weights = torch.zeros_like(self.metagraph.S)
         self.epoch_step = 0 
         self.global_step = 0
         self.last_epoch = self.metagraph.block.item()
         self.last_update_check = {}
-        self.shouldeval = { uid: uid in self.metagraph.I.topk(10).indices.tolist() for uid in self.metagraph.uids.tolist()  }
         self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
+        self.uids_to_eval = set()
+        for uid in self.metagraph.uids.tolist():
+            if self.metadata[uid] != None:
+                self.uids_to_eval.add( uid )
 
         # == Initialize the update thread ==
         self.stop_event = threading.Event()
@@ -115,8 +132,9 @@ class Validator:
         self.update_thread.start()
 
     def __del__(self):
-        self.stop_event.set()
-        self.update_thread.join()
+        if hasattr( self, 'stop_event'):
+            self.stop_event.set()
+            self.update_thread.join()
 
     def update_models( self ):
         while not self.stop_event.is_set():
@@ -124,12 +142,13 @@ class Validator:
             self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
             for uid, meta in self.metadata.items():
                 if self.stop_event.is_set(): return
-                if meta == None or time.time() - meta['last_update'] >= UPDATE_TIMEOUT:
-                    pretrain.utils.update_model_for_uid( uid, self.metagraph )
-                    self.shouldeval[ uid ] = True
+                if pretrain.utils.update_model_for_uid( uid, self.metagraph ):
+                    self.uids_to_eval.add( uid )
+                    bt.logging.trace(f'uids to eval add: {uid}')
+                # time.sleep( UPDATE_TIMEOUT/(256*20) )
+                # time.sleep( 1 )
 
     def compute_losses_per_page( self, uid, batches_per_page: Dict[int, List[torch.Tensor]], pbar=None) -> Dict[int, List[float]]:
-
         try:
             # Load the pre-trained model from the specified path
             model_path = self.metadata[uid]['model_path']
@@ -139,7 +158,7 @@ class Validator:
             model.eval()  # Set the model to evaluation mode
             model.to(self.config.device)  # Move the model to the appropriate device
         except Exception as e:
-            bt.logging.debug(f"Error loading model under path {model_path} with error: {e}")
+            bt.logging.debug(f"Error loading {uid} model with error: {e}")
             inf_losses = {}
             for page, batches in batches_per_page.items():
                 inf_losses[page] = [math.inf for _ in batches]
@@ -174,35 +193,16 @@ class Validator:
         return losses_per_page
         
     def run_step( self ):
-        """
-            Executes a single validation step.
-            - 1. Updates local models using wandb data.
-            - 2. Generates random pages from Falcon Refined web for evaluation.
-            - 3. Computes losses for each batch and each UID to attain losses per batch per page
-            - 4. Determines the winning UID based on lowest average loss per batch.
-            - 5. Logs win percentages for each UID to wandb and screen.
-            - 6. Logs step results and updates weights and biases (wandb) if configured.
-
-            Parameters:
-            - wins_per_epoch (dict): A dictionary to record the number of wins per UID.
-            - losses_per_epoch (dict): A dictionary to record all losses in epoch.
-            - metagraph (object): An object representing the meta information of models.
-            - wandb_step (int): The current step number for logging in weights and biases.
-
-        """
         # Load metadata.
         self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
 
-        # Get list of valid uids for step, valid uids must not be blacklisted 
-        # and have a valid meta.
-        uids = []
-        for uid, meta in self.metadata.items():
-            if meta != None and self.shouldeval[uid]: 
-                uids.append( uid ) 
+        # Select N random uids to sample.
+        uids = [uid for uid in list( self.uids_to_eval ) if self.metadata[uid] != None]
+        random.shuffle( uids )
         bt.logging.success( f'Runnning step with uids: {uids}')
 
         # Generate random pages for evaluation and prepare batches for each page
-        pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(pretrain.n_eval_pages)]
+        pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(self.config.pages_per_eval)]
         batches_per_page = {
             page: list(pretrain.dataset.SubsetFalconLoader(
                 batch_size = pretrain.batch_size,
@@ -210,7 +210,7 @@ class Validator:
                 pages = [page]
             )) for page in pages
         }
-        total_batches = sum([ len(b) for b in batches_per_page.values()] )
+
         # Compute losses per page
         bt.logging.debug(f"computing losses on {uids}")
         losses_per_page_per_uid = { uid: None for uid in uids }
@@ -226,10 +226,6 @@ class Validator:
                 losses = losses_per_page_per_uid[ uid_i ][ page_j ]
                 average_loss = sum(losses)/len(losses)
                 average_loss_per_uid_per_page[ uid_i ][ page_j ] = average_loss
-                if uid_i in self.losses_per_epoch:
-                    self.losses_per_epoch[ uid_i ].append(average_loss)
-                else:
-                    self.losses_per_epoch[ uid_i ] = [average_loss]
 
         # Compute best average loss
         best_average_loss = math.inf
@@ -240,42 +236,48 @@ class Validator:
                 best_average_loss = average_loss
                 best_average_loss_uid = uid_i
 
-        # Function returns True if this uid has lowest loss across all other uids on this 
-        # batch, in case of ties takes uid with better timestamp.
-        # error was that it was returning as soon as it lost, and not checking against all other uids
-        def is_winning_loss_with_timestamps(this_uid, page_j, batch_k):
-            this_loss = losses_per_page_per_uid[this_uid][page_j][batch_k]
-            this_timestamp = self.metadata[this_uid]['timestamp']
+        # Win function.
+        # Determines the winner based on the epsilon adjusted loss
+        # Models that were created earlier have a 3% decrease in loss
+        def better( i, j, p, b ):
+            il = losses_per_page_per_uid[ i ][ p ][ b ]
+            jl = losses_per_page_per_uid[ j ][ p ][ b ]
+            if 'timestamp' not in self.metadata[ i ]: return False 
+            if 'timestamp' not in self.metadata[ j ]: return True 
+            it = self.metadata[ i ]['timestamp']
+            jt = self.metadata[ j ]['timestamp']
+            il = (1 - 0.03) * il if it < jt else il
+            jl = (1 - 0.03) * jl if it < jt else jl
+            if il < jl: return True
+            else: return False
 
-            for other_uid in uids:
-                if other_uid != this_uid:
-                    other_loss = losses_per_page_per_uid[other_uid][page_j][batch_k]
-                    other_timestamp = self.metadata[other_uid]['timestamp']
+        # Compute wins this step.
+        wins = { uid: 0 for uid in uids }
+        win_rate = { uid: 0 for uid in uids }
+        for i in uids:
+            total_matches = 0
+            for j in uids:
+                for p in pages:
+                    for b, _ in enumerate( batches_per_page[ p ] ):
+                        wins[ i ] += 1 if better( i, j, p, b ) else 0
+                        total_matches += 1
+            win_rate[ i ] = wins[ i ] / total_matches
+   
+        # Compute and update weights.
+        temperature = 0.05
+        step_weights = torch.tensor([ win_rate[ uid ] for uid in uids ], dtype=torch.float32)
+        softmax_step_weights = torch.softmax( step_weights / temperature, dim=0 )
+        for i, uid in enumerate( uids ):
+            self.weights[ uid ] = softmax_step_weights[ i ] 
+        self.weights /= self.weights.sum()
 
-                    # Adjusting the losses based on timestamp
-                    adjusted_this_loss = this_loss * (1 - 0.03) if this_timestamp < other_timestamp else this_loss
-                    adjusted_other_loss = other_loss * (1 - 0.03) if other_timestamp < this_timestamp else other_loss
-
-                    # If this_uid's loss is greater than any other_uid's loss, return False
-                    if adjusted_this_loss > adjusted_other_loss:
-                        return False
-
-            # Return True only if this_uid's loss is less than all other UIDs' losses
-            return True
-
-        # Compute total wins per uid per page 
-        total_wins_per_uid_per_page = { uid: { page: 0 for page in pages } for uid in uids }
-        for this_uid in uids:
-            self.wins_per_epoch[ this_uid ] = 0
-            for page_j in pages:
-                for batch_k, _ in enumerate( batches_per_page[page_j] ):
-                    if is_winning_loss_with_timestamps( this_uid, page_j, batch_k ):
-                        total_wins_per_uid_per_page[ this_uid ][ page_j ] += 1
-                        self.wins_per_epoch[ this_uid ] += 1 
-
-            # We will not recheck if a miner has zero wins until the model is reupdated.
-            if self.wins_per_epoch[ this_uid ] == 0:
-                self.shouldeval[ this_uid ] = False
+        # Blacklist bad miners
+        removed = 0
+        size = len( list(self.uids_to_eval) )
+        for uid in uids:
+            if size - removed <= self.config.sample_min: break
+            if win_rate[uid] < 0.5:
+                self.uids_to_eval.remove( uid )
 
         # Build step log
         step_log = {
@@ -290,19 +292,18 @@ class Validator:
             try:
                 average_losses = [average_loss_per_uid_per_page[uid][pagek] for pagek in pages]
                 average_loss = sum(average_losses) / len(average_losses)
-                win_rate = sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ]) / total_batches
-                win_total = sum ( [total_wins_per_uid_per_page[ uid ][ pagek ] for pagek in pages ])
                 step_log['uid_data'][ str(uid) ] = {
                     'uid': uid,
                     'runid': self.metadata[ uid ]['runid'],
                     'timestamp': self.metadata[ uid ]['timestamp'],
                     'last_update': self.metadata[ uid ]['last_update'],
+                    'blacklisted': self.metadata[ uid ]['blacklisted'],
                     'average_losses': average_losses,
                     'average_loss': average_loss,
-                    'win_rate': win_rate,
-                    'win_total': win_total,
+                    'win_rate': win_rate[ uid ],
+                    'win_total': wins[ uid ],
+                    'weight': self.weights[ uid ].item()
                 }
-
             except:
                 continue
         table = Table(title="Step")
@@ -310,19 +311,29 @@ class Validator:
         table.add_column("average_loss", style="magenta")
         table.add_column("win_rate", style="magenta")
         table.add_column("win_total", style="magenta")
+        table.add_column("weights", style="magenta")
         table.add_column("last_update", style="magenta")
         table.add_column("timestamp", style="magenta")
-        table.add_column("blacklist", style="magenta")
         for uid in uids:
             table.add_row(
                 str(uid), 
-                str(step_log['uid_data'][ str(uid) ]['average_loss']), 
-                str(step_log['uid_data'][ str(uid) ]['win_rate']),
+                str( round(step_log['uid_data'][ str(uid) ]['average_loss'], 4)), 
+                str( round(step_log['uid_data'][ str(uid) ]['win_rate'], 4)),
                 str(step_log['uid_data'][ str(uid) ]['win_total']),
-                str(step_log['uid_data'][ str(uid) ]['last_update']),
-                str(step_log['uid_data'][ str(uid) ]['timestamp']),
-                str(not self.shouldeval[ this_uid ]),
+                str( round(self.weights[uid].item(), 4) ),
+                str( round(step_log['uid_data'][ str(uid) ]['last_update'], 0)),
+                str( step_log['uid_data'][ str(uid) ]['timestamp']),
             )
+        console = Console()
+        console.print(table)
+
+        ws, ui = self.weights.topk( len( self.weights ))
+        table = Table(title="Weights > 0.001")
+        table.add_column("uid", justify="right", style="cyan", no_wrap=True)
+        table.add_column("weight", style="magenta")
+        for index, weight in list(zip(ui.tolist(), ws.tolist())):
+            if weight > 0.001:
+                table.add_row(str(index), str(round(weight, 4)))
         console = Console()
         console.print(table)
 
@@ -338,52 +349,9 @@ class Validator:
         }
         if self.config.wandb.on: wandb.log({ **graphed_data, "original_format_json": original_format_json}, step=self.global_step)
 
-    def set_weights( self ):
-        """
-            Completes the validation epoch determining the weights that need to be set on chain
-            and firing off the extrinsic. 
-
-            Parameters:
-            - wins_per_epoch (dict): A dictionary to record the number of wins per UID.
-            - wandb_step (int): The current step number for logging in weights and biases.
-        """
-        # === Compute weights from wins ===
-        weights = torch.zeros( len(self.metagraph.hotkeys) )
-        add = 0.05
-        total_add = len( list( self.wins_per_epoch.keys() ) ) * add
-        total_wins = sum(self.wins_per_epoch.values())  # Sum of all wins
-        for uid in self.wins_per_epoch:
-            weights[uid] = (self.wins_per_epoch[uid] + add) / (total_wins + total_add)
-
-        # === Set weights ===
-        self.subtensor.set_weights(
-            netuid = pretrain.NETUID,
-            wallet = self.wallet,
-            uids = self.metagraph.uids,
-            weights = weights,
-            wait_for_inclusion=False,
-        )
-  
-        sorted_weights = sorted(enumerate(weights, start=0), key=lambda x: x[1], reverse=True)
-        # Filter to keep only positive weights
-        positive_weights = [(uid, weight) for uid, weight in sorted_weights if weight > 0]
-        # Limit to top 20 (or less if there are not enough positive weights)
-        positive_weights = positive_weights[:20]
-        table = Table(title="Top10 Weights")
-        table.add_column("uid", justify="right", style="cyan", no_wrap=True)
-        table.add_column("weight", style="magenta")
-        for uid, value in positive_weights:
-            table.add_row(str(uid), str(value.item()))
-        console = Console()
-        console.print(table)
-
     def run(self):
         while True:
-            try:
-                # Init a new dict for counters.
-                self.wins_per_epoch = {}
-                self.losses_per_epoch = {}
-            
+            try:            
                 while self.metagraph.block.item() - self.last_epoch < self.config.blocks_per_epoch:
                     self.run_step()
                     self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
@@ -391,7 +359,16 @@ class Validator:
                     self.global_step += 1
 
                 # Finish epoch.
-                self.set_weights( )
+                try:
+                    self.subtensor.set_weights(
+                        netuid = pretrain.NETUID,
+                        wallet = self.wallet,
+                        uids = self.metagraph.uids,
+                        weights = self.weights,
+                        wait_for_inclusion=False,
+                    )
+                except: pass
+                bt.logging.success(f"Successfully set weights: {self.weights}")
                 self.last_epoch = self.metagraph.block.item()
                 self.epoch_step += 1
 

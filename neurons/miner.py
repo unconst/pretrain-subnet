@@ -59,11 +59,7 @@ def get_config():
     parser.add_argument("--num_epochs", type = int, default = -1, help="Number of training epochs (-1 is infinite)")
 
     # Training lr.
-<<<<<<< HEAD
-    parser.add_argument("--lr", type = float, default = 0.0000001, help="Learning rate.")
-=======
-    parser.add_argument("--lr", type = float, default = 0.000001, help="Learning rate.")
->>>>>>> 47057673e0ba971a8c0d47ab9cde716c94676fef
+    parser.add_argument("--lr", type = float, default = 0.00001, help="Learning rate.")
 
     # Training batch size
     parser.add_argument("--bs", type = int, default = pretrain.batch_size, help="Batch size")
@@ -72,11 +68,7 @@ def get_config():
     parser.add_argument("--sl", type = int, default = pretrain.sequence_length, help="Sequence length")
 
     # Set the number of pages trained per epoch
-<<<<<<< HEAD
-    parser.add_argument("--pages_per_epoch", type = int, default=10, help="Number of pages trained on per epoch")
-=======
     parser.add_argument("--pages_per_epoch", type = int, default=5, help="Number of pages trained on per epoch")
->>>>>>> 47057673e0ba971a8c0d47ab9cde716c94676fef
 
     # Include wallet and logging arguments from bittensor
     bt.wallet.add_args(parser)
@@ -119,7 +111,7 @@ wallet = bt.wallet( config = config )
 subtensor = bt.subtensor( config = config )
 metagraph = subtensor.metagraph( pretrain.NETUID )
 if wallet.hotkey.ss58_address not in metagraph.hotkeys: 
-    bt.logging.error("You are not registered. Use `btcli s recycle_register` to register.")
+    bt.logging.error(f"You are not registered. Use `btcli s register --netuid {pretrain.NETUID}` to register.")
     exit()
 my_uid = metagraph.hotkeys.index( wallet.hotkey.ss58_address )
 bt.logging.success( f'You are registered with address: {wallet.hotkey.ss58_address} and uid: {my_uid}' )
@@ -131,7 +123,7 @@ api = wandb.Api( timeout = 100 )
 
 
 def get_run_from_id( run_id ):
-    run_path = f"opentensor-dev/openpretraining/{run_id}"
+    run_path = f"opentensor-dev/{pretrain.WANDB_PROJECT}/{run_id}"
     bt.logging.success(f'Loading model from path: {run_path}')
     return api.run(run_path)
 
@@ -149,15 +141,10 @@ if config.load_run_id != None:
 # Model is pulled from best on network
 elif config.load_best:
     bt.logging.success(f'Loading based on --config.load_best')
-<<<<<<< HEAD
-    all_valid_runs = pretrain.get_miner_runs( metagraph )
-    sorted_valid_runs = sorted( list( all_valid_runs.values()), key=lambda x: x['incentive'])
-    load_model_from_run( get_run_from_id(sorted_valid_runs[0]['run']) )
-=======
     best_uid = max(range(256), key=lambda uid: metagraph.I[uid].item())
     print(f"best uid is {best_uid}")
     runs = api.runs(
-        "opentensor-dev/openpretraining",
+        f"opentensor-dev/{pretrain.WANDB_PROJECT}",
         filters={
             "config.version": pretrain.__version__,
             "config.type": "miner",
@@ -167,7 +154,6 @@ elif config.load_best:
         }
     )
     load_model_from_run( get_run_from_id(runs[0].id) )
->>>>>>> 47057673e0ba971a8c0d47ab9cde716c94676fef
 
 elif config.continue_id:
     run = get_run_from_id( config.continue_id  )
@@ -193,40 +179,38 @@ import random
 # Initialize a variable to keep track of the best average loss
 best_avg_loss = float('inf')
 
-# Initialize your wandb run
-# NOTE: removing the "miner-" from this line will mean your miner is not picked up by validators.
+# Loads your wandb run from file or creates a new one.
+import json
+run_id_file = config.full_path + '/run.json'
+try:
+    with open( run_id_file, 'r' ) as f:
+        run_id = json.load( f )['WANDB_RUN_ID']
+        bt.logging.success(f'Continuing run, loaded run_id: {run_id}')
+except Exception as e: 
+    run_id = wandb.util.generate_id()
+    bt.logging.success(f'First run, creating new run_id: {run_id} {e}')
+
+with open( run_id_file, 'w' ) as f:
+    json.dump({'WANDB_RUN_ID': run_id}, f)
+    bt.logging.success(f'Saved: {run_id} to file.')
+
+# Start wandb run.
 run_name = f'miner-{my_uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
 config.uid = my_uid
 config.hotkey = wallet.hotkey.ss58_address
 config.run_name = run_name
 config.version = pretrain.__version__
 config.type = 'miner'
-if config.continue_id:
-    # Attempts to continue run from previous id.
-    bt.logging.success(f'Continuing wandb run from id {config.continue_id}')
-    wandb_run = wandb.init(
-        id = config.continue_id,
-        name = run_name,
-        anonymous = "allow",
-        resume = "must",
-        project = 'openpretraining',
-        entity = 'opentensor-dev',
-        config = config,
-        dir = config.full_path,
-        allow_val_change=True,
-    )
-else:
-    bt.logging.success(f'Starting fresh wandb run')
-    wandb_run = wandb.init(
-        name = run_name,
-        anonymous = "allow",
-        reinit = False,
-        project = 'openpretraining',
-        entity = 'opentensor-dev',
-        config = config,
-        dir = config.full_path,
-    )
-bt.logging.success(f'\n\nSuccessfully started your wandb run {wandb_run.id}, you can continue it at a lated data by passing --continue_id {wandb_run.id}\n\n')
+wandb_run = wandb.init(
+    id = run_id,
+    name = run_name,
+    anonymous = "allow",
+    project = pretrain.WANDB_PROJECT,
+    entity = 'opentensor-dev',
+    config = config,
+    dir = config.full_path,
+    allow_val_change=True,
+)
 
 # Signature
 signature = wallet.hotkey.sign( wandb_run.id.encode() ).hex()
@@ -241,62 +225,66 @@ bt.logging.success('Pushed artifact to the wandb run.')
 # Start the training loop
 epoch_step = 0
 global_step = 0
-while epoch_step < config.num_epochs or config.num_epochs == -1:
-    # Initialize loss accumulator for the epoch
-    epoch_loss = 0.0
+try:
+    while epoch_step < config.num_epochs or config.num_epochs == -1:
+        # Initialize loss accumulator for the epoch
+        epoch_loss = 0.0
 
-    # Prepare the data loader with random pages for each epoch
-    bt.logging.success( f"Loading {config.pages_per_epoch} pages for training this epoch" )
-    random_pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range( config.pages_per_epoch )]
-    loader = pretrain.dataset.SubsetFalconLoader(
-        batch_size = config.bs, 
-        sequence_length = config.sl, 
-        pages = random_pages
-    )
+        # Prepare the data loader with random pages for each epoch
+        bt.logging.success( f"Loading {config.pages_per_epoch} pages for training this epoch" )
+        random_pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range( config.pages_per_epoch )]
+        loader = pretrain.dataset.SubsetFalconLoader(
+            batch_size = config.bs, 
+            sequence_length = config.sl, 
+            pages = random_pages
+        )
 
-    # Enumerate over the data loader
-    n_batches = 0
-    for i, batch in enumerate(loader):
+        # Enumerate over the data loader
+        n_batches = 0
+        for i, batch in enumerate(loader):
 
-        # Move the input batch to the device
-        inputs = batch.to(model.device)
-        
-        # Forward pass: compute the model output and loss
-        outputs = model(inputs, labels=inputs)
-               
-        # Backward pass: compute the gradient of the loss with respect to model parameters
-        outputs.loss.backward()
-        
-        # Clear the memory cache to avoid CUDA out of memory issues
-        torch.cuda.empty_cache()
-        
-        # Update model parameters
-        optimizer.step()
-        
-        # Step loss
-        wandb.log( { 'loss': outputs.loss.detach(), 'n_batches': n_batches }, step = global_step )
-        
-        # Log the loss for the current step
-        n_batches += 1
-        global_step += 1
-        epoch_loss += outputs.loss.detach().item()
-        bt.logging.success(f'Step: {i} loss: {outputs.loss.detach().item()}')
+            # Move the input batch to the device
+            inputs = batch.to(model.device)
+            
+            # Forward pass: compute the model output and loss
+            outputs = model(inputs, labels=inputs)
+                
+            # Backward pass: compute the gradient of the loss with respect to model parameters
+            outputs.loss.backward()
+            
+            # Clear the memory cache to avoid CUDA out of memory issues
+            torch.cuda.empty_cache()
+            
+            # Update model parameters
+            optimizer.step()
+            
+            # Step loss
+            wandb.log( { 'loss': outputs.loss.detach(), 'n_batches': n_batches }, step = global_step )
+            
+            # Log the loss for the current step
+            n_batches += 1
+            global_step += 1
+            epoch_loss += outputs.loss.detach().item()
+            bt.logging.success(f'Step: {i} loss: {outputs.loss.detach().item()}')
 
-    # Calculate the average loss for the epoch
-    avg_loss = epoch_loss / n_batches
+        # Calculate the average loss for the epoch
+        avg_loss = epoch_loss / n_batches
 
-    # Log the average loss for the epoch
-    bt.logging.success(f'Epoch: {epoch_step} average loss: {avg_loss}')
-    epoch_step += 1
+        # Log the average loss for the epoch
+        bt.logging.success(f'Epoch: {epoch_step} average loss: {avg_loss}')
+        epoch_step += 1
 
-    # Check if the average loss of this epoch is the best we've seen so far
-    if avg_loss < best_avg_loss:
-        best_avg_loss = avg_loss  # Update the best average loss
-        bt.logging.success(f'New best average loss: {best_avg_loss}. Saving model...')
-        
-        # Save the model state to the specified path
-        torch.save( model.state_dict(), config.model_path )
+        # Check if the average loss of this epoch is the best we've seen so far
+        if avg_loss < best_avg_loss:
+            best_avg_loss = avg_loss  # Update the best average loss
+            bt.logging.success(f'New best average loss: {best_avg_loss}. Saving model...')
+            
+            # Save the model state to the specified path
+            torch.save( model.state_dict(), config.model_path )
 
-        # Save the new best model to wandb.
-        wandb.save( config.model_path )
-        bt.logging.success('Pushed the new artifact to the wandb run.')
+            # Save the new best model to wandb.
+            wandb.save( config.model_path )
+            bt.logging.success('Pushed the new artifact to the wandb run.')
+
+finally: 
+    wandb.finish()

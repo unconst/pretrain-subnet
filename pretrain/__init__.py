@@ -17,7 +17,7 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 version_split = __version__.split(".")
 __spec_version__ = (
     (1000 * int(version_split[0]))
@@ -25,6 +25,7 @@ __spec_version__ = (
     + (1 * int(version_split[2]))
 )
 NETUID = 9
+WANDB_PROJECT = 'pretraining-subnet'
 
 best_uid_epsilon = 0.03
 per_loss_epsilon = 0.05
