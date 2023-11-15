@@ -274,12 +274,8 @@ class Validator:
         removed = 0
         size = len( list(self.uids_to_eval) )
         for uid in uids:
-<<<<<<< HEAD
             if size - removed <= self.config.sample_min: break
             if win_rate[uid] < 0.5:
-=======
-            if win_rate[uid] < 0.5 and len( self.uids_to_eval ) > 10:
->>>>>>> ad6c50932df6703fe0aac04251ea2f662124025e
                 self.uids_to_eval.remove( uid )
 
         # Build step log
