@@ -91,7 +91,7 @@ class Validator:
                 name = self.run_name,
                 anonymous = "allow",
                 reinit = False,
-                project = 'pretraining-subnet',
+                project = pretrain.WANDB_PROJECT,
                 entity = 'opentensor-dev',
                 config = self.config,
                 dir = self.config.full_path,
@@ -143,9 +143,9 @@ class Validator:
             for uid, meta in self.metadata.items():
                 if self.stop_event.is_set(): return
                 if meta == None or time.time() - meta['last_update'] >= UPDATE_TIMEOUT:
-                    pretrain.utils.update_model_for_uid( uid, self.metagraph )
-                    self.uids_to_eval.add( uid )
-                time.sleep( 1 )
+                    if pretrain.utils.update_model_for_uid( uid, self.metagraph ):
+                        self.uids_to_eval.add( uid )
+                time.sleep( UPDATE_TIMEOUT/256 )
 
     def compute_losses_per_page( self, uid, batches_per_page: Dict[int, List[torch.Tensor]], pbar=None) -> Dict[int, List[float]]:
         try:
@@ -270,23 +270,15 @@ class Validator:
         self.weights /= self.weights.sum()
 
         # Blacklist bad miners
+        removed = 0
+        size = len( list(self.uids_to_eval) )
         for uid in uids:
-<<<<<<< HEAD
-            if win_rate[uid] < 0.5 and len( self.uids_to_eval ) > 10:
-                self.uids_to_eval.remove( uid )
-=======
+            if size - removed <= 10: break
             if win_rate[uid] < 0.5:
-                # Open and read the metadata file
-                with open(self.metadata[uid], 'r') as file:
-                    data = json.load(file)
-
-                # Update the 'blacklisted' field
-                data['blacklisted'] = True
-
-                # Write the updated data back to the file
-                with open(self.metadata[uid], 'w') as file:
-                    json.dump(data, file, indent=4)
->>>>>>> 1cc12c5e7ca1747a0f2192bfd1d5b10a08b8ceb0
+                self.uids_to_eval.remove( uid )
+                removed += 1
+                print('removed', uid )
+        print ( len( list(self.uids_to_eval) ))
 
         # Build step log
         step_log = {
