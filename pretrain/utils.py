@@ -77,7 +77,7 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
 
     # Iterate through runs. Newer runs first.
     for run in runs:
-        bt.logging.success(f'check run: {run.id}')
+        bt.logging.trace(f'check run: {run.id}')
 
         # Check if the run is valid.
         valid, reason = check_run_validity( run, metagraph )
