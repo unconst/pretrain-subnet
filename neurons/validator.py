@@ -145,11 +145,7 @@ class Validator:
                 if meta == None or time.time() - meta['last_update'] >= UPDATE_TIMEOUT:
                     if pretrain.utils.update_model_for_uid( uid, self.metagraph ):
                         self.uids_to_eval.add( uid )
-<<<<<<< Updated upstream
                 time.sleep( UPDATE_TIMEOUT/(256/4) )
-=======
-                time.sleep( UPDATE_TIMEOUT/256 )
->>>>>>> Stashed changes
 
     def compute_losses_per_page( self, uid, batches_per_page: Dict[int, List[torch.Tensor]], pbar=None) -> Dict[int, List[float]]:
         try:
