@@ -148,7 +148,7 @@ class Validator:
                 # time.sleep( UPDATE_TIMEOUT/(256*20) )
                 # time.sleep( 1 )
 
-    def compute_losses_per_page( self, uid, batches_per_page: Dict[int, List[torch.Tensor]], pbar=None) -> Dict[int, List[float]]:
+    def compute_losses_per_page( self, uid, batches_per_page: Dict[int, List[torch.Tensor]] ) -> Dict[int, List[float]]:
         try:
             # Load the pre-trained model from the specified path
             model_path = self.metadata[uid]['model_path']
@@ -179,8 +179,6 @@ class Validator:
                     outputs = model(inputs, labels=inputs)
                     loss = outputs.loss.item()  # Get the scalar loss value
                     page_losses.append(loss)
-                    if pbar is not None:
-                        pbar.set_description(f"Loss: {uid} - {loss:.4f}")
                 except Exception as e:
                     # Log the exception and append infinity to indicate failure
                     bt.logging.error(f"Exception occurred: {e}")
@@ -214,9 +212,8 @@ class Validator:
         # Compute losses per page
         bt.logging.debug(f"computing losses on {uids}")
         losses_per_page_per_uid = { uid: None for uid in uids }
-        pbar = tqdm( uids, desc="Loss", leave=False)
-        for uid_i in pbar:
-            losses = self.compute_losses_per_page( uid_i, batches_per_page, pbar )
+        for uid_i in uids:
+            losses = self.compute_losses_per_page( uid_i, batches_per_page )
             losses_per_page_per_uid[ uid_i ] = losses
 
         # Compute average loss per page
