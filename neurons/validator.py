@@ -271,8 +271,22 @@ class Validator:
 
         # Blacklist bad miners
         for uid in uids:
+<<<<<<< HEAD
             if win_rate[uid] < 0.5 and len( self.uids_to_eval ) > 10:
                 self.uids_to_eval.remove( uid )
+=======
+            if win_rate[uid] < 0.5:
+                # Open and read the metadata file
+                with open(self.metadata[uid], 'r') as file:
+                    data = json.load(file)
+
+                # Update the 'blacklisted' field
+                data['blacklisted'] = True
+
+                # Write the updated data back to the file
+                with open(self.metadata[uid], 'w') as file:
+                    json.dump(data, file, indent=4)
+>>>>>>> 1cc12c5e7ca1747a0f2192bfd1d5b10a08b8ceb0
 
         # Build step log
         step_log = {
