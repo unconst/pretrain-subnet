@@ -91,7 +91,7 @@ class Validator:
                 name = self.run_name,
                 anonymous = "allow",
                 reinit = False,
-                project = 'pretraining-subnet',
+                project = pretrain.WANDB_PROJECT,
                 entity = 'opentensor-dev',
                 config = self.config,
                 dir = self.config.full_path,
@@ -143,9 +143,13 @@ class Validator:
             for uid, meta in self.metadata.items():
                 if self.stop_event.is_set(): return
                 if meta == None or time.time() - meta['last_update'] >= UPDATE_TIMEOUT:
-                    pretrain.utils.update_model_for_uid( uid, self.metagraph )
-                    self.uids_to_eval.add( uid )
-                time.sleep( 1 )
+                    if pretrain.utils.update_model_for_uid( uid, self.metagraph ):
+                        self.uids_to_eval.add( uid )
+<<<<<<< Updated upstream
+                time.sleep( UPDATE_TIMEOUT/(256/4) )
+=======
+                time.sleep( UPDATE_TIMEOUT/256 )
+>>>>>>> Stashed changes
 
     def compute_losses_per_page( self, uid, batches_per_page: Dict[int, List[torch.Tensor]], pbar=None) -> Dict[int, List[float]]:
         try:
@@ -197,6 +201,7 @@ class Validator:
 
         # Select N random uids to sample.
         uids = [uid for uid in list( self.uids_to_eval ) if self.metadata[uid] != None]
+        random.shuffle( uids )
         bt.logging.success( f'Runnning step with uids: {uids}')
 
         # Generate random pages for evaluation and prepare batches for each page
@@ -270,6 +275,8 @@ class Validator:
         self.weights /= self.weights.sum()
 
         # Blacklist bad miners
+        removed = 0
+        size = len( list(self.uids_to_eval) )
         for uid in uids:
             if win_rate[uid] < 0.5 and len( self.uids_to_eval ) > 10:
                 self.uids_to_eval.remove( uid )

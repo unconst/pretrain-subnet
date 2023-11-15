@@ -104,16 +104,17 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
             # Check to see if model needs updating.
             if current_meta != None and current_meta.get('timestamp', -1) == timestamp:
                 bt.logging.trace( f'Model is up to date: uid: {uid}, under path: {models_dir}, with timestamp: { timestamp }')
-                return
+                return False
             else:
                 model_artifact.download( replace=True, root=models_dir)
             bt.logging.success( f'Updated model: uid: {uid}, under path: {models_dir}, with timestamp: { timestamp }')
-            return 
+            return True
 
         else:
             # The run failed the signature check. Moving to the next run.
             bt.logging.trace(f'Run:{run.id}, for uid:{uid} was not valid with error: {reason}')
             continue
+    return False
 
 def load_metadata_for_uid( uid: int ):
     """
