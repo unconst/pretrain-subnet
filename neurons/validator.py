@@ -48,7 +48,7 @@ class Validator:
         parser.add_argument( '--wandb.off', dest = 'wandb.on', action='store_false', help='Turn off wandb logging.' )
         parser.add_argument( '--blocks_per_epoch', type=int, default=360, help='Number of blocks to wait before setting weights.' )
         parser.add_argument( '--pages_per_eval', type=int, default=3, help='Number of pages used to eval each step.' )
-        parser.add_argument( '--sample_n', type=int, default=180, help='Number of uids to eval each step.' )
+        parser.add_argument( '--sample_min', type=int, default=10, help='Number of uids to eval each step.' )
         bt.subtensor.add_args(parser)
         bt.logging.add_args(parser)
         bt.wallet.add_args(parser)
@@ -109,7 +109,7 @@ class Validator:
         self.dendrite = bt.dendrite( wallet = self.wallet )
         self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
         torch.backends.cudnn.benchmark = True
-        if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys: raise Exception("You are not registered. Use `btcli s register` to register.")
+        if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys: raise Exception(f"You are not registered. Use `btcli s register --netuid {pretrain.NETUID}` to register.")
         self.uid = self.metagraph.hotkeys.index( self.wallet.hotkey.ss58_address )
         bt.logging.success( f'You are registered with address: {self.wallet.hotkey.ss58_address} and uid: {self.uid}' )
         self.init_wandb()
@@ -123,7 +123,7 @@ class Validator:
         self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
         self.uids_to_eval = set()
         for uid in self.metagraph.uids.tolist():
-            if uid in self.metagraph.I.topk(10)[1]:
+            if uid in self.metagraph.I.topk( self.config.sample_min )[1]:
                 self.uids_to_eval.add( uid )
 
         # == Initialize the update thread ==
@@ -274,7 +274,7 @@ class Validator:
         removed = 0
         size = len( list(self.uids_to_eval) )
         for uid in uids:
-            if size - removed <= 10: break
+            if size - removed <= self.config.sample_min: break
             if win_rate[uid] < 0.5:
                 self.uids_to_eval.remove( uid )
                 removed += 1
