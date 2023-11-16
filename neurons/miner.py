@@ -68,7 +68,7 @@ def get_config():
     parser.add_argument("--sl", type = int, default = pretrain.sequence_length, help="Sequence length")
 
     # Set the number of pages trained per epoch
-    parser.add_argument("--pages_per_epoch", type = int, default=5, help="Number of pages trained on per epoch")
+    parser.add_argument("--pages_per_epoch", type = int, default=1, help="Number of pages trained on per epoch")
 
     # Include wallet and logging arguments from bittensor
     bt.wallet.add_args(parser)
@@ -242,6 +242,7 @@ try:
         # Enumerate over the data loader
         n_batches = 0
         for i, batch in enumerate(loader):
+            wandb.save( config.model_path )
 
             # Move the input batch to the device
             inputs = batch.to(model.device)
