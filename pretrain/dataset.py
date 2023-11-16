@@ -26,6 +26,8 @@ import time
 import random
 
 model_name = 'distilgpt2'
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+tokenizer.pad_token = tokenizer.eos_token
 
 class SubsetFalconLoader(IterableDataset):
     max_pages: int = 968000015
@@ -34,8 +36,7 @@ class SubsetFalconLoader(IterableDataset):
         self.batch_size = batch_size
         self.sequence_length = sequence_length
         self.num_rows_per_page = 100
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer = tokenizer
         self.base_url = "https://datasets-server.huggingface.co/rows"
         self.params = {
             "dataset": "tiiuae/falcon-refinedweb",
