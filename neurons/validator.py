@@ -38,7 +38,18 @@ from rich.console import Console
 # Global artifact name
 UPDATE_TIMEOUT = 60*60*2
 ARTIFACT_NAME:str = "model.pth"
-
+RUN_STEP_MAX_TIME = 60 * 20 # 20 min run step timeout.
+def timeout(seconds):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            thread = threading.Thread(target=func, args=args, kwargs=kwargs)
+            thread.start()
+            thread.join(seconds)
+            if thread.is_alive():
+                raise TimeoutError("Function call timed out")
+            return
+        return wrapper
+    return decorator
 class Validator:
 
     @staticmethod
@@ -49,6 +60,7 @@ class Validator:
         parser.add_argument( '--blocks_per_epoch', type=int, default=360, help='Number of blocks to wait before setting weights.' )
         parser.add_argument( '--pages_per_eval', type=int, default=3, help='Number of pages used to eval each step.' )
         parser.add_argument( '--sample_min', type=int, default=10, help='Number of uids to eval each step.' )
+        parser.add_argument( '--reset_wandb', action='store_true', help='Creates a new wandb run instead of using an older on.' )
         bt.subtensor.add_args(parser)
         bt.logging.add_args(parser)
         bt.wallet.add_args(parser)
@@ -72,6 +84,7 @@ class Validator:
             import json
             run_id_file = self.config.full_path + '/run.json'
             try:
+                if self.config.reset_wandb: raise Exception('go to create new run.')
                 with open( run_id_file, 'r' ) as f:
                     self.run_id = json.load( f )['WANDB_RUN_ID']
                     bt.logging.success(f'Continuing run, loaded run_id: {self.run_id}')
@@ -147,7 +160,7 @@ class Validator:
                 if pretrain.utils.update_model_for_uid( uid, self.metagraph ):
                     self.uids_to_eval.add( uid )
                     bt.logging.trace(f'uids to eval add: {uid}')
-                time.sleep( 10 )
+                time.sleep( bt.__blocktime__ )
 
     def compute_losses_per_page( self, uid, batches_per_page: Dict[int, List[torch.Tensor]] ) -> Dict[int, List[float]]:
         try:
@@ -191,6 +204,8 @@ class Validator:
 
         return losses_per_page
         
+    # Add a 20 minute max timeout.
+    @timeout( RUN_STEP_MAX_TIME )
     def run_step( self ):
         # Load metadata.
         self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
@@ -249,7 +264,7 @@ class Validator:
             it = self.metadata[ i ]['timestamp']
             jt = self.metadata[ j ]['timestamp']
             il = (1 - 0.03) * il if it < jt else il
-            jl = (1 - 0.03) * jl if it < jt else jl
+            jl = (1 - 0.03) * jl if jt < it else jl
             if il < jl: return True
             else: return False
 
@@ -354,6 +369,7 @@ class Validator:
 
         # Create a new dictionary with the required format
         graphed_data = {
+            'block': self.subtensor.block,
             'uid_data': {str(uid): uid_data[str(uid)]['average_loss'] for uid in uids},
             'weight_data': {str(uid): self.weights[uid].item() for uid in uids}
         }
@@ -365,7 +381,9 @@ class Validator:
         while True:
             try:            
                 while self.metagraph.block.item() - self.last_epoch < self.config.blocks_per_epoch:
-                    self.run_step()
+                    try: self.run_step()
+                    except TimeoutError: 
+                        bt.logging.error(f'Run step timedout after {RUN_STEP_MAX_TIME} seconds')
                     self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
                     bt.logging.debug(f"{self.metagraph.block.item() - self.last_epoch } / {self.config.blocks_per_epoch} blocks until next epoch.")
                     self.global_step += 1
