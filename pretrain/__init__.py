@@ -27,11 +27,10 @@ __spec_version__ = (
 NETUID = 9
 WANDB_PROJECT = 'pretraining-subnet'
 
-best_uid_epsilon = 0.03
-per_loss_epsilon = 0.05
+timestamp_epsilon = 0.01
 n_eval_pages = 3
 batch_size = 3
-sequence_length = 512
+sequence_length = 1024
 
 import os
 netuid_dir = os.path.expanduser(f'~/.bittensor/miners/netuid{NETUID}/')
