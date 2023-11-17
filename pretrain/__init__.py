@@ -27,9 +27,19 @@ __spec_version__ = (
 NETUID = 9
 WANDB_PROJECT = 'pretraining-subnet'
 
+# validator weight moving average term
+alpha = 0.9
+# validator scoring exponential temperature
+temperature = 0.05
+# validator update model timeout (time between checking uids)
+update_model_timeout = 2 # 2 = checks all models every 256 * 2 seconds.
+# validator score boosting for earlier models.
 timestamp_epsilon = 0.01
+# validators number of pages to eval over miners on each step.
 n_eval_pages = 3
-batch_size = 3
+# validator eval batch size.
+batch_size = 1
+# validator eval sequence length.
 sequence_length = 1024
 
 import os
