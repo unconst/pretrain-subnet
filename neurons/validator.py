@@ -61,6 +61,7 @@ class Validator:
         parser.add_argument( '--pages_per_eval', type=int, default=3, help='Number of pages used to eval each step.' )
         parser.add_argument( '--sample_min', type=int, default=10, help='Number of uids to eval each step.' )
         parser.add_argument( '--reset_wandb', action='store_true', help='Creates a new wandb run instead of using an older on.' )
+        parser.add_argument( '--dont_set_weights', action='store_true', help='Creates a new wandb run instead of using an older on.' )
         bt.subtensor.add_args(parser)
         bt.logging.add_args(parser)
         bt.wallet.add_args(parser)
@@ -99,6 +100,7 @@ class Validator:
             self.config.hotkey = self.wallet.hotkey.ss58_address
             self.config.run_name = self.run_name
             self.config.type = "validator"
+            self.config.version = pretrain.__version__
             self.wandb_run = wandb.init(
                 id = self.run_id,
                 name = self.run_name,
@@ -160,7 +162,7 @@ class Validator:
                 if pretrain.utils.update_model_for_uid( uid, self.metagraph ):
                     self.uids_to_eval.add( uid )
                     bt.logging.trace(f'uids to eval add: {uid}')
-                time.sleep( bt.__blocktime__ )
+                time.sleep( pretrain.update_model_timeout )
 
     def compute_losses_per_page( self, uid, batches_per_page: Dict[int, List[torch.Tensor]] ) -> Dict[int, List[float]]:
         try:
@@ -203,9 +205,49 @@ class Validator:
             losses_per_page[page] = page_losses
 
         return losses_per_page
-        
+
+    def try_sync_metagraph( self, ttl: int ):
+        @timeout( ttl )
+        def _try_sync_metagraph():
+            self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
+        try: _try_sync_metagraph()
+        except TimeoutError: 
+            bt.logging.error(f'Failed to sync metagraph after {ttl} seconds')
+
+    def try_set_weights( self, ttl: int ):
+        @timeout( ttl )
+        def _try_set_weights():
+            try:
+                self.weights.nan_to_num( 0.0 )
+                self.subtensor.set_weights(
+                    netuid = pretrain.NETUID,
+                    wallet = self.wallet,
+                    uids = self.metagraph.uids,
+                    weights = self.weights,
+                    wait_for_inclusion=False,
+                )
+            except: pass
+            ws, ui = self.weights.topk( len( self.weights ) )
+            table = Table(title="All Weights")
+            table.add_column("uid", justify="right", style="cyan", no_wrap=True)
+            table.add_column("weight", style="magenta")
+            for index, weight in list(zip(ui.tolist(), ws.tolist())):
+                table.add_row(str(index), str(round(weight, 4)))
+            console = Console()
+            console.print(table)
+        try: _try_set_weights()
+        except TimeoutError: 
+            bt.logging.error(f'Failed to set weights after {ttl} seconds')
+
+    def try_run_step( self, ttl: int ):
+        @timeout( ttl )
+        def _try_run_step():
+            self.run_step()
+        try: _try_run_step()
+        except TimeoutError: 
+            bt.logging.error(f'Failed to run step after {ttl} seconds')
+
     # Add a 20 minute max timeout.
-    @timeout( RUN_STEP_MAX_TIME )
     def run_step( self ):
         # Load metadata.
         self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
@@ -263,8 +305,8 @@ class Validator:
             if 'timestamp' not in self.metadata[ j ]: return True 
             it = self.metadata[ i ]['timestamp']
             jt = self.metadata[ j ]['timestamp']
-            il = (1 - 0.03) * il if it < jt else il
-            jl = (1 - 0.03) * jl if jt < it else jl
+            il = (1 - pretrain.timestamp_epsilon) * il if it < jt else il
+            jl = (1 - pretrain.timestamp_epsilon) * jl if jt < it else jl
             if il < jl: return True
             else: return False
 
@@ -274,6 +316,7 @@ class Validator:
         for i in uids:
             total_matches = 0
             for j in uids:
+                if i == j: continue
                 for p in pages:
                     for b, _ in enumerate( batches_per_page[ p ] ):
                         wins[ i ] += 1 if better( i, j, p, b ) else 0
@@ -281,17 +324,15 @@ class Validator:
             win_rate[ i ] = wins[ i ] / total_matches
    
         # Compute and update weights which is a temperatured softmax over wins.
-        alpha = 0.9
-        temperature = 0.05
         step_weights = torch.tensor([ win_rate[ uid ] for uid in uids ], dtype=torch.float32)
-        softmax_step_weights = torch.softmax( step_weights / temperature, dim=0 )
+        softmax_step_weights = torch.softmax( step_weights / pretrain.temperature, dim=0 )
         new_weights = self.weights.clone()
         for i, uid in enumerate( uids ):
             new_weights[ uid ] = softmax_step_weights[ i ] 
         new_weights.nan_to_num( 0.0 )
         new_weights /= new_weights.sum()
         new_weights.nan_to_num( 0.0 )
-        self.weights = alpha * self.weights + ( 1 - alpha ) * new_weights
+        self.weights = pretrain.alpha * self.weights + ( 1 - pretrain.alpha ) * new_weights
 
         # Blacklist bad miners. Here we remove uids from eval set 
         # based on their win rate, this prunes miners down the sample min
@@ -369,6 +410,7 @@ class Validator:
 
         # Create a new dictionary with the required format
         graphed_data = {
+            'time': time.time(),
             'block': self.subtensor.block,
             'uid_data': {str(uid): uid_data[str(uid)]['average_loss'] for uid in uids},
             'weight_data': {str(uid): self.weights[uid].item() for uid in uids}
@@ -376,37 +418,19 @@ class Validator:
         if self.config.wandb.on: 
             bt.logging.debug('Logging to Wandb')
             self.wandb_run.log({ **graphed_data, "original_format_json": original_format_json}, step=self.global_step)
+        bt.logging.debug('Finished run step.')
 
     def run(self):
         while True:
             try:            
                 while self.metagraph.block.item() - self.last_epoch < self.config.blocks_per_epoch:
-                    try: self.run_step()
-                    except TimeoutError: 
-                        bt.logging.error(f'Run step timedout after {RUN_STEP_MAX_TIME} seconds')
-                    self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
+                    self.try_run_step( ttl = RUN_STEP_MAX_TIME )
+                    self.try_sync_metagraph( ttl = 60 )
                     bt.logging.debug(f"{self.metagraph.block.item() - self.last_epoch } / {self.config.blocks_per_epoch} blocks until next epoch.")
                     self.global_step += 1
 
-                # Finish epoch.
-                try:
-                    self.weights.nan_to_num( 0.0 )
-                    self.subtensor.set_weights(
-                        netuid = pretrain.NETUID,
-                        wallet = self.wallet,
-                        uids = self.metagraph.uids,
-                        weights = self.weights,
-                        wait_for_inclusion=False,
-                    )
-                except: pass
-                ws, ui = self.weights.topk( len( self.weights ) )
-                table = Table(title="All Weights")
-                table.add_column("uid", justify="right", style="cyan", no_wrap=True)
-                table.add_column("weight", style="magenta")
-                for index, weight in list(zip(ui.tolist(), ws.tolist())):
-                    table.add_row(str(index), str(round(weight, 4)))
-                console = Console()
-                console.print(table)
+                if not self.config.dont_set_weights:
+                    self.try_set_weights( ttl = 60 )
                 self.last_epoch = self.metagraph.block.item()
                 self.epoch_step += 1
 

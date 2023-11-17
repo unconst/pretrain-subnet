@@ -17,7 +17,7 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 version_split = __version__.split(".")
 __spec_version__ = (
     (1000 * int(version_split[0]))
@@ -27,11 +27,20 @@ __spec_version__ = (
 NETUID = 9
 WANDB_PROJECT = 'pretraining-subnet'
 
-best_uid_epsilon = 0.03
-per_loss_epsilon = 0.05
+# validator weight moving average term
+alpha = 0.9
+# validator scoring exponential temperature
+temperature = 0.05
+# validator update model timeout (time between checking uids)
+update_model_timeout = 2 # 2 = checks all models every 256 * 2 seconds.
+# validator score boosting for earlier models.
+timestamp_epsilon = 0.01
+# validators number of pages to eval over miners on each step.
 n_eval_pages = 3
-batch_size = 3
-sequence_length = 512
+# validator eval batch size.
+batch_size = 1
+# validator eval sequence length.
+sequence_length = 1024
 
 import os
 netuid_dir = os.path.expanduser(f'~/.bittensor/miners/netuid{NETUID}/')

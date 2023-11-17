@@ -75,6 +75,15 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
     metadata_file = os.path.join( models_dir, 'metadata.json' )
     model_path = os.path.join( models_dir, 'model.pth' )
 
+    # Delete models where there is no file.
+    if len( runs ) == 0:
+        if os.path.exists(metadata_file):
+            os.remove(metadata_file)
+        if os.path.exists(model_path):
+            os.remove(model_path)
+        bt.logging.error(f'Deleting {uid} model with no run.')
+        return False
+
     # Iterate through runs. Newer runs first.
     for run in runs:
         bt.logging.trace(f'check run: {run.id}')
@@ -85,7 +94,11 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
             bt.logging.trace(f'Run:{run.id}, for uid:{uid} was valid.')
             
             # Run artifact.
-            model_artifact = run.file('model.pth')
+            try:
+                model_artifact = run.file('model.pth')
+            except:
+                # No model, continue.
+                continue
 
             # Define the local model directory and timestamp file paths
             timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
@@ -117,6 +130,13 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
             # The run failed the signature check. Moving to the next run.
             bt.logging.trace(f'Run:{run.id}, for uid:{uid} was not valid with error: {reason}')
             continue
+
+    # Deleting model path if no valid runs.
+    if os.path.exists(metadata_file):
+        os.remove(metadata_file)
+    if os.path.exists(model_path):
+        os.remove(model_path)
+    bt.logging.error(f'Deleting {uid} model with no valid run.')
     return False
 
 def load_metadata_for_uid( uid: int ):
