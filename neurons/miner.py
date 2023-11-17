@@ -67,8 +67,11 @@ def get_config():
     # Training sequence length
     parser.add_argument("--sl", type = int, default = pretrain.sequence_length, help="Sequence length")
 
+    # Training accumulation steps per step.
+    parser.add_argument("--accumulation_steps", type = int, default = 5, help="The number of training accumulation steps.")
+
     # Set the number of pages trained per epoch
-    parser.add_argument("--pages_per_epoch", type = int, default=5, help="Number of pages trained on per epoch")
+    parser.add_argument("--pages_per_epoch", type = int, default=10, help="Number of pages trained on per epoch")
 
     # Include wallet and logging arguments from bittensor
     bt.wallet.add_args(parser)
@@ -225,6 +228,9 @@ bt.logging.success('Pushed artifact to the wandb run.')
 # Start the training loop
 epoch_step = 0
 global_step = 0
+n_acc_steps = 0
+accumulation_steps = config.accumulation_steps  
+
 try:
     while epoch_step < config.num_epochs or config.num_epochs == -1:
         # Initialize loss accumulator for the epoch
@@ -241,31 +247,31 @@ try:
 
         # Enumerate over the data loader
         n_batches = 0
-        for i, batch in enumerate(loader):
+        optimizer.zero_grad()  # Initialize gradients to zero
 
+        for i, batch in enumerate(loader):
             # Move the input batch to the device
             inputs = batch.to(model.device)
             
             # Forward pass: compute the model output and loss
             outputs = model(inputs, labels=inputs)
-                
-            # Backward pass: compute the gradient of the loss with respect to model parameters
-            outputs.loss.backward()
-            
-            # Clear the memory cache to avoid CUDA out of memory issues
+
+            loss = outputs.loss / accumulation_steps  # Scale loss
+            loss.backward()  # Accumulate gradients
+
+            if (i + 1) % accumulation_steps == 0:
+                n_acc_steps += 1
+                optimizer.step()  # Perform a single optimization step
+                optimizer.zero_grad()  # Clear gradients
+                bt.logging.success(f'Step: {n_acc_steps} loss: {outputs.loss.detach().item()}')
+                wandb.log( { 'loss': outputs.loss.detach(), 'n_batches': n_batches }, step = n_acc_steps )
+
             torch.cuda.empty_cache()
-            
-            # Update model parameters
-            optimizer.step()
-            
-            # Step loss
-            wandb.log( { 'loss': outputs.loss.detach(), 'n_batches': n_batches }, step = global_step )
-            
+                        
             # Log the loss for the current step
             n_batches += 1
             global_step += 1
             epoch_loss += outputs.loss.detach().item()
-            bt.logging.success(f'Step: {i} loss: {outputs.loss.detach().item()}')
 
         # Calculate the average loss for the epoch
         avg_loss = epoch_loss / n_batches
