@@ -263,8 +263,8 @@ class Validator:
             if 'timestamp' not in self.metadata[ j ]: return True 
             it = self.metadata[ i ]['timestamp']
             jt = self.metadata[ j ]['timestamp']
-            il = (1 - 0.03) * il if it < jt else il
-            jl = (1 - 0.03) * jl if jt < it else jl
+            il = (1 - 0.01) * il if it < jt else il
+            jl = (1 - 0.01) * jl if jt < it else jl
             if il < jl: return True
             else: return False
 
