@@ -81,6 +81,7 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
             os.remove(metadata_file)
         if os.path.exists(model_path):
             os.remove(model_path)
+        bt.logging.error(f'Deleting {uid} model with no run.')
         return False
 
     # Iterate through runs. Newer runs first.
@@ -129,6 +130,13 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
             # The run failed the signature check. Moving to the next run.
             bt.logging.trace(f'Run:{run.id}, for uid:{uid} was not valid with error: {reason}')
             continue
+
+    # Deleting model path if no valid runs.
+    if os.path.exists(metadata_file):
+        os.remove(metadata_file)
+    if os.path.exists(model_path):
+        os.remove(model_path)
+    bt.logging.error(f'Deleting {uid} model with no valid run.')
     return False
 
 def load_metadata_for_uid( uid: int ):
