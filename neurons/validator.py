@@ -100,6 +100,7 @@ class Validator:
             self.config.hotkey = self.wallet.hotkey.ss58_address
             self.config.run_name = self.run_name
             self.config.type = "validator"
+            self.config.version = pretrain.__version__
             self.wandb_run = wandb.init(
                 id = self.run_id,
                 name = self.run_name,
@@ -409,6 +410,7 @@ class Validator:
 
         # Create a new dictionary with the required format
         graphed_data = {
+            'time': time.time(),
             'block': self.subtensor.block,
             'uid_data': {str(uid): uid_data[str(uid)]['average_loss'] for uid in uids},
             'weight_data': {str(uid): self.weights[uid].item() for uid in uids}
