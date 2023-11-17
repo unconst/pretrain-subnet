@@ -333,6 +333,7 @@ class Validator:
         new_weights /= new_weights.sum()
         new_weights.nan_to_num( 0.0 )
         self.weights = pretrain.alpha * self.weights + ( 1 - pretrain.alpha ) * new_weights
+        self.weights.nan_to_num( 0.0 )
 
         # Blacklist bad miners. Here we remove uids from eval set 
         # based on their win rate, this prunes miners down the sample min
