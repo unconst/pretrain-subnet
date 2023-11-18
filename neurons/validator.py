@@ -154,15 +154,19 @@ class Validator:
     def update_models( self ):
         # The below loop iterates across all miner uids and checks to see 
         # if they should be updated.
+        last_uid_update = -1
         while not self.stop_event.is_set():
-            # Go through sorted metadata, if the update interval has passed, update the model.
-            self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
-            for uid, meta in self.metadata.items():
-                if self.stop_event.is_set(): return
-                if pretrain.utils.update_model_for_uid( uid, self.metagraph ):
-                    self.uids_to_eval.add( uid )
-                    bt.logging.trace(f'uids to eval add: {uid}')
-                time.sleep( pretrain.update_model_timeout )
+            if self.stop_event.is_set(): return
+            block = self.subtensor.block 
+            uid = block % 256
+            if uid == last_uid_update: 
+                time.sleep(1)
+                continue
+            last_uid_update = uid
+            bt.logging.success( f'Updating model under uid: {uid} for block: {block}')
+            if pretrain.utils.update_model_for_uid( uid, self.metagraph ):
+                self.uids_to_eval.add( uid )
+                bt.logging.trace(f'uids to eval add: {uid}')
 
     def compute_losses_per_page( self, uid, batches_per_page: Dict[int, List[torch.Tensor]] ) -> Dict[int, List[float]]:
         try:
