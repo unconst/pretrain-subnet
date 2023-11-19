@@ -281,7 +281,7 @@ try:
         epoch_step += 1
 
         # Check if the average loss of this epoch is the best we've seen so far
-        if avg_loss < best_avg_loss:
+        if avg_loss < best_avg_loss * ( 1 - pretrain.timestamp_epsilon ):
             best_avg_loss = avg_loss  # Update the best average loss
             bt.logging.success(f'New best average loss: {best_avg_loss}. Saving model...')
             
