@@ -53,6 +53,18 @@ def check_run_validity( run, metagraph ) -> typing.Tuple[ bool, str ]:
         # An exception occurec when checking the signature.
         return False, f'Failed Signature: An exception occured while checking the signature with error: {e}'
 
+def check_run_exists( uid, metadata: dict, metagraph ):
+    try:
+        expected_runid = metadata['runid']
+        api = wandb.Api( timeout = 100 )
+        run = api.run(f"opentensor-dev/{pretrain.WANDB_PROJECT}/{expected_runid}")
+        assert run.config['uid'] == uid
+        assert run.config['hotkey'] == metagraph.hotkeys[uid]
+        return True
+    except Exception as e:
+        bt.logging.error(f'check run failed with error: {e}')
+        return False
+
 def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = None ):
 
     if not metagraph: metagraph = bt.subtensor().metagraph( pretrain.NETUID )
@@ -114,7 +126,9 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
                         'model_path': model_path,
                         'version': run.config['version'],
                         'blacklisted': False,
-                        'last_update': time.time()
+                        'last_update': time.time(),
+                        'uid': uid,
+                        'hotkey': expected_hotkey,
                     }, f)
 
             # Check to see if model needs updating.

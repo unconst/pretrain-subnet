@@ -259,7 +259,11 @@ class Validator:
         # Uids to eval is based on global uids to eval. Uids to eval is pruned every step
         # based on the best 50% of miners with replacement when those model are updated during the
         # update thread. uid to eval is bounded below at sample_min.
-        uids = [uid for uid in list( self.uids_to_eval ) if self.metadata[uid] != None]
+        uids = []
+        for uid in list( self.uids_to_eval ):
+            if self.metadata[uid] == None: continue
+            if pretrain.utils.check_run_exists( uid, self.metadata[uid], self.metagraph ):
+                uids.append( uid )
         random.shuffle( uids )
         bt.logging.success( f'Runnning step with uids: {uids}')
 
