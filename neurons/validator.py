@@ -25,6 +25,7 @@ import torch
 import typing
 import string
 import random
+import asyncio
 import argparse
 import pretrain
 import traceback
@@ -39,17 +40,6 @@ from rich.console import Console
 UPDATE_TIMEOUT = 60*60*2
 ARTIFACT_NAME:str = "model.pth"
 RUN_STEP_MAX_TIME = 60 * 20 # 20 min run step timeout.
-def timeout(seconds):
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            thread = threading.Thread(target=func, args=args, kwargs=kwargs)
-            thread.start()
-            thread.join(seconds)
-            if thread.is_alive():
-                raise TimeoutError("Function call timed out")
-            return
-        return wrapper
-    return decorator
 class Validator:
 
     @staticmethod
@@ -210,17 +200,8 @@ class Validator:
 
         return losses_per_page
 
-    def try_sync_metagraph( self, ttl: int ):
-        @timeout( ttl )
-        def _try_sync_metagraph():
-            self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
-        try: _try_sync_metagraph()
-        except TimeoutError: 
-            bt.logging.error(f'Failed to sync metagraph after {ttl} seconds')
-
-    def try_set_weights( self, ttl: int ):
-        @timeout( ttl )
-        def _try_set_weights():
+    async def try_set_weights( self, ttl: int ):
+        async def _try_set_weights():
             try:
                 self.weights.nan_to_num( 0.0 )
                 self.subtensor.set_weights(
@@ -239,20 +220,26 @@ class Validator:
                 table.add_row(str(index), str(round(weight, 4)))
             console = Console()
             console.print(table)
-        try: _try_set_weights()
-        except TimeoutError: 
+        try: await asyncio.wait_for( _try_set_weights() , ttl )
+        except asyncio.TimeoutError: 
             bt.logging.error(f'Failed to set weights after {ttl} seconds')
 
-    def try_run_step( self, ttl: int ):
-        @timeout( ttl )
-        def _try_run_step():
-            self.run_step()
-        try: _try_run_step()
-        except TimeoutError: 
+    async def try_sync_metagraph( self, ttl: int ):
+        async def _try_sync_metagraph():
+            self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
+        try: await asyncio.wait_for( _try_sync_metagraph() , ttl )
+        except asyncio.TimeoutError: 
+            bt.logging.error(f'Failed to sync metagraph after {ttl} seconds')
+
+    async def try_run_step( self, ttl: int ):
+        async def _try_run_step():
+            await self.run_step()
+        try: await asyncio.wait_for( _try_run_step() , ttl )
+        except asyncio.TimeoutError: 
             bt.logging.error(f'Failed to run step after {ttl} seconds')
 
     # Add a 20 minute max timeout.
-    def run_step( self ):
+    async def run_step( self ):
         # Load metadata.
         self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
 
@@ -424,22 +411,24 @@ class Validator:
             'uid_data': {str(uid): uid_data[str(uid)]['average_loss'] for uid in uids},
             'weight_data': {str(uid): self.weights[uid].item() for uid in uids}
         }
+
         if self.config.wandb.on: 
-            bt.logging.debug('Logging to Wandb')
+            bt.logging.trace('Logging to Wandb')
             self.wandb_run.log({ **graphed_data, "original_format_json": original_format_json}, step=self.global_step)
+            bt.logging.trace('finished log to Wandb')
         bt.logging.debug('Finished run step.')
 
-    def run(self):
+    async def run(self):
         while True:
             try:            
                 while self.metagraph.block.item() - self.last_epoch < self.config.blocks_per_epoch:
-                    self.try_run_step( ttl = RUN_STEP_MAX_TIME )
-                    self.try_sync_metagraph( ttl = 60 )
+                    await self.try_run_step( ttl = RUN_STEP_MAX_TIME )
+                    await self.try_sync_metagraph( ttl = 60 )
                     bt.logging.debug(f"{self.metagraph.block.item() - self.last_epoch } / {self.config.blocks_per_epoch} blocks until next epoch.")
                     self.global_step += 1
 
                 if not self.config.dont_set_weights:
-                    self.try_set_weights( ttl = 60 )
+                    await self.try_set_weights( ttl = 60 )
                 self.last_epoch = self.metagraph.block.item()
                 self.epoch_step += 1
 
@@ -453,4 +442,4 @@ class Validator:
 
 
 if __name__ == "__main__":
-    Validator().run()
+    asyncio.run( Validator().run() ) 
