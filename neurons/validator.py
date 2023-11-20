@@ -41,6 +41,7 @@ from rich.console import Console
 UPDATE_TIMEOUT = 60*60*2
 ARTIFACT_NAME:str = "model.pth"
 RUN_STEP_MAX_TIME = 60 * 20 # 20 min run step timeout.
+os.environ['TOKENIZERS_PARALLELISM'] = True
 class Validator:
 
     @staticmethod
@@ -50,7 +51,7 @@ class Validator:
         parser.add_argument( '--wandb.off', dest = 'wandb.on', action='store_false', help='Turn off wandb logging.' )
         parser.add_argument( '--blocks_per_epoch', type=int, default=360, help='Number of blocks to wait before setting weights.' )
         parser.add_argument( '--pages_per_eval', type=int, default=3, help='Number of pages used to eval each step.' )
-        parser.add_argument( '--sample_min', type=int, default=10, help='Number of uids to eval each step.' )
+        parser.add_argument( '--sample_min', type=int, default=30, help='Number of uids to eval each step.' )
         parser.add_argument( '--reset_wandb', action='store_true', help='Creates a new wandb run instead of using an older on.' )
         parser.add_argument( '--dont_set_weights', action='store_true', help='Creates a new wandb run instead of using an older on.' )
         bt.subtensor.add_args(parser)

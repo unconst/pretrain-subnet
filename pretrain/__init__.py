@@ -30,7 +30,7 @@ WANDB_PROJECT = 'pretraining-subnet'
 # validator weight moving average term
 alpha = 0.9
 # validator scoring exponential temperature
-temperature = 0.05
+temperature = 0.25
 # validator update model timeout (time between checking uids)
 update_model_timeout = 2 # 2 = checks all models every 256 * 2 seconds.
 # validator score boosting for earlier models.
