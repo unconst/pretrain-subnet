@@ -30,6 +30,7 @@ import argparse
 import pretrain
 import traceback
 import threading
+import multiprocessing
 import bittensor as bt
 from tqdm import tqdm
 from typing import Dict, List
@@ -220,21 +221,33 @@ class Validator:
                 table.add_row(str(index), str(round(weight, 4)))
             console = Console()
             console.print(table)
-        try: await asyncio.wait_for( _try_set_weights() , ttl )
+        try:
+            bt.logging.debug(f'Setting weights.') 
+            await asyncio.wait_for( _try_set_weights() , ttl )
+            bt.logging.debug(f'Finished setting weights.') 
         except asyncio.TimeoutError: 
             bt.logging.error(f'Failed to set weights after {ttl} seconds')
 
     async def try_sync_metagraph( self, ttl: int ):
-        async def _try_sync_metagraph():
-            self.metagraph = self.subtensor.metagraph( pretrain.NETUID )
-        try: await asyncio.wait_for( _try_sync_metagraph() , ttl )
-        except asyncio.TimeoutError: 
+        def sync_metagraph( endpoint ):
+            metagraph = bt.subtensor( endpoint ).metagraph( pretrain.NETUID )
+            metagraph.save()
+        process = multiprocessing.Process(target=sync_metagraph, args=( self.subtensor.chain_endpoint, ))
+        process.start()
+        process.join(timeout=ttl)
+        if process.is_alive():
+            process.terminate()
+            process.join()
             bt.logging.error(f'Failed to sync metagraph after {ttl} seconds')
+        self.metagraph.load()
 
     async def try_run_step( self, ttl: int ):
         async def _try_run_step():
             await self.run_step()
-        try: await asyncio.wait_for( _try_run_step() , ttl )
+        try: 
+            bt.logging.debug(f'Running step.') 
+            await asyncio.wait_for( _try_run_step() , ttl )
+            bt.logging.debug(f'Finished running step.') 
         except asyncio.TimeoutError: 
             bt.logging.error(f'Failed to run step after {ttl} seconds')
 
@@ -251,6 +264,8 @@ class Validator:
             if self.metadata[uid] == None: continue
             if pretrain.utils.check_run_exists( uid, self.metadata[uid], self.metagraph ):
                 uids.append( uid )
+            else:
+                bt.logging.debug( f'uid:{uid} run does not exist or is not valid, removing from uids to eval.')
         random.shuffle( uids )
         bt.logging.success( f'Runnning step with uids: {uids}')
 

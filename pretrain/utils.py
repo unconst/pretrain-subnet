@@ -62,7 +62,7 @@ def check_run_exists( uid, metadata: dict, metagraph ):
         assert run.config['hotkey'] == metagraph.hotkeys[uid]
         return True
     except Exception as e:
-        bt.logging.error(f'check run failed with error: {e}')
+        bt.logging.debug(f'Check run failed with error: {e}')
         return False
 
 def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = None ):
@@ -93,7 +93,7 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
             os.remove(metadata_file)
         if os.path.exists(model_path):
             os.remove(model_path)
-        bt.logging.error(f'Deleting {uid} model with no run.')
+            bt.logging.debug(f'Deleting {uid} model with no run.')
         return False
 
     # Iterate through runs. Newer runs first.
@@ -150,7 +150,7 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
         os.remove(metadata_file)
     if os.path.exists(model_path):
         os.remove(model_path)
-    bt.logging.error(f'Deleting {uid} model with no valid run.')
+        bt.logging.debug(f'Deleting {uid} model with no valid run.')
     return False
 
 def load_metadata_for_uid( uid: int ):
