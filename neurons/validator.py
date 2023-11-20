@@ -41,7 +41,6 @@ from rich.console import Console
 UPDATE_TIMEOUT = 60*60*2
 ARTIFACT_NAME:str = "model.pth"
 RUN_STEP_MAX_TIME = 60 * 20 # 20 min run step timeout.
-os.environ['TOKENIZERS_PARALLELISM'] = True
 class Validator:
 
     @staticmethod
