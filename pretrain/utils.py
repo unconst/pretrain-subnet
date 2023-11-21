@@ -19,6 +19,7 @@
 import os
 import time
 import json
+import torch
 import wandb
 import typing
 import pretrain
@@ -151,7 +152,7 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
     if os.path.exists(model_path):
         os.remove(model_path)
         bt.logging.debug(f'Deleting {uid} model with no valid run.')
-    return False
+    return False 
 
 def load_metadata_for_uid( uid: int ):
     """
@@ -164,6 +165,119 @@ def load_metadata_for_uid( uid: int ):
         model_dir = os.path.join(pretrain.netuid_dir, 'models', str(uid))
         try:
             with open(os.path.join(model_dir, 'metadata.json'), 'r') as f: 
+                meta = json.load(f)
+        except Exception as e:
+            # bt.logging.trace(f'Failed Metadata: uid:{uid}, no file under path:{model_dir}')
+            return None
+        if 'version' not in meta or 'timestamp' not in meta or 'runid' not in meta:
+            bt.logging.trace(f'Failed Metadata: uid:{uid}, metadata file corrupted.')
+            return None
+        else:
+            # Valid metadata.
+            return meta
+    except Exception as e:
+        # Skip this UID if any error occurs during loading of model or timestamp.
+        bt.logging.trace(f'Failed Metadata: uid:{uid}, metadata could not be loaded with error:{e}')
+        return None
+
+def update_delta_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = None ):
+
+    if not metagraph: metagraph = bt.subtensor().metagraph( pretrain.NETUID )
+    # Retrieve runs from the wandb project for this uid
+    api = wandb.Api( timeout = 100 )
+    expected_hotkey = metagraph.hotkeys[uid]
+    runs = api.runs(
+        f"opentensor-dev/{pretrain.WANDB_PROJECT}",
+        filters={
+            "config.version": pretrain.__version__,
+            "config.type": "delta-miner",
+            "config.run_name": {
+                "$regex": f"delta-miner-{uid}-.*"
+            },
+            "config.hotkey": expected_hotkey,
+        },
+    )
+    models_dir = os.path.join( pretrain.netuid_dir, 'models', str(uid) )
+    delta_metadata_file = os.path.join( models_dir, 'delta_metadata.json' )
+    delta_path = os.path.join( models_dir, 'delta.pth' )
+
+    # Delete models where there is no file.
+    if len( runs ) == 0:
+        if os.path.exists(delta_metadata_file):
+            os.remove(delta_metadata_file)
+        if os.path.exists(delta_path):
+            os.remove(delta_path)
+            bt.logging.debug(f'Deleting {uid} model with no run.')
+        return False
+
+    # Iterate through runs. Newer runs first.
+    for run in runs:
+        bt.logging.trace(f'check run: {run.id}')
+
+        # Check if the run is valid.
+        valid, reason = check_run_validity( run, metagraph )
+        if valid:
+            bt.logging.trace(f'Run:{run.id}, for uid:{uid} was valid.')
+            
+            # Run artifact.
+            try:
+                delta_artifact = run.file('delta.pth')
+            except:
+                # No model, continue.
+                continue
+
+            # Define the local model directory and timestamp file paths
+            timestamp = int(datetime.strptime(delta_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
+            current_meta = load_metadata_for_uid( uid )  
+                      
+            # The run is valid, lets update it
+            os.makedirs( models_dir , exist_ok=True)
+            with open(delta_metadata_file, 'w') as f: 
+                json.dump( 
+                    { 
+                        'timestamp': timestamp, 
+                        'runid': run.id,
+                        'delta_path': delta_path,
+                        'version': run.config['version'],
+                        'blacklisted': False,
+                        'last_update': time.time(),
+                        'uid': uid,
+                        'hotkey': expected_hotkey,
+                    }, f)
+
+            # Check to see if model needs updating.
+            if current_meta != None and current_meta.get('timestamp', -1) == timestamp:
+                bt.logging.trace( f'Model is up to date: uid: {uid}, under path: {models_dir}, with timestamp: { timestamp }')
+                return False
+            else:
+                delta_artifact.download( replace=True, root=models_dir )
+            bt.logging.success( f'Updated model: uid: {uid}, under path: {models_dir}, with timestamp: { timestamp }')
+            return True
+
+        else:
+            # The run failed the signature check. Moving to the next run.
+            bt.logging.trace(f'Run:{run.id}, for uid:{uid} was not valid with error: {reason}')
+            continue
+
+    # Deleting model path if no valid runs.
+    if os.path.exists(delta_metadata_file):
+        os.remove(delta_metadata_file)
+    if os.path.exists(delta_path):
+        os.remove(delta_path)
+        bt.logging.debug(f'Deleting {uid} delta with no valid run.')
+    return False
+
+def load_delta_metadata_for_uid( uid: int ):
+    """
+        Retrieves the file path to the model checkpoint for uid with associated timestamps and verion.
+    Args:
+        uid: Uid to find metadata on.    
+    """
+    try:
+        # Fill metadata from files and check if we can load weights.
+        model_dir = os.path.join(pretrain.netuid_dir, 'models', str(uid))
+        try:
+            with open(os.path.join(model_dir, 'delta_metadata.json'), 'r') as f: 
                 meta = json.load(f)
         except Exception as e:
             # bt.logging.trace(f'Failed Metadata: uid:{uid}, no file under path:{model_dir}')
