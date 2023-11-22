@@ -15,25 +15,22 @@
 
 # Introduction
 
-Bittensor subnet 9 is currently designed to reward miners for producing producing pretrained models on the Falcon Refined Web dataset. It acts like a continuous benchmark where miners are paid out for attaining the best losses on randomly sampled pages of that dataset. 
-The reward mechanism works as follows.
+Bittensor subnet 9 rewards miners (engineers etc) for producing pretrained Foundation-Models on the Falcon Refined Web dataset. It acts like a continuous benchmark, whereby miners are paid out for attaining the best losses on randomly sampled pages of that dataset. The reward mechanism works as follows:
 
-    1. Miner train and periodically host their model weights on a wandb account which linked to their miner through the neurons/miner.py code. 
-    2. Validators periodically check and pull the latest models hosted on these miners which can be updated continuously by writing the models to ~/.bittensor/miners/<your cold wallet>/<your hot wallet>/netuid9/model.pth
-    3. Validators run a continuous eval on the models hosted by miners performing the validation system outlined in neurons/validator.py setting weights every epoch based on the performance of each miner on the Falcon dataset.
+    1. Miner train and periodically host their model weights on a wandb account linked to their miner keys through the neurons/miner.py code. 
+    2. Validators run a continuous eval on the hosted models, performing the validation system outlined in neurons/validator.py and setting weights to the chain based on the performance of each miner on the Falcon dataset.
 
 #### Validation
 
-Miners are evaluated based on the number of times their loss on a random batch duing a 360 block epoch are lower than all other miners. 
-To perform well miners must attain the lowest loss on the largest number of random batches sampled from the 900M page, 3T token dataset Falcon Refined Wed.
+Miners are evaluated based on the number of times their loss on a random batch from Falcon are lower than other miners. 
+To perform well, miners must attain the lowest loss on the largest number of random batches sampled from the 900M page, 3T token dataset, Falcon Refined Wed.
 
-All models are open and accessible via a wandb [project](https://wandb.ai/opentensor-dev/pretraining-subnet) and this repo contains tools for downloading them and then
-serving them on your own miner, as well as getting data from validators about which model perform best on which pages of the Falcon Dataset.
+All models are open and accessible via a wandb [project](https://wandb.ai/opentensor-dev/pretraining-subnet) and this repo contains tools for downloading them,
+serving them on your own miner, as well as getting data from validators about which model perform best on which pages of the Falcon Dataset. Finding the best model at the earliest timestamp 
+ensurs the most incentive.
 
-The drive to find the best miner at the earliest rate is ensured by having validators record the best global miner per epoch and assigning
-a miner ```epsilon``` reduction on the loss of the best miner from the previous epoch when calculating wins per batch.
 ```python
-    epsilon = 0.03 # best miner epsilon reduction.
+    epsilon = 0.01 # timestamp boost.
     while True:
         wins = {} # Count of wins per batch per miner
 
@@ -46,29 +43,26 @@ a miner ```epsilon``` reduction on the loss of the best miner from the previous 
             # Fetch and or update models during this step.
             models = get_and_update_models_from_miners()
 
-            # Compute losses for each batch on subset and count wins per miner
-            for batch in batches:
-
-                # Find miner with lowest loss on the batch.
-                for miner_uid, model in enumerate( models ):
+            # Compute losses for each batch and each minder
+            losses = {}
+            for model in models:
+                for batch in batches:
                     loss = get_loss_for_model_on_batch( model, batch )
-                    if miner_uid == epoch_global_min_uid: loss *= epsilon
-                    if loss < best_loss:
-                        best_uid = miner_uid
-                        best_loss = loss
+                    losses[ model ].append( loss )
 
-                # Increment the number of wins for the miner with the lowest loss on this subnet.
-                wins[ best_uid ] += 1
-
-        # Assign epoch_global_min_uid to miner uid with lowest loss across all epoch batches.
-        # This miner now attains a single epoch advantage for attaining the lower lost first.
-        epoch_global_min_uid = get_miner_with_lowest_loss_on_all_epoch_batches()
-
+            # Compute wins.
+            wins = {}
+            for model_a in models:
+                for model_b in models:
+                    for i in len( batches )
+                        if losess[ model_a ][ i ] < losess[ model_b ][ i ]:
+                            wins[ model_a ] += 1
+                            
         # End epoch.
         # Weights are computed based on the ratio of wins a model attains during the epoch.
         weights = zeros()
-        for miner_uid in wins.keys()
-            weights = wins[miner_uid] / sum(wins.values())
+        for model_i in models:
+            weights = wins[ model_i ] / sum( wins.values() )
 
         # Set weights on the chain.
         set_weights( weight )
