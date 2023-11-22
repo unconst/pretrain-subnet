@@ -242,6 +242,8 @@ class Validator:
         random.shuffle( uids )
         bt.logging.success( f'Runnning step with model uids: {model_uids}, delta uids: {delta_uids}')
 
+        all_uids = list(set( model_uids + delta_uids ))
+
         # Generate random pages for evaluation and prepare batches for each page
         # the dataset contains >900 million pages to eval over.
         pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(self.config.pages_per_eval)]
@@ -347,21 +349,42 @@ class Validator:
                 continue
         table = Table(title="Model Step")
         table.add_column("uid", justify="right", style="cyan", no_wrap=True)
-        table.add_column("average_loss", style="magenta")
-        table.add_column("win_rate", style="magenta")
-        table.add_column("win_total", style="magenta")
-        table.add_column("weights", style="magenta")
-        table.add_column("last_update", style="magenta")
-        table.add_column("timestamp", style="magenta")
-        for uid in uids:
+        table.add_column("weight", style="magenta")
+
+        table.add_column("model_average_loss", style="magenta")
+        table.add_column("model_win_rate", style="magenta")
+        table.add_column("model_win_total", style="magenta")
+        table.add_column("model_weights", style="magenta")
+        table.add_column("model_last_update", style="magenta")
+        table.add_column("model_timestamp", style="magenta")
+
+        table.add_column("delta_average_loss", style="magenta")
+        table.add_column("delta_win_rate", style="magenta")
+        table.add_column("delta_win_total", style="magenta")
+        table.add_column("delta_weights", style="magenta")
+        table.add_column("delta_weights", style="magenta")
+        table.add_column("delta_last_update", style="magenta")
+        table.add_column("delta_timestamp", style="magenta")
+
+        for uid in all_uids:
             table.add_row(
                 str(uid), 
-                str( round(step_log['uid_data'][ str(uid) ]['average_loss'], 4)), 
-                str( round(step_log['uid_data'][ str(uid) ]['win_rate'], 4)),
-                str(step_log['uid_data'][ str(uid) ]['win_total']),
-                str( round(self.weights[uid].item(), 4) ),
-                str( round(step_log['uid_data'][ str(uid) ]['last_update'], 0)),
-                str( step_log['uid_data'][ str(uid) ]['timestamp']),
+                str( round(self.weights[ uid ].item(), 4) ),
+
+                str( round(step_log['model_uid_data'][ str(uid) ]['model_average_loss'], 4) if uid in model_uids else 'NaN' ), 
+                str( round(step_log['model_uid_data'][ str(uid) ]['model_win_rate'], 4) if uid in model_uids else 'NaN' ),
+                str( step_log['model_uid_data'][ str(uid) ]['model_win_total'] if uid in model_uids else 'NaN'  ),
+                str( round(self.model_weights[uid].item(), 4) if uid in model_uids else 'NaN'  ),
+                str( round(step_log['model_uid_data'][ str(uid) ]['model_last_update'], 0) if uid in model_uids else 'NaN' ),
+                str( step_log['model_uid_data'][ str(uid) ]['model_timestamp'] if uid in model_uids else 'NaN' ),
+
+                str( round(step_log['delta_uid_data'][ str(uid) ]['delta_average_loss'], 4) if uid in delta_uids else 'NaN' ), 
+                str( round(step_log['delta_uid_data'][ str(uid) ]['delta_win_rate'], 4) if uid in delta_uids else 'NaN' ),
+                str( step_log['delta_uid_data'][ str(uid) ]['delta_win_total'] if uid in delta_uids else 'NaN'  ),
+                str( round(self.delta_weights[uid].item(), 4) if uid in delta_uids else 'NaN'  ),
+                str( round(step_log['delta_uid_data'][ str(uid) ]['delta_last_update'], 0) if uid in delta_uids else 'NaN' ),
+                str( step_log['delta_uid_data'][ str(uid) ]['delta_timestamp'] if uid in delta_uids else 'NaN' ),
+
             )
         console = Console()
         console.print(table)
