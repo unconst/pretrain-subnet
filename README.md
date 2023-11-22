@@ -129,7 +129,7 @@ By default, the miner trains from scratch and posts the model periodically as it
 python neurons/miner.py --wallet.name ... --wallet.hotkey ... --num_epochs 10 --pages_per_epoch 5
 ```
 
-Alternatively, you can scrape a model from an already miner on the network by passing its run id. This starts the training process from the checkpoint of another 
+Alternatively, you can scrape a model from an already running miner on the network by passing its run id. This starts the training process from the checkpoint of another 
 miner.
 ```bash
 python neurons/miner.py --wallet.name ... --wallet.hotkey ... --num_epochs 10 --pages_per_epoch 5 --load_run_id ...
