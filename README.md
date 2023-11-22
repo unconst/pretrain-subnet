@@ -43,7 +43,7 @@ ensurs the most incentive.
             # Fetch and or update models during this step.
             models = get_and_update_models_from_miners()
 
-            # Compute losses for each batch and each minder
+            # Compute losses for each batch and each miner
             losses = {}
             for model in models:
                 for batch in batches:
