@@ -106,7 +106,7 @@ btcli w list # to view your created keys.
 ```
 
 Registering a miner or a validator on subnet 9 requires the participant `recycle` TAO to pay for entrance. To register your key run the 
-following command.
+following command. If you dont have any TAO message const [t,t] on discord for a faucet to try things out, please dont scam me.
 ```bash
 # register your cold and associated hotkey to netuid 9
 btcli s register --wallet.name ... --wallet.hotkey ... --netuid 0 
