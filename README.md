@@ -118,58 +118,6 @@ btcli s register --wallet.name ... --wallet.hotkey ... --netuid 0
 Miner and validators make heavy use of weights and biases in order to share model state and validation information. Both miners and validators must attain
 a wandb account from [wandb](https://wandb.ai/home) along with their wandb api key which can be found by following the instructions [here](https://docs.wandb.ai/quickstart).
 
-Models hosted by miners and corresponding validator information for runs can be found in this open wandb [project](https://wandb.ai/opentensor-dev/pretraining-subnet). You can get access to all valid, signed and recent miners runs from participants on the network as follows:
-
-```python
->>> import pretrain
->>> import bittensor as bt
->>> meta = bt.subtensor(network = 'local' ).metagraph(9)
-# Get all valid runs.
->>> miner_runs = pretrain.get_miner_runs( meta )
-    {
-        238: {
-            'uid': 238, 
-            'hotkey': '5CchHAvd95HtTaxfviiC36wt1HFXU73Xq9Aom7NDZJnAiG8v', 
-            'emission': 0.02, 
-            'run': <Run opentensor-dev/pretraining-subnet/63j2ps12 (finished)>, 
-            'model_artifact': <File model.pth () 312.5MiB>, 
-            'timestamp': 1699448922
-        }, 
-        239: {
-            'uid': 239, 
-            'hotkey': '5CSczy1dp4EpvLARaVbgvq8DST6oJgqmSTTQJZ8iXhJpKwdZ', 
-            'emission': 0.01, 
-            'run': <Run opentensor-dev/pretraining-subnet/qp0w790l (finished)>, 
-            'model_artifact': <File model.pth () 312.5MiB>, 'timestamp': 1699448504
-        } 
-        ...
-# Download model from run 1
->> model = pretrain.model.get_model() 
->> miner_runs['5CchHAvd95HtTaxfviiC36wt1HFXU73Xq9Aom7NDZJnAiG8v']['model_artifact'].download( replace=True, root=<path to model>)
->> model_weights = torch.load( <path to model> )
->> model.load_state_dict( model_weights )
-```
-
-Alternatively, you can download all validation data from wandb which can be used to evaluate how miners are performing on each individual page of the Falcon Refined Web dataset.
-```python
->>> import pretrain
->>> import bittensor as bt
->>> meta = bt.subtensor(network = 'local' ).metagraph(9)
-# Get all valid runs.
->>> vali_runs = pretrain.get_validator_runs( meta )
- {
-        240: {
-            'uid': 238, 
-            'hotkey': '5CchHAvd95HtTaxfviiC36wt1HFXU73Xq9Aom7NDZJnAiG8v', 
-            'stake': 123121, 
-            'run': <Run opentensor-dev/pretraining-subnet/63j2ps12 (finished)>, 
-        }, 
-        ...
- }
- dataframe = vali_runs[240]['run'].history()
- ...
-```
-
 ---
 
 ## Mining
