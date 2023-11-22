@@ -256,7 +256,7 @@ class Validator:
             # Adding the delta to the original model
             realized_weights = head_weights.clone()
             for param in head_weights:
-                realized_weights[ param ] += delta[ param ]
+                realized_weights[ param ] += delta_weights[ param ]
 
             # Init the delta applied model.
             realized_model = pretrain.model.get_model()

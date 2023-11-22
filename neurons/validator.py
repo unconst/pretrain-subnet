@@ -126,11 +126,19 @@ class Validator:
         self.global_step = 0
         self.last_epoch = self.metagraph.block.item()
         self.last_update_check = {}
-        self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
-        self.uids_to_eval = set()
+
+        # Metadata info.
+        self.model_metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
+        self.delta_metadata = { uid: pretrain.utils.load_delta_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
+
+        # Uids to eval per step sets.
+        self.model_uids_to_eval = set()
+        self.delta_uids_to_eval = set()
         for uid in self.metagraph.uids.tolist():
-            if self.metadata[uid] != None:
-                self.uids_to_eval.add( uid )
+            if self.model_metadata[ uid ] != None:
+                self.model_uids_to_eval.add( uid )
+            if self.delta_metadata[ uid ] != None:
+                self.delta_uids_to_eval.add( uid )
 
         # == Initialize the update thread ==
         self.stop_event = threading.Event()
@@ -155,52 +163,12 @@ class Validator:
                 continue
             last_uid_update = uid
             bt.logging.success( f'Updating model under uid: {uid} for block: {block}')
-            if pretrain.utils.update_model_for_uid( uid, self.metagraph ):
-                self.uids_to_eval.add( uid )
-                bt.logging.trace(f'uids to eval add: {uid}')
-
-    def compute_losses_per_page( self, uid, batches_per_page: Dict[int, List[torch.Tensor]] ) -> Dict[int, List[float]]:
-        try:
-            # Load the pre-trained model from the specified path
-            model_path = self.metadata[uid]['model_path']
-            model = pretrain.model.get_model()
-            model_weights = torch.load(model_path, map_location=torch.device(self.config.device))
-            model.load_state_dict(model_weights)
-            model.eval()  # Set the model to evaluation mode
-            model.to(self.config.device)  # Move the model to the appropriate device
-        except Exception as e:
-            bt.logging.debug(f"Error loading {uid} model with error: {e}")
-            inf_losses = {}
-            for page, batches in batches_per_page.items():
-                inf_losses[page] = [math.inf for _ in batches]
-            return inf_losses
-
-        # Initialize a dictionary to store loss values for each page
-        losses_per_page = {}
-
-        # Iterate over each page and its corresponding batches
-        for page, batches in batches_per_page.items():
-            page_losses = []  # List to store losses for the current page
-
-            # Process each batch and compute its loss
-            for batch in batches:
-                try:
-                    # Perform a forward pass with the model to compute the loss
-                    inputs = batch.to(self.config.device)
-                    outputs = model(inputs, labels=inputs)
-                    loss = outputs.loss.item()  # Get the scalar loss value
-                    page_losses.append(loss)
-                except Exception as e:
-                    # Log the exception and append infinity to indicate failure
-                    bt.logging.error(f"Exception occurred: {e}")
-                    traceback.print_exc()  # Correctly print the stack trace
-                    page_losses.append(math.inf)
-            
-            # Update the dictionary with the losses for the current page
-            losses_per_page[page] = page_losses
-
-        return losses_per_page
-
+            pretrain.utils.update_model_for_uid( uid, self.metagraph )
+            pretrain.utils.update_delta_for_uid( uid, self.metagraph )
+            self.model_uids_to_eval.add( uid )
+            self.delta_uids_to_eval.add( uid )
+            bt.logging.trace(f'uids to eval add: {uid}')
+ 
     async def try_set_weights( self, ttl: int ):
         async def _try_set_weights():
             try:
@@ -253,26 +221,31 @@ class Validator:
 
     # Add a 20 minute max timeout.
     async def run_step( self ):
-        # Load metadata.
-        self.metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
 
-        # Uids to eval is based on global uids to eval. Uids to eval is pruned every step
-        # based on the best 50% of miners with replacement when those model are updated during the
-        # update thread. uid to eval is bounded below at sample_min.
-        uids = []
-        for uid in list( self.uids_to_eval ):
+        # Load metadata.
+        self.model_metadata = { uid: pretrain.utils.load_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
+        self.delta_metadata = { uid: pretrain.utils.load_delta_metadata_for_uid( uid ) for uid in self.metagraph.uids.tolist() }
+
+        # Filter model uids to eval
+        model_uids = []
+        for uid in list( self.model_uids_to_eval ):
             if self.metadata[uid] == None: continue
-            if pretrain.utils.check_run_exists( uid, self.metadata[uid], self.metagraph ):
-                uids.append( uid )
-            else:
-                bt.logging.debug( f'uid:{uid} run does not exist or is not valid, removing from uids to eval.')
+            if pretrain.utils.check_run_exists( uid, self.model_metadata[uid], self.metagraph ): model_uids.append( uid )
+            else: bt.logging.debug( f'uid:{uid} run does not exist or is not valid, removing from uids to eval.')
+
+        # Filter delta uids to eval
+        delta_uids = [] 
+        for uid in list( self.delta_uids_to_eval ):
+            if self.metadata[uid] == None: continue
+            if pretrain.utils.check_run_exists( uid, self.delta_metadata[uid], self.metagraph ): delta_uids.append( uid )
+            else: bt.logging.debug( f'uid:{uid} run does not exist or is not valid, removing from uids to eval.')
         random.shuffle( uids )
-        bt.logging.success( f'Runnning step with uids: {uids}')
+        bt.logging.success( f'Runnning step with model uids: {model_uids}, delta uids: {delta_uids}')
 
         # Generate random pages for evaluation and prepare batches for each page
         # the dataset contains >900 million pages to eval over.
         pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(self.config.pages_per_eval)]
-        batches_per_page = {
+        batches = {
             page: list(pretrain.dataset.SubsetFalconLoader(
                 batch_size = pretrain.batch_size,
                 sequence_length = pretrain.sequence_length,
@@ -280,109 +253,99 @@ class Validator:
             )) for page in pages
         }
 
-        # Compute losses per page and average losses for each uid.
-        bt.logging.debug(f"computing losses on {uids}")
-        best_average_loss = math.inf
-        best_average_loss_uid = None
-        losses_per_page_per_uid = { uid: None for uid in uids }
-        average_loss_per_uid_per_page = { uid: {} for uid in uids }
-        for uid_i in uids:
-            # Compute losses across each batch of each page.
-            losses = self.compute_losses_per_page( uid_i, batches_per_page )
-            losses_per_page_per_uid[ uid_i ] = losses
+        # Compute model scoring.
+        model_losses_per_uid = { muid: None for muid in model_uids } 
+        for muid_i in model_uids:
+            model = pretrain.model.get_model_for_uid( muid_i )
+            losses = pretrain.validation.compute_losses( model, batches, device = self.config.device )
+            model_losses_per_uid[ muid_i ] = losses
 
-            # Compute average loss per page
-            for page_j in pages:
-                page_losses = losses[ page_j ]
-                average_loss = sum(page_losses)/len(page_losses)
-                average_loss_per_uid_per_page[ uid_i ][ page_j ] = average_loss
+        # Compute delta scoring.
+        base_uid = max(range(256), key=lambda uid: self.metagraph.I[uid].item())
+        base_model = pretrain.model.get_model_for_uid( base_uid, device = self.config.device  )
+        delta_losses_per_uid = { duid: None for duid in delta_uids } 
+        for duid_i in delta_uids:
+            delta = pretrain.model.get_delta_for_uid( duid_i )
+            shifted_base_model = pretrain.model.apply_delta( base_model, delta )
+            losses = pretrain.validation.compute_losses( shifted_base_model, batches, device = self.config.device )
+            delta_losses_per_uid[ duid_i ] = losses
 
-            # Compute best average loss.
-            total_average_loss = sum([ average_loss_per_uid_per_page[uid_i][page_j] for page_j in pages ] ) / len( pages )
-            if total_average_loss < best_average_loss:
-                best_average_loss = total_average_loss
-                best_average_loss_uid = uid_i
-    
-            bt.logging.debug( f'Computed loss for uid: {uid_i} with total average loss: {total_average_loss}')
+        # Compute model win rates + weights
+        model_wins, model_win_rate = pretrain.validation.compute_wins( model_losses_per_uid, batches, self.model_metadata )
+        model_weights = torch.tensor([ model_win_rate[ uid ] for uid in model_uids ], dtype=torch.float32)
+        self.model_weights = torch.softmax( model_weights / pretrain.temperature, dim=0 )
 
-        # Win function.
-        # Determines the winner based on the epsilon adjusted loss
-        # Models that were created earlier have a 3% decrease in loss
-        def better( i, j, p, b ):
-            il = losses_per_page_per_uid[ i ][ p ][ b ]
-            jl = losses_per_page_per_uid[ j ][ p ][ b ]
-            if 'timestamp' not in self.metadata[ i ]: return False 
-            if 'timestamp' not in self.metadata[ j ]: return True 
-            it = self.metadata[ i ]['timestamp']
-            jt = self.metadata[ j ]['timestamp']
-            il = (1 - pretrain.timestamp_epsilon) * il if it < jt else il
-            jl = (1 - pretrain.timestamp_epsilon) * jl if jt < it else jl
-            if il < jl: return True
-            else: return False
+        # Compute delta win rates + weights.
+        delta_wins, delta_win_rate = pretrain.validation.compute_wins( delta_losses_per_uid, batches, self.delta_metadata )        
+        delta_weights = torch.tensor([ delta_win_rate[ uid ] for uid in delta_uids ], dtype=torch.float32)
+        self.delta_weights = torch.softmax( delta_weights / pretrain.temperature, dim=0 )
 
-        # Compute wins this step.
-        wins = { uid: 0 for uid in uids }
-        win_rate = { uid: 0 for uid in uids }
-        for i in uids:
-            total_matches = 0
-            for j in uids:
-                if i == j: continue
-                for p in pages:
-                    for b, _ in enumerate( batches_per_page[ p ] ):
-                        wins[ i ] += 1 if better( i, j, p, b ) else 0
-                        total_matches += 1
-            win_rate[ i ] = wins[ i ] / total_matches
-   
-        # Compute and update weights which is a temperatured softmax over wins.
-        step_weights = torch.tensor([ win_rate[ uid ] for uid in uids ], dtype=torch.float32)
-        softmax_step_weights = torch.softmax( step_weights / pretrain.temperature, dim=0 )
+        # Sum weights.
         new_weights = self.weights.clone()
-        for i, uid in enumerate( uids ):
-            new_weights[ uid ] = softmax_step_weights[ i ] 
-        new_weights.nan_to_num( 0.0 )
+        for duid in delta_uids: new_weights[ duid ] += self.delta_weights[ duid ]
+        for muid in model_uids: new_weights[ muid ] += self.model_weights[ muid ]
         new_weights /= new_weights.sum()
-        new_weights.nan_to_num( 0.0 )
+
+        # Moving average the weights.
         self.weights = pretrain.alpha * self.weights + ( 1 - pretrain.alpha ) * new_weights
         self.weights.nan_to_num( 0.0 )
 
         # Blacklist bad miners. Here we remove uids from eval set 
         # based on their win rate, this prunes miners down the sample min
         # miner uids are replaced when their model is updated on wandb after a timeout.
-        removed = 0
-        size = len( list(self.uids_to_eval) )
-        for uid in uids:
-            if size - removed <= self.config.sample_min: break
-            if win_rate[uid] < 0.5:
-                self.uids_to_eval.remove( uid )
+        for uid in model_uids:
+            if len( list(self.model_uids_to_eval) ) <= self.config.sample_min: break
+            if model_win_rate[uid] < 0.5: 
+                self.model_uids_to_eval.remove( uid )
 
+        for uid in delta_uids:
+            if len( list(self.delta_uids_to_eval) ) <= self.config.sample_min: break
+            if delta_win_rate[uid] < 0.5: 
+                self.delta_uids_to_eval.remove( uid )
+        
         # Build step log
         step_log = {
             'timestamp': time.time(),
             'pages': pages,
             'uids': uids,
-            'best_average_loss': best_average_loss,
-            'best_average_loss_uid': best_average_loss_uid,
-            'uid_data': {}
+            'model_uid_data': {},
+            'delta_uid_data': {}
         }
-        for uid in uids:
+        for uid in model_uids:
             try:
-                average_losses = [average_loss_per_uid_per_page[uid][pagek] for pagek in pages]
-                average_loss = sum(average_losses) / len(average_losses)
-                step_log['uid_data'][ str(uid) ] = {
-                    'uid': uid,
-                    'runid': self.metadata[ uid ]['runid'],
-                    'timestamp': self.metadata[ uid ]['timestamp'],
-                    'last_update': self.metadata[ uid ]['last_update'],
-                    'blacklisted': self.metadata[ uid ]['blacklisted'],
-                    'average_losses': average_losses,
-                    'average_loss': average_loss,
-                    'win_rate': win_rate[ uid ],
-                    'win_total': wins[ uid ],
-                    'weight': self.weights[ uid ].item()
+                model_page_average_losses = [ sum( model_losses_per_uid[ uid ][ pagek ])/ len( model_losses_per_uid[ uid ][ pagek ] ) for pagek in pages]
+                model_average_loss = sum(model_page_average_losses) / len(model_page_average_losses)
+                step_log['model_uid_data'][ str(uid) ] = {
+                    'model_uid': uid,
+                    'model_runid': self.model_metadata[ uid ]['runid'],
+                    'model_timestamp': self.model_metadata[ uid ]['timestamp'],
+                    'model_last_update': self.model_metadata[ uid ]['last_update'],
+                    'model_average_losses': model_page_average_losses,
+                    'model_average_loss': model_average_loss,
+                    'model_win_rate': model_win_rate[ uid ],
+                    'model_wins': model_wins[ uid ],
+                    'model_weight': self.model_weights[ uid ].item()
                 }
             except:
                 continue
-        table = Table(title="Step")
+        for uid in delta_uids:
+            try:
+                delta_page_average_losses = [ sum( delta_losses_per_uid[ uid ][ pagek ])/ len( delta_losses_per_uid[ uid ][ pagek ] ) for pagek in pages]
+                delta_average_loss = sum(delta_page_average_losses) / len(delta_page_average_losses)
+                step_log['delta_uid_data'][ str(uid) ] = {
+                    'delta_uid': uid,
+                    'delta_runid': self.delta_metadata[ uid ]['runid'],
+                    'delta_timestamp': self.delta_metadata[ uid ]['timestamp'],
+                    'delta_last_update': self.delta_metadata[ uid ]['last_update'],
+                    'delta_average_losses': delta_page_average_losses,
+                    'delta_average_loss': delta_average_loss,
+                    'delta_win_rate': delta_win_rate[ uid ],
+                    'delta_wins': delta_wins[ uid ],
+                    'delta_weight': self.delta_weights[ uid ].item()
+                }
+            except:
+                continue
+        table = Table(title="Model Step")
         table.add_column("uid", justify="right", style="cyan", no_wrap=True)
         table.add_column("average_loss", style="magenta")
         table.add_column("win_rate", style="magenta")

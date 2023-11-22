@@ -17,6 +17,7 @@
 # DEALINGS IN THE SOFTWARE.
 
 import os
+import copy
 import time
 import json
 import torch
@@ -293,3 +294,34 @@ def load_delta_metadata_for_uid( uid: int ):
         bt.logging.trace(f'Failed Metadata: uid:{uid}, metadata could not be loaded with error:{e}')
         return None
       
+      
+def get_model_for_uid( uid:int, device:str ) -> torch.nn.Module:
+    model = pretrain.model.get_model()
+    model_meta = load_metadata_for_uid( uid )
+    model_weights = torch.load( model_meta['model_path'], map_location=torch.device(device))
+    model.load_state_dict( model_weights )
+    return model
+
+def get_delta_for_uid( uid:int, device:str ) -> torch.nn.Module:
+    delta = pretrain.model.get_model()
+    delta_meta = load_delta_metadata_for_uid( uid )
+    delta_weights = torch.load( delta_meta['delta_path'], map_location=torch.device(device))
+    delta.load_state_dict( delta_weights )
+    return delta
+
+def apply_delta(base_model: torch.nn.Module, delta_model: torch.nn.Module, device: str = 'str') -> torch.nn.Module:
+    # Clone the base model to avoid modifying it directly
+    new_model = copy.deepcopy(base_model)
+    new_model.to( device )
+
+    # Iterating over the parameters of the base model and the delta model
+    for (name, _), (_, delta_param) in zip(base_model.named_parameters(), delta_model.named_parameters()):
+        # Check if the name of the parameters in both models match
+        if name == name:
+            # Apply the delta and update the parameter in the new model
+            # Use in-place operations to be memory efficient
+            delta_param.to( device )
+            new_model.state_dict()[name].add_(delta_param.data)
+
+    return new_model
+
