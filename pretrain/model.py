@@ -32,11 +32,4 @@ def get_model():
     return GPT2LMHeadModel(config)
 
 
-def get_model_for_uid( uid:int, device:str) -> torch.nn.Module:
-    model = pretrain.model.get_model()
-    model_meta = pretrain.utils.load_metadata_for_uid( uid )
-    model_weights = torch.load( model_meta['model_path'], map_location=torch.device(device))
-    model.load_state_dict( model_weights )
-    return model
-
 

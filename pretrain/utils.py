@@ -294,34 +294,127 @@ def load_delta_metadata_for_uid( uid: int ):
         bt.logging.trace(f'Failed Metadata: uid:{uid}, metadata could not be loaded with error:{e}')
         return None
       
-      
-def get_model_for_uid( uid:int, device:str ) -> torch.nn.Module:
-    model = pretrain.model.get_model()
-    model_meta = load_metadata_for_uid( uid )
-    model_weights = torch.load( model_meta['model_path'], map_location=torch.device(device))
-    model.load_state_dict( model_weights )
-    return model
 
-def get_delta_for_uid( uid:int, device:str ) -> torch.nn.Module:
-    delta = pretrain.model.get_model()
-    delta_meta = load_delta_metadata_for_uid( uid )
-    delta_weights = torch.load( delta_meta['delta_path'], map_location=torch.device(device))
-    delta.load_state_dict( delta_weights )
-    return delta
+def apply_delta( base_model: torch.nn.Module, delta_model: torch.nn.Module, device: str = 'cpu' ) -> torch.nn.Module:
+    """
+    Applies the changes from a delta model onto a base model.
 
-def apply_delta(base_model: torch.nn.Module, delta_model: torch.nn.Module, device: str = 'str') -> torch.nn.Module:
+    This function creates a copy of the base model and then iterates through its parameters, 
+    updating them with the corresponding parameters from the delta model.
+
+    Parameters:
+        base_model (torch.nn.Module): The original model to which the delta will be applied.
+        delta_model (torch.nn.Module): The delta model containing the updates.
+        device (str): The device (e.g., 'cpu' or 'gpu') to move the models for processing. Defaults to 'cpu'.
+
+    Returns:
+        torch.nn.Module: The updated model with the delta applied.
+    """
+
     # Clone the base model to avoid modifying it directly
     new_model = copy.deepcopy(base_model)
-    new_model.to( device )
+    # Move the new model to the specified device
+    new_model.to(device)
 
-    # Iterating over the parameters of the base model and the delta model
-    for (name, _), (_, delta_param) in zip(base_model.named_parameters(), delta_model.named_parameters()):
-        # Check if the name of the parameters in both models match
-        if name == name:
+    # Iterate over the parameters of the base model and the delta model
+    for (base_param_name, base_param), (delta_param_name, delta_param) in zip(base_model.named_parameters(), delta_model.named_parameters()):
+        # Ensure the parameter names in both models match
+        if base_param_name == delta_param_name:
+            # Move the delta parameter to the same device as the new model
+            delta_param = delta_param.to(device)
             # Apply the delta and update the parameter in the new model
-            # Use in-place operations to be memory efficient
-            delta_param.to( device )
-            new_model.state_dict()[name].add_(delta_param.data)
+            # Using in-place addition to be memory efficient
+            new_model.state_dict()[base_param_name].add_(delta_param.data)
 
     return new_model
+
+def get_and_update_delta_for_uid(uid: int, device: str = 'cpu') -> typing.Optional[torch.nn.Module]:
+    """
+    Retrieves and updates the delta (a form of model update) for a specific user ID (uid).
+    This function tries to update the delta weights and then loads them into the model.
+
+    Parameters:
+    uid (int): The user ID for which the delta is to be retrieved and updated.
+    device (str): The device on which the model is to be loaded. Defaults to 'cpu'.
+
+    Returns:
+    torch.nn.Module or None: The updated model if successful, None otherwise.
+    """
+    try:
+        update_delta_for_uid(uid)
+        delta = pretrain.model.get_model()
+        delta_meta = load_delta_metadata_for_uid(uid)
+        delta_weights = torch.load(delta_meta['delta_path'], map_location=torch.device(device))
+        delta.load_state_dict(delta_weights)
+        return delta
+    except Exception as e:
+        bt.logging.debug(f'Error loading delta for uid: {uid} with error: {e}')
+        return None
+
+def get_delta_for_uid(uid: int, device: str = 'cpu') -> typing.Optional[torch.nn.Module]:
+    """
+    Retrieves the delta for a specific user ID (uid) without updating it.
+    This function loads the delta weights into the model.
+
+    Parameters:
+    uid (int): The user ID for which the delta is to be retrieved.
+    device (str): The device on which the model is to be loaded. Defaults to 'cpu'.
+
+    Returns:
+    torch.nn.Module or None: The model with loaded delta if successful, None otherwise.
+    """
+    try:
+        delta = pretrain.model.get_model()
+        delta_meta = load_delta_metadata_for_uid(uid)
+        delta_weights = torch.load(delta_meta['delta_path'], map_location=torch.device(device))
+        delta.load_state_dict(delta_weights)
+        return delta
+    except Exception as e:
+        bt.logging.debug(f'Error loading delta for uid: {uid} with error: {e}')
+        return None
+
+def get_and_update_model_for_uid(uid: int, device: str = 'cpu') -> typing.Optional[torch.nn.Module]:
+    """
+    Retrieves and updates the model for a specific user ID (uid).
+    This function tries to update the model weights and then loads them into the model.
+
+    Parameters:
+    uid (int): The user ID for which the model is to be retrieved and updated.
+    device (str): The device on which the model is to be loaded. Defaults to 'cpu'.
+
+    Returns:
+    torch.nn.Module or None: The updated model if successful, None otherwise.
+    """
+    try:
+        update_model_for_uid(uid)
+        model = pretrain.model.get_model()
+        model_meta = load_metadata_for_uid(uid)
+        model_weights = torch.load(model_meta['model_path'], map_location=torch.device(device))
+        model.load_state_dict(model_weights)
+        return model
+    except Exception as e:
+        bt.logging.debug(f'Error loading model for uid: {uid} with error: {e}')
+        return None
+
+def get_model_for_uid(uid: int, device: str = 'cpu') -> typing.Optional[torch.nn.Module]:
+    """
+    Retrieves the model for a specific user ID (uid) without updating it.
+    This function loads the model weights into the model.
+
+    Parameters:
+    uid (int): The user ID for which the model is to be retrieved.
+    device (str): The device on which the model is to be loaded. Defaults to 'cpu'.
+
+    Returns:
+    torch.nn.Module or None: The model if successful, None otherwise.
+    """
+    try:
+        model = pretrain.model.get_model()
+        model_meta = load_metadata_for_uid(uid)
+        model_weights = torch.load(model_meta['model_path'], map_location=torch.device(device))
+        model.load_state_dict(model_weights)
+        return model
+    except Exception as e:
+        bt.logging.debug(f'Error loading model for uid: {uid} with error: {e}')
+        return None
 

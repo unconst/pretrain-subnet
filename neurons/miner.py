@@ -17,6 +17,7 @@
 # DEALINGS IN THE SOFTWARE.
 
 import os
+import json
 import wandb
 import torch
 import string
@@ -177,13 +178,7 @@ model.to(config.device)  # Move the model to the specified device
 # Initialize the optimizer
 optimizer = torch.optim.AdamW( model.parameters(), lr = config.lr, weight_decay=0.01)
 
-import random
-
-# Initialize a variable to keep track of the best average loss
-best_avg_loss = float('inf')
-
 # Loads your wandb run from file or creates a new one.
-import json
 run_id_file = config.full_path + '/run.json'
 try:
     with open( run_id_file, 'r' ) as f:

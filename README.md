@@ -94,7 +94,7 @@ ensurs the most incentive.
         set_weights( weight )
 ```
 
-The behaviour of the `iswin( loss_a, loss_b, timestamp_a, timestamp_b)` function is integral to the way in which this incentives function works since it skews the win function 
+The behaviour of the `iswin( loss_a, loss_b, timestamp_a, timestamp_b)` function is integral to the way in which this incentive function works since it skews the win function 
 to reward models and deltas which have been hosted earlier on wandb. Specifically, a newer model or delta is only better than another if it is more than `epsilon` percent lower accoring to
 the following function.
 ```python
@@ -106,7 +106,7 @@ def iswin( loss_a, loss_b, timestamp_a, timestamp_b, epsilon ):
     else: return False
 ```
 
-It is important to note that this effects the game theoretics of the incentive landscape since miners should only update their delta or model (thus updating their timestamp to a newer data) if they
+It is important to note that this effects the game theoretics of the incentive landscape since miners should only update their delta or model (thus updating their timestamp to a newer date) if they
 have a achieved an `epsilon` better loss on average on the Falcon Refined Web dataset. This undermines the obvious optimal strategy for miners to simple copy the publicly available models and deltas
 of other miners. They **can** and should copy other miners, but they will always obtain fewer wins compared to them until they also decrease their loss by `epsilon`. The effect is to drive miners to 
 continually produce better models.
@@ -154,6 +154,40 @@ following command. If you dont have any TAO message const [t,t] on discord for a
 # register your cold and associated hotkey to netuid 9
 btcli s register --wallet.name ... --wallet.hotkey ... --netuid 0 
 ```
+
+--- 
+## Tools
+
+The Pretraining package comes with some helper functions to enable better miner performance.
+
+Getting models and deltas from wandb based on a miner uid:
+```python
+import pretrain
+device = 'cuda'
+
+# Downloads and retrieves the torch model hosted on wandb for a miner within the set of available 0->255
+model = pretrain.utils.get_and_update_model_for_uid( 231, device = device )
+
+# Downloads the retrieves the torch delta hosted on wandb for a miner within the available 0->255
+delta = pretrain.utils.get_and_update_delta_for_uid( 102, device = device )
+
+# Applies the delta to the model in the same manner performed by validators.
+perturbed_model = pretrain.utils.apply_delta( model, delta, device = device )
+
+# Attains batches from the Falcon Dataset based on pages 
+pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range(self.config.pages_per_eval)]
+batches = {
+    page: list(pretrain.dataset.SubsetFalconLoader(
+        batch_size = pretrain.batch_size,
+        sequence_length = pretrain.sequence_length,
+        pages = [page]
+    )) for page in pages
+}
+
+# Evaluate the models on these batches.
+losses = pretrain.validation.compute_losses( perturbed_model, batches, device = device )
+```
+
 
 --- 
 ## Wandb
