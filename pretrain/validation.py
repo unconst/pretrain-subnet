@@ -46,6 +46,8 @@ def compute_losses(
         batches: typing.Dict[int, typing.List[torch.Tensor]],
         device: str
     ) -> typing.Dict[int, typing.List[float]]:
+    model.to(device)
+    model.eval()
     # Initialize a dictionary to store loss values for each page
     losses_per_page = {}
 

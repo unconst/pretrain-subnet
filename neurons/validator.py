@@ -53,6 +53,7 @@ class Validator:
         parser.add_argument( '--sample_min', type=int, default=30, help='Number of uids to eval each step.' )
         parser.add_argument( '--reset_wandb', action='store_true', help='Creates a new wandb run instead of using an older on.' )
         parser.add_argument( '--dont_set_weights', action='store_true', help='Creates a new wandb run instead of using an older on.' )
+        parser.add_argument( '--test', action='store_true', help='Tests the runstep with only a few uids.' )
         bt.subtensor.add_args(parser)
         bt.logging.add_args(parser)
         bt.wallet.add_args(parser)
@@ -229,17 +230,20 @@ class Validator:
         # Filter model uids to eval
         model_uids = []
         for uid in list( self.model_uids_to_eval ):
-            if self.metadata[uid] == None: continue
+            if self.model_metadata[uid] == None: continue
             if pretrain.utils.check_run_exists( uid, self.model_metadata[uid], self.metagraph ): model_uids.append( uid )
             else: bt.logging.debug( f'uid:{uid} run does not exist or is not valid, removing from uids to eval.')
+        random.shuffle( model_uids )
+        if self.config.test: model_uids = model_uids[:2] # Runs the step with fewer model uids for testing.
 
         # Filter delta uids to eval
         delta_uids = [] 
         for uid in list( self.delta_uids_to_eval ):
-            if self.metadata[uid] == None: continue
+            if self.delta_metadata[uid] == None: continue
             if pretrain.utils.check_run_exists( uid, self.delta_metadata[uid], self.metagraph ): delta_uids.append( uid )
             else: bt.logging.debug( f'uid:{uid} run does not exist or is not valid, removing from uids to eval.')
-        random.shuffle( uids )
+        random.shuffle( delta_uids )
+        if self.config.test: delta_uids = delta_uids[:2] # Runs the step with fewer delta uids for testing.
         bt.logging.success( f'Runnning step with model uids: {model_uids}, delta uids: {delta_uids}')
 
         all_uids = list(set( model_uids + delta_uids ))
@@ -254,33 +258,42 @@ class Validator:
                 pages = [page]
             )) for page in pages
         }
+        bt.logging.success( f'Eval running on pages: {pages}')
 
         # Compute model scoring.
-        model_losses_per_uid = { muid: None for muid in model_uids } 
+        model_losses_per_uid = { muid: None for muid in model_uids }
         for muid_i in model_uids:
-            model = pretrain.model.get_model_for_uid( muid_i )
+            model = pretrain.model.get_model_for_uid( muid_i, device = self.config.device )
             losses = pretrain.validation.compute_losses( model, batches, device = self.config.device )
             model_losses_per_uid[ muid_i ] = losses
+            average_model_loss = sum(sum(values) for values in losses.values()) / sum(len(values) for values in losses.values())
+            bt.logging.debug(f'Compute model losses for uid:{muid_i} with average loss: {average_model_loss}')
+            del model
 
         # Compute delta scoring.
         base_uid = max(range(256), key=lambda uid: self.metagraph.I[uid].item())
-        base_model = pretrain.model.get_model_for_uid( base_uid, device = self.config.device  )
+        base_model = pretrain.model.get_model_for_uid( base_uid, device = 'cpu'  )
         delta_losses_per_uid = { duid: None for duid in delta_uids } 
         for duid_i in delta_uids:
-            delta = pretrain.model.get_delta_for_uid( duid_i )
+            delta = pretrain.model.get_delta_for_uid( duid_i, device = 'cpu')
             shifted_base_model = pretrain.model.apply_delta( base_model, delta )
             losses = pretrain.validation.compute_losses( shifted_base_model, batches, device = self.config.device )
             delta_losses_per_uid[ duid_i ] = losses
+            average_delta_loss = sum(sum(values) for values in losses.values()) / sum(len(values) for values in losses.values())
+            bt.logging.debug(f'Compute delta loss for uid:{duid_i} with average loss: {average_delta_loss}')
+            del delta
 
         # Compute model win rates + weights
         model_wins, model_win_rate = pretrain.validation.compute_wins( model_losses_per_uid, batches, self.model_metadata )
         model_weights = torch.tensor([ model_win_rate[ uid ] for uid in model_uids ], dtype=torch.float32)
         self.model_weights = torch.softmax( model_weights / pretrain.temperature, dim=0 )
+        bt.logging.success( f'Computed model wins: {model_wins}')
 
         # Compute delta win rates + weights.
         delta_wins, delta_win_rate = pretrain.validation.compute_wins( delta_losses_per_uid, batches, self.delta_metadata )        
         delta_weights = torch.tensor([ delta_win_rate[ uid ] for uid in delta_uids ], dtype=torch.float32)
         self.delta_weights = torch.softmax( delta_weights / pretrain.temperature, dim=0 )
+        bt.logging.success( f'Computed delta wins: {delta_wins}')
 
         # Sum weights.
         new_weights = self.weights.clone()
@@ -295,15 +308,15 @@ class Validator:
         # Blacklist bad miners. Here we remove uids from eval set 
         # based on their win rate, this prunes miners down the sample min
         # miner uids are replaced when their model is updated on wandb after a timeout.
-        for uid in model_uids:
+        for muid in model_uids:
             if len( list(self.model_uids_to_eval) ) <= self.config.sample_min: break
-            if model_win_rate[uid] < 0.5: 
-                self.model_uids_to_eval.remove( uid )
+            if model_win_rate[ muid ] < 0.5: 
+                self.model_uids_to_eval.remove( muid )
 
-        for uid in delta_uids:
+        for duid in delta_uids:
             if len( list(self.delta_uids_to_eval) ) <= self.config.sample_min: break
-            if delta_win_rate[uid] < 0.5: 
-                self.delta_uids_to_eval.remove( uid )
+            if delta_win_rate[ duid ] < 0.5: 
+                self.delta_uids_to_eval.remove( duid )
         
         # Build step log
         step_log = {
