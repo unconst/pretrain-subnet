@@ -27,33 +27,59 @@ import pretrain
 import bittensor as bt
 from datetime import datetime
 
-UPDATE_TIMEOUT: int = 60 * 60 * 6
+def check_run_validity( run: 'wandb.run', metagraph: typing.Optional[ bt.metagraph ] = None  ) -> typing.Tuple[bool, str]:
+    """
+        Checks the validity of a Weights & Biases (wandb) run against a metagraph.
 
-def check_run_validity( run, metagraph ) -> typing.Tuple[ bool, str ]:
+        This function verifies the integrity and authenticity of a wandb run by checking its hotkey and signature 
+        against the provided metagraph. It also validates the presence of a model artifact file ('model.pth') 
+        and its timestamp.
+
+    Parameters:
+        run (wandb.run): The wandb run to be validated.
+        metagraph: The metagraph against which the run's validity is checked.
+
+    Returns:
+        Tuple[bool, str]: A tuple containing a boolean indicating the validity of the run and a string message 
+                      explaining the validity status.
+
+    Note:
+        - The function requires the hotkey and signature to be present in the run's configuration.
+        - It assumes the presence of 'model.pth' as a key artifact in the run.
+        - The function catches and handles exceptions, providing an appropriate message in case of failure.
+    """
+    if not metagraph: metagraph = bt.subtensor().metagraph( pretrain.NETUID )
     try:
+        # Extract hotkey and signature from the run's configuration
         hotkey = run.config['hotkey']
         signature = run.config['signature']
+
+        # Check if the hotkey is registered in the metagraph
         if hotkey not in metagraph.hotkeys:
-            # The hotkey is not registered.
             return False, f'Failed Signature: The hotkey: {hotkey} is not in the metagraph.'
-        if not bt.Keypair(ss58_address=hotkey).verify(run.id, bytes.fromhex(signature)): 
-            # The signature is invalid
+
+        # Verify the signature using the hotkey
+        if not bt.Keypair(ss58_address=hotkey).verify(run.id, bytes.fromhex(signature)):
             return False, f'Failed Signature: The signature: {signature} is not valid'
-        # Attempt to access the model artifact file.
+
+        # Attempt to access the model artifact file
         try: 
             model_artifact = run.file('model.pth')
         except: 
             return False, f'Failed Signature: Does not have a model.pth file'
-        # Check convert the updated at timestamp.
+
+        # Check and convert the updated at timestamp
         try: 
             int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
         except: 
-            return False, f'Failed validity: Does not have a model.pth file'
-        # The run has a valid signature. 
+            return False, f'Failed validity: Does not have a valid model.pth file'
+
+        # The run has a valid signature
         return True, f'Passed Validity check.'
     except Exception as e:
-        # An exception occurec when checking the signature.
-        return False, f'Failed Signature: An exception occured while checking the signature with error: {e}'
+        # Handle exceptions during the validity check
+        return False, f'Failed Signature: An exception occurred while checking the signature with error: {e}'
+
 
 def check_run_exists( uid, metadata: dict, metagraph ):
     try:
@@ -67,12 +93,53 @@ def check_run_exists( uid, metadata: dict, metagraph ):
         bt.logging.debug(f'Check run failed with error: {e}')
         return False
 
-def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = None ):
+def update_model_on_run(model: torch.nn.Module, run: 'wandb.run', path: str = os.path.expanduser('~/tmp/model.pth')):
+    """
+    Saves the state of a given model and updates the corresponding Weights & Biases (wandb) run with the model file.
 
+    This function serializes the state of the provided PyTorch model and saves it to a specified file path. 
+    It then uses the wandb API to log this file to the associated run, allowing for tracking and versioning of model states in wandb.
+
+    Parameters:
+        model (torch.nn.Module): The PyTorch model whose state is to be saved.
+        run (wandb.run): The wandb run to which the model state will be logged.
+        path (str): The file path where the model state will be saved. Defaults to '~/tmp/model.pth'.
+
+    Note:
+        - The function does not perform any checks on the validity of the provided model or wandb run.
+        - The default save path is in the user's home directory under 'tmp', which should be verified or changed based on the system setup.
+    """
+    # Create the directory for the model path if it does not exist
+    if not os.path.exists(os.path.dirname(path)):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    # Save the model state to the specified path
+    torch.save(model.state_dict(), path)
+    # Log the saved model file to wandb run.
+    run.save( path )
+
+def get_run_for_uid( uid: int, metagraph: typing.Optional[ bt.metagraph ] = None ) -> typing.Optional['wandb.run']:
+    """
+    Retrieves a specific Weights & Biases (wandb) run for a given user ID (uid).
+
+    This function queries the wandb API for runs associated with a specific user ID.
+    It filters runs based on the version, type, run name pattern, and hotkey corresponding to the UID.
+    The function returns the most recent valid run for the given UID.
+
+    Parameters:
+        uid (int): The user ID for which the wandb run is to be retrieved.
+
+    Returns:
+        Optional[wandb.run]: The most recent valid wandb run for the given UID, or None if no valid run is found.
+
+    Note:
+    - This function assumes that the metagraph and wandb API settings are correctly configured.
+    - It relies on specific configuration fields (version, type, run_name, hotkey) being present in the wandb run's metadata.
+    """
     if not metagraph: metagraph = bt.subtensor().metagraph( pretrain.NETUID )
-    # Retrieve runs from the wandb project for this uid
-    api = wandb.Api( timeout = 100 )
+    api = wandb.Api(timeout=100)
     expected_hotkey = metagraph.hotkeys[uid]
+
+    # Retrieve runs from the wandb project for this uid
     runs = api.runs(
         f"opentensor-dev/{pretrain.WANDB_PROJECT}",
         filters={
@@ -82,15 +149,50 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
                 "$regex": f"miner-{uid}-.*"
             },
             "config.hotkey": expected_hotkey,
-        },
-        # per_page = 3,
+        }
     )
-    models_dir = os.path.join( pretrain.netuid_dir, 'models', str(uid) )
-    metadata_file = os.path.join( models_dir, 'metadata.json' )
-    model_path = os.path.join( models_dir, 'model.pth' )
 
-    # Delete models where there is no file.
-    if len( runs ) == 0:
+    # Iterate through runs. Newer runs are processed first.
+    for run in runs:
+        check_run_validity(run, metagraph)
+        return run
+    
+    return None
+
+def update_model_for_uid(uid: int, metagraph: typing.Optional[bt.metagraph] = None) -> bool:
+    """
+    Updates the model for a given user ID (uid) if there is a newer valid run.
+
+    This function checks for the latest valid run for the specified uid and updates the local model files 
+    if there is a newer version available. It manages the metadata and model files based on the latest run's 
+    information. If no valid run is found, it cleans up any existing model and metadata files.
+
+    Parameters:
+        uid (int): The user ID for which the model update is to be checked and performed.
+        metagraph (Optional[bt.metagraph]): The metagraph to use for finding the latest valid run. 
+                                        If not provided, it's fetched using pretrain.NETUID.
+
+    Returns:
+        bool: True if the model was updated, False otherwise.
+
+    Note:
+        - The function assumes the existence of specific directories and file paths as defined in 'pretrain'.
+        - It manages model files in a directory structure based on the uid.
+    """
+    # Get the latest valid run for this uid
+    if not metagraph: 
+        metagraph = bt.subtensor().metagraph(pretrain.NETUID)
+
+    latest_valid_run = get_run_for_uid(uid, metagraph=metagraph)
+    expected_hotkey = metagraph.hotkeys[uid]
+
+    # Paths for model and metadata
+    models_dir = os.path.join(pretrain.netuid_dir, 'models', str(uid))
+    metadata_file = os.path.join(models_dir, 'metadata.json')
+    model_path = os.path.join(models_dir, 'model.pth')
+
+    # If no valid runs, delete existing model and metadata
+    if latest_valid_run is None:
         if os.path.exists(metadata_file):
             os.remove(metadata_file)
         if os.path.exists(model_path):
@@ -98,62 +200,37 @@ def update_model_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = 
             bt.logging.debug(f'Deleting {uid} model with no run.')
         return False
 
-    # Iterate through runs. Newer runs first.
-    for run in runs:
-        bt.logging.trace(f'check run: {run.id}')
+    # Create model directory if it doesn't exist
+    os.makedirs(models_dir, exist_ok=True)
 
-        # Check if the run is valid.
-        valid, reason = check_run_validity( run, metagraph )
-        if valid:
-            bt.logging.trace(f'Run:{run.id}, for uid:{uid} was valid.')
-            
-            # Run artifact.
-            try:
-                model_artifact = run.file('model.pth')
-            except:
-                # No model, continue.
-                continue
+    # Load model artifact and get timestamp
+    model_artifact = latest_valid_run.file('model.pth')
+    timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
+    current_meta = load_metadata_for_uid(uid)
 
-            # Define the local model directory and timestamp file paths
-            timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-            current_meta = load_metadata_for_uid( uid )  
-                      
-            # The run is valid, lets update it
-            os.makedirs( models_dir , exist_ok=True)
-            with open(metadata_file, 'w') as f: 
-                json.dump( 
-                    { 
-                        'timestamp': timestamp, 
-                        'runid': run.id,
-                        'model_path': model_path,
-                        'version': run.config['version'],
-                        'blacklisted': False,
-                        'last_update': time.time(),
-                        'uid': uid,
-                        'hotkey': expected_hotkey,
-                    }, f)
+    # Update metadata file
+    with open(metadata_file, 'w') as f: 
+        json.dump({
+            'timestamp': timestamp, 
+            'runid': latest_valid_run.id,
+            'model_path': model_path,
+            'version': latest_valid_run.config['version'],
+            'blacklisted': False,
+            'last_update': time.time(),
+            'uid': uid,
+            'hotkey': expected_hotkey,
+        }, f)
 
-            # Check to see if model needs updating.
-            if current_meta != None and current_meta.get('timestamp', -1) == timestamp:
-                bt.logging.trace( f'Model is up to date: uid: {uid}, under path: {models_dir}, with timestamp: { timestamp }')
-                return False
-            else:
-                model_artifact.download( replace=True, root=models_dir)
-            bt.logging.success( f'Updated model: uid: {uid}, under path: {models_dir}, with timestamp: { timestamp }')
-            return True
+    # Check if model needs updating
+    if current_meta is not None and current_meta.get('timestamp', -1) == timestamp:
+        bt.logging.trace(f'Model is up to date: uid: {uid}, under path: {models_dir}, with timestamp: {timestamp}')
+        return False
+    else:
+        # Download the updated model artifact
+        model_artifact.download(replace=True, root=models_dir)
+        bt.logging.success(f'Updated model: uid: {uid}, under path: {models_dir}, with timestamp: {timestamp}')
+        return True
 
-        else:
-            # The run failed the signature check. Moving to the next run.
-            bt.logging.trace(f'Run:{run.id}, for uid:{uid} was not valid with error: {reason}')
-            continue
-
-    # Deleting model path if no valid runs.
-    if os.path.exists(metadata_file):
-        os.remove(metadata_file)
-    if os.path.exists(model_path):
-        os.remove(model_path)
-        bt.logging.debug(f'Deleting {uid} model with no valid run.')
-    return False 
 
 def load_metadata_for_uid( uid: int ):
     """
