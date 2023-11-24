@@ -23,6 +23,7 @@ import string
 import random
 import argparse
 import pretrain
+import pretrain as pt
 import bittensor as bt
 
 # === Config ===
@@ -50,10 +51,7 @@ def get_config():
     parser.add_argument("--load_best", action='store_true', help='If set, the miner loads the best model from wandb to train off.' ) 
 
     # Add device argument which defaults to 'cuda' if available, else 'cpu'
-    parser.add_argument("--load_run_id", type=str, default=None, help='If passed loads the model under this run id' )  
-
-    # Add device argument which defaults to 'cuda' if available, else 'cpu'
-    parser.add_argument("--continue_id", type=str, default=None, help='If passed continues from the model on the passed run.' )  
+    parser.add_argument("--load_uid", type=int, default=None, help='If passed loads the model under the specified uid.' )  
 
     # Set the number of epochs
     parser.add_argument("--num_epochs", type = int, default = -1, help="Number of training epochs (-1 is infinite)")
@@ -81,149 +79,45 @@ def get_config():
     # Parse the arguments and create a configuration namespace
     config = bt.config(parser)
 
-    # Expand the user path and create a full path for the model
-    config.full_path = os.path.expanduser(
-        "{}/{}/{}/netuid{}/{}".format(
-            config.logging.logging_dir,
-            config.wallet.name,
-            config.wallet.hotkey,
-            pretrain.NETUID,
-            "miner",
-        )
-    )
-
-    # Set the default model path if it wasn't provided in the command line
-    if config.model_path == None:
-        config.model_path = config.full_path + '/' + 'model.pth'
-
-    # Create the directory for the model path if it does not exist
-    if not os.path.exists(os.path.dirname(config.model_path)):
-        os.makedirs(os.path.dirname(config.model_path), exist_ok=True)
-
     return config
 
-# Parse the configuration
+# Parse and print configuration
 config = get_config()
-
-# Print the entire configuration setup
 print(config)
 
-# Create bittensor objects and check uid.
+# Create bittensor objects.
 bt.logging( config = config )
 wallet = bt.wallet( config = config ) 
 subtensor = bt.subtensor( config = config )
 metagraph = subtensor.metagraph( pretrain.NETUID )
-if wallet.hotkey.ss58_address not in metagraph.hotkeys: 
-    bt.logging.error(f"You are not registered. Use `btcli s register --netuid {pretrain.NETUID}` to register.")
-    exit()
-my_uid = metagraph.hotkeys.index( wallet.hotkey.ss58_address )
-bt.logging.success( f'You are registered with address: {wallet.hotkey.ss58_address} and uid: {my_uid}' )
 
-# Initialize and configure the model for pretraining
-model = pretrain.model.get_model()  # Get the model from the pretrain module
-torch.save(model.state_dict(), config.model_path)
-api = wandb.Api( timeout = 100 )
+# Initialize the model based on the best on the network.
+if config.load_best:
+    model = pt.graph.best_model( metagraph, device = config.device )
 
+# Initialize the model based on a passed uid.
+elif config.load_uid is not None:
+    # Sync the state from the passed uid.
+    pt.graph.sync( config.load_uid, metagraph )
+    model = pt.graph.model( config.load_uid, device = config.device )
 
-def get_run_from_id( run_id ):
-    run_path = f"opentensor-dev/{pretrain.WANDB_PROJECT}/{run_id}"
-    bt.logging.success(f'Loading model from path: {run_path}')
-    return api.run(run_path)
-
-# Optionall load the model from the passed run id:
-def load_model_from_run( run ):
-    model_file = run.file("model.pth")
-    model_file.download(replace=True, root = os.path.dirname(config.model_path) )
-    bt.logging.success(f'Loaded and saved model to: {config.model_path}')
-
-# Model is pulled from specific run.
-if config.load_run_id != None:
-    bt.logging.success(f'Loading based on --config.load_run_id {config.model_path}')
-    load_model_from_run( get_run_from_id( config.load_run_id ) )
-    
-# Model is pulled from best on network
-elif config.load_best:
-    bt.logging.success(f'Loading based on --config.load_best')
-    best_uid = max(range(256), key=lambda uid: metagraph.I[uid].item())
-    print(f"best uid is {best_uid}")
-    runs = api.runs(
-        f"opentensor-dev/{pretrain.WANDB_PROJECT}",
-        filters={
-            "config.version": pretrain.__version__,
-            "config.type": "miner",
-            "config.run_name": {
-                "$regex": f"miner-{best_uid}-.*"
-            }
-        }
-    )
-    load_model_from_run( get_run_from_id(runs[0].id) )
-
-elif config.continue_id:
-    run = get_run_from_id( config.continue_id  )
-    run_hotkey = run.config['hotkey']
-    load_model_from_run( run )
-
-# Model is reinited fresh.
+# Initialize the model from scratch.
 else:
-    bt.logging.success(f'Starting model from scratch')
+    model = pt.model.get_model()
 
-# Load the model.
-model_weights = torch.load( config.model_path, map_location=torch.device(config.device) )
-model.load_state_dict( model_weights )
-model.zero_grad()  # Reset gradients to zero
-model.train()  # Set the model to training mode
-model.to(config.device)  # Move the model to the specified device
-
-# Initialize the optimizer
+# Init model.
+model.train() 
+model.to( config.device ) 
 optimizer = torch.optim.AdamW( model.parameters(), lr = config.lr, weight_decay=0.01)
 
-import random
-
-# Initialize a variable to keep track of the best average loss
-best_avg_loss = float('inf')
-
-# Loads your wandb run from file or creates a new one.
-import json
-run_id_file = config.full_path + '/run.json'
-try:
-    with open( run_id_file, 'r' ) as f:
-        run_id = json.load( f )['WANDB_RUN_ID']
-        bt.logging.success(f'Continuing run, loaded run_id: {run_id}')
-except Exception as e: 
-    run_id = wandb.util.generate_id()
-    bt.logging.success(f'First run, creating new run_id: {run_id} {e}')
-
-with open( run_id_file, 'w' ) as f:
-    json.dump({'WANDB_RUN_ID': run_id}, f)
-    bt.logging.success(f'Saved: {run_id} to file.')
-
-# Start wandb run.
-run_name = f'miner-{my_uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
-config.uid = my_uid
-config.hotkey = wallet.hotkey.ss58_address
-config.run_name = run_name
-config.version = pretrain.__version__
-config.type = 'miner'
-wandb_run = wandb.init(
-    id = run_id,
-    name = run_name,
-    anonymous = "allow",
-    project = pretrain.WANDB_PROJECT,
-    entity = 'opentensor-dev',
-    config = config,
-    dir = config.full_path,
-    allow_val_change=True,
+# Initialize pretraining wandb run from wallet.
+wandb_run = pt.mining.init( 
+    wallet, 
+    metagraph = metagraph 
 )
 
-# Signature
-signature = wallet.hotkey.sign( wandb_run.id.encode() ).hex()
-config.signature = signature
-wandb.config.update( config, allow_val_change=True )
-bt.logging.success(f'Successfully signed wandb run with signature {config.signature}')
-
-# Save the model to wandb.
-wandb.save( config.model_path )
-bt.logging.success('Pushed artifact to the wandb run.')
+# Save the initial model state.
+pt.mining.push( wallet, model, wandb_run )
 
 # Start the training loop
 epoch_step = 0
@@ -264,7 +158,7 @@ try:
                 optimizer.step()  # Perform a single optimization step
                 optimizer.zero_grad()  # Clear gradients
                 bt.logging.success(f'Step: {n_acc_steps} loss: {outputs.loss.detach().item()}')
-                wandb.log( { 'loss': outputs.loss.detach(), 'n_batches': n_batches }, step = n_acc_steps )
+                wandb_run.log( { 'loss': outputs.loss.detach(), 'n_batches': n_batches }, step = n_acc_steps )
 
             torch.cuda.empty_cache()
                         
@@ -284,13 +178,8 @@ try:
         if avg_loss < best_avg_loss * ( 1 - pretrain.timestamp_epsilon ):
             best_avg_loss = avg_loss  # Update the best average loss
             bt.logging.success(f'New best average loss: {best_avg_loss}. Saving model...')
-            
-            # Save the model state to the specified path
-            torch.save( model.state_dict(), config.model_path )
-
-            # Save the new best model to wandb.
-            wandb.save( config.model_path )
-            bt.logging.success('Pushed the new artifact to the wandb run.')
+            # Push the model to my wandb run.
+            pt.mining.push( wallet, model, wandb_run )
 
 finally: 
     wandb.finish()

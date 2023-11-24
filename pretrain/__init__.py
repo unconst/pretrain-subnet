@@ -46,6 +46,8 @@ import os
 netuid_dir = os.path.expanduser(f'~/.bittensor/miners/netuid{NETUID}/')
 os.makedirs(netuid_dir, exist_ok=True) 
 
-from . import utils as utils
+from . import graph as graph
 from . import model as model
 from . import dataset as dataset
+from . import validation as validation
+from . import mining as mining
