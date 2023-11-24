@@ -34,16 +34,15 @@ bt.logging( config = config )
 
 # Sync graph
 metagraph = bt.metagraph( pt.NETUID )
-uids = metagraph.uids.tolist()
-random.shuffle( uids )
-uids = uids[:10]
 
-# Sync all models
-for uid in tqdm( uids, desc = 'Syncing Models' ):
+uids = []
+timestamps = {}
+for uid in metagraph.uids.tolist():
     pt.graph.sync( uid, metagraph )
-
-# Get timestamps.
-timestamps = { uid: pt.graph.timestamp( j ) for j in uids }
+    if pt.graph.timestamp( uid ) != None:
+        uids.append( uid )
+        timestamps[uid] = pt.graph.timestamp( uid )
+uids = uids[:10]
 
 # Get all batches.
 pages = [random.randint(1, pt.dataset.SubsetFalconLoader.max_pages) for _ in range(config.pages_per_eval)]

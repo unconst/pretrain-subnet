@@ -134,7 +134,7 @@ if not config.offline:
         metagraph = metagraph 
     )
     # Push the model state to your wandb run.
-    pt.mining.push( wallet, model, wandb_run )
+    pt.mining.push( wallet, wandb_run )
 else:
     bt.logging.success(f'Running with --offline, does not post model to wandb.')
 

@@ -24,6 +24,7 @@ __spec_version__ = (
     + (10 * int(version_split[1]))
     + (1 * int(version_split[2]))
 )
+weights_version_key = 1000
 NETUID = 9
 WANDB_PROJECT = 'pretraining-subnet'
 

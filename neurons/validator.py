@@ -130,6 +130,7 @@ class Validator:
                     uids = self.metagraph.uids,
                     weights = self.weights,
                     wait_for_inclusion=False,
+                    version_key = pt.weights_version_key
                 )
             except: pass
             ws, ui = self.weights.topk( len( self.weights ) )
