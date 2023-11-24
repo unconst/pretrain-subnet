@@ -42,7 +42,7 @@ class Validator:
         parser.add_argument( '--wandb.off', dest = 'wandb.on', action='store_false', help='Turn off wandb logging.' )
         parser.add_argument( '--blocks_per_epoch', type=int, default=360, help='Number of blocks to wait before setting weights.' )
         parser.add_argument( '--pages_per_eval', type=int, default=3, help='Number of pages used to eval each step.' )
-        parser.add_argument( '--sample_min', type=int, default=30, help='Number of uids to eval each step.' )
+        parser.add_argument( '--sample_min', type=int, default=20, help='Number of uids to eval each step.' )
         parser.add_argument( '--reset_wandb', action='store_true', help='Creates a new wandb run instead of using an older on.' )
         parser.add_argument( '--dont_set_weights', action='store_true', help='Validator does not set weights on the chain.' )
         parser.add_argument( '--offline', action='store_true', help='Does not launch a wandb run, does not set weights, does not check that your key is registered.' )
@@ -90,7 +90,7 @@ class Validator:
                 self.uids_to_eval.append( uid )
         random.shuffle( self.uids_to_eval )
         # If test, only samples 3 initial uids.
-        if self.config.test: self.uids_to_eval = self.uids_to_eval[:3]
+        if self.config.test: self.uids_to_eval = self.uids_to_eval[ : self.config.sample_min + 1]
         self.uids_to_eval = set( self.uids_to_eval )
         
         # == Initialize the update thread ==
@@ -249,13 +249,12 @@ class Validator:
         # Blacklist bad miners. Here we remove uids from eval set 
         # based on their win rate, this prunes miners down the sample min
         # miner uids are replaced when their model is updated on wandb after a timeout.
-        for muid in uids:
-            if len( list(self.uids_to_eval) ) <= self.config.sample_min: 
-                bt.logging.trace(f'Eval set hit min at size:{ len( list(self.uids_to_eval) )}')
-                break
-            if win_rate[ muid ] < 0.5: 
-                bt.logging.trace(f'Removing uid: {muid} from eval with win_rate: {win_rate[ muid ]} ')
-                self.uids_to_eval.remove( muid )
+        win_rate_copy = win_rate.copy()
+        while len( self.uids_to_eval ) > self.config.sample_min:
+            min_win_rate_uid = min( win_rate_copy, key=win_rate.get ) 
+            self.uids_to_eval.remove( min_win_rate_uid )
+            del win_rate_copy[min_win_rate_uid]
+            bt.logging.trace(f'Removing uid: {min_win_rate_uid} from eval with win_rate: {win_rate[ min_win_rate_uid ]} ')
 
         self.log_step(
             uids,
