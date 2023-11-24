@@ -111,11 +111,11 @@ btcli --help
 --- 
 ## Mining Steps
 
-1. (Required) Get a Wandb Account: 
+1. **Get a Wandb Account**: 
 
 Miner and validators make heavy use of weights and biases in order to share model state and validation information. Both miners and validators must attain a wandb account from [wandb](https://wandb.ai/home) along with their wandb api key which can be found by following the instructions [here](https://docs.wandb.ai/quickstart).
 
-2. (Optional) Run a Subtensor instance:
+2. **(Optional) Run a Subtensor instance**:
 
 Your node will run better if you are connecting to a local Bittensor chain entrypoint node rather than using Opentensor's. 
 We recommend running a local node as follows and passing the ```--subtensor.network local``` flag to your running miners/validators. 
@@ -126,7 +126,7 @@ cd subtensor
 docker compose up --detach
 ```
 
-3. (Required) Create your Bittensor wallet.
+3. **Create your Bittensor wallet**.
 
 Each miners and validator requires a Bittensor coldkey and hotkey pair. To create a wallet for either your validator or miner run the following command in your terminal. Make sure to save the mnemonic for both keys and store them in a safe place.
 ```bash
@@ -140,7 +140,7 @@ import bittensor as bt
 wallet = bt.wallet().create_if_non_existent()
 ```
 
-4. (Required) Register your wallet to Subnet 9.
+4. **Register your wallet to Subnet 9**
 
 Miner and validator wallets must be registered to the subnet 9 mechanism before they are considered active in the network and be considered avaialble for mining TAO.
 There are two options. #1 Registering your walelt by `recycling` TAO to pay for entrance. To register your key run the 
