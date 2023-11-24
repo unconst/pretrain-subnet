@@ -16,10 +16,9 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-import os
+import math
 import wandb
 import torch
-import string
 import random
 import argparse
 import pretrain
@@ -40,6 +39,9 @@ def get_config():
 
     # Initialize an argument parser
     parser = argparse.ArgumentParser()
+
+    # Set the number of epochs
+    parser.add_argument( '--offline', action='store_true', help='Does not launch a wandb run, does not send model to wandb, does not check if registered' )
 
     # Add model_path argument which allows the user to specify the path of the model
     parser.add_argument("--model_path", type=str, required=False, help="Override model path")
@@ -90,39 +92,57 @@ bt.logging( config = config )
 wallet = bt.wallet( config = config ) 
 subtensor = bt.subtensor( config = config )
 metagraph = subtensor.metagraph( pretrain.NETUID )
+if not config.offline: 
+    if wallet.hotkey.ss58_address not in metagraph.hotkeys: 
+        raise Exception(f"You are not registered. \nUse: \n`btcli s register --netuid {pt.NETUID}` to register via burn \n or btcli s pow_register --netuid {pt.NETUID} to register with a proof of work")
+    uid = metagraph.hotkeys.index( wallet.hotkey.ss58_address )
+    bt.logging.success( f'You are registered with address: {wallet.hotkey.ss58_address} and uid: {uid}' )
 
 # Initialize the model based on the best on the network.
 if config.load_best:
-    model = pt.graph.best_model( metagraph, device = config.device )
+    # Get the best UID be incentive and load it.
+    best_uid = pt.graph.best_uid( metagraph )
+    pt.graph.sync( best_uid, metagraph )
+    model = pt.graph.model( best_uid, device = config.device )
+    bt.logging.success(f'Training with best uid: {best_uid}')
 
 # Initialize the model based on a passed uid.
 elif config.load_uid is not None:
     # Sync the state from the passed uid.
     pt.graph.sync( config.load_uid, metagraph )
     model = pt.graph.model( config.load_uid, device = config.device )
+    bt.logging.success(f'Training with model from uid: {config.load_uid}')
 
 # Initialize the model from scratch.
 else:
+    bt.logging.success(f'Training from scratch.')
     model = pt.model.get_model()
 
 # Init model.
 model.train() 
 model.to( config.device ) 
+bt.logging.success(f'Saving model to path: {pt.mining.model_path( wallet )}.')
+pt.mining.save( wallet, model )
+
+# Build optimizer
 optimizer = torch.optim.AdamW( model.parameters(), lr = config.lr, weight_decay=0.01)
 
 # Initialize pretraining wandb run from wallet.
-wandb_run = pt.mining.init( 
-    wallet, 
-    metagraph = metagraph 
-)
-
-# Save the initial model state.
-pt.mining.push( wallet, model, wandb_run )
+if not config.offline:
+    wandb_run = pt.mining.init( 
+        wallet, 
+        metagraph = metagraph 
+    )
+    # Push the model state to your wandb run.
+    pt.mining.push( wallet, model, wandb_run )
+else:
+    bt.logging.success(f'Running with --offline, does not post model to wandb.')
 
 # Start the training loop
 epoch_step = 0
 global_step = 0
 n_acc_steps = 0
+best_avg_loss = math.inf
 accumulation_steps = config.accumulation_steps  
 
 try:
@@ -158,7 +178,7 @@ try:
                 optimizer.step()  # Perform a single optimization step
                 optimizer.zero_grad()  # Clear gradients
                 bt.logging.success(f'Step: {n_acc_steps} loss: {outputs.loss.detach().item()}')
-                wandb_run.log( { 'loss': outputs.loss.detach(), 'n_batches': n_batches }, step = n_acc_steps )
+                if not config.offline: wandb_run.log( { 'loss': outputs.loss.detach(), 'n_batches': n_batches }, step = n_acc_steps )
 
             torch.cuda.empty_cache()
                         
@@ -177,9 +197,13 @@ try:
         # Check if the average loss of this epoch is the best we've seen so far
         if avg_loss < best_avg_loss * ( 1 - pretrain.timestamp_epsilon ):
             best_avg_loss = avg_loss  # Update the best average loss
-            bt.logging.success(f'New best average loss: {best_avg_loss}. Saving model...')
-            # Push the model to my wandb run.
-            pt.mining.push( wallet, model, wandb_run )
+            bt.logging.success(f'New best average loss: {best_avg_loss}.')
+            # Save the model to your mining dir.
+            bt.logging.success(f'Saving model to path: {pt.mining.model_path( wallet )}.')
+            pt.mining.save( wallet, model )
+            # Push the model to your run.
+            if not config.offline:
+                pt.mining.push( wallet, wandb_run )
 
 finally: 
     wandb.finish()

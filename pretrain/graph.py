@@ -80,6 +80,15 @@ def model_path( uid: int ) -> typing.Optional[ str ]:
         bt.logging.error('Failed to get model_path for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
         return None
 
+def is_synced( uid: int ) -> typing.Optional[ str ]:
+    try:
+        _model_path = model_path( uid )
+        if _model_path == None: return False
+        return os.path.exists( _model_path )
+    except Exception as e:
+        bt.logging.error(f'Failed to get is_synced for uid: {uid}')
+        return None
+
 def hotkey( uid: int ) -> typing.Optional[ str ]:
     try:
         return metadata(uid)['hotkey']
@@ -94,7 +103,7 @@ def last_update( uid: int ) -> typing.Optional[ float ]:
         bt.logging.error('Failed to get last_update for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
         return None
     
-def is_valid( uid: int, metagraph: typing.Optional[ bt.metagraph ] = None ) -> typing.Optional[ bool ]:
+def has_valid_run( uid: int, metagraph: typing.Optional[ bt.metagraph ] = None ) -> typing.Optional[ bool ]:
     try:
         return check_run_validity( run( uid ), metagraph = metagraph )[0]
     except Exception as e:

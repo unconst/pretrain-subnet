@@ -50,8 +50,9 @@ class Validator:
         parser.add_argument( '--pages_per_eval', type=int, default=3, help='Number of pages used to eval each step.' )
         parser.add_argument( '--sample_min', type=int, default=30, help='Number of uids to eval each step.' )
         parser.add_argument( '--reset_wandb', action='store_true', help='Creates a new wandb run instead of using an older on.' )
-        parser.add_argument( '--dont_set_weights', action='store_true', help='Creates a new wandb run instead of using an older on.' )
-        parser.add_argument( '--offline', action='store_true', help='Creates a new wandb run instead of using an older on.' )
+        parser.add_argument( '--dont_set_weights', action='store_true', help='Validator does not set weights on the chain.' )
+        parser.add_argument( '--offline', action='store_true', help='Does not launch a wandb run, does not set weights, does not check that your key is registered.' )
+        parser.add_argument( '--test', action='store_true', help='Runs steps with max 3 uids to eval for faster testing.' )
         bt.subtensor.add_args(parser)
         bt.logging.add_args(parser)
         bt.wallet.add_args(parser)
@@ -132,11 +133,17 @@ class Validator:
         self.last_epoch = self.metagraph.block.item()
         self.last_update_check = {}
         self.metadata = { uid: pt.graph.metadata( uid ) for uid in self.metagraph.uids.tolist() }
-        self.uids_to_eval = set()
+
+        # === Build initial uids to eval ===
+        self.uids_to_eval = []
         for uid in self.metagraph.uids.tolist():
             if self.metadata[uid] != None:
-                self.uids_to_eval.add( uid )
-
+                self.uids_to_eval.append( uid )
+        random.shuffle( self.uids_to_eval )
+        # If test, only samples 3 initial uids.
+        if self.config.test: self.uids_to_eval = self.uids_to_eval[:3]
+        self.uids_to_eval = set( self.uids_to_eval )
+        
         # == Initialize the update thread ==
         self.stop_event = threading.Event()
         self.update_thread = threading.Thread(target=self.update_models, daemon=True)
@@ -219,14 +226,13 @@ class Validator:
 
         # Pull relevant uids, timestamps and metadata for step.
         uids = []
-        metadata = []
         timestamps = []
         for uid in list( self.uids_to_eval ):
             meta = pt.graph.metadata( uid ) 
             if meta == None: continue
-            if pt.graph.is_valid( uid, self.metagraph ):
+            # Check that the uid has a valid wandb run and the model is synced locally.
+            if pt.graph.has_valid_run( uid, self.metagraph ) and pt.graph.is_synced( uid ):
                 uids.append( uid )
-                metadata.append( meta )
                 timestamps.append( meta['timestamp'] )
             else:
                 bt.logging.debug( f'uid:{uid} run does not exist or is not valid, removing from uids to eval.')
@@ -241,12 +247,17 @@ class Validator:
         bt.logging.debug(f"computing losses on {uids}")
         losses_per_uid = { muid: None for muid in uids }
         for uid_i in uids:
+
+            # get model or uid or None if we have not synced the model.
             model_i = pt.graph.model( uid_i, device = self.config.device )
-            losses = pt.validation.compute_losses( model_i, batches, device = self.config.device )
+            if model_i == None: 
+                losses = [ math.inf  for _ in batches ]
+            else:
+                losses = pt.validation.compute_losses( model_i, batches, device = self.config.device )
             losses_per_uid[ uid_i ] = losses
             average_model_loss = sum( losses ) / len( losses )
             bt.logging.debug(f'Compute model losses for uid:{uid_i} with average loss: {average_model_loss}')
-            del model
+            del model_i
 
         # Compute wins per uid.
         wins = { uid: 0 for uid in uids }
@@ -271,7 +282,7 @@ class Validator:
 
         # Moving average of normalized weights.
         new_weights = self.weights.clone()
-        for uid_i in uids: new_weights[ uid_i ] = step_weights[ uid_i ]
+        for i, uid_i in enumerate(uids): new_weights[ uid_i ] = step_weights[ i ]
         new_weights /= new_weights.sum()
         self.weights = pt.alpha * self.weights + ( 1 - pt.alpha ) * new_weights
         self.weights.nan_to_num( 0.0 )
@@ -292,23 +303,16 @@ class Validator:
             'uid_data': {}
         }
         for uid in uids:
-            try:
-                page_average_losses = [ sum( losses_per_uid[ uid ][ pagek ])/ len( losses_per_uid[ uid ][ pagek ] ) for pagek in pages]
-                average_loss = sum(page_average_losses) / len(page_average_losses)
-                step_log['uid_data'][ str(uid) ] = {
-                    'uid': uid,
-                    'runid': self.metadata[ uid ]['runid'],
-                    'timestamp': self.metadata[ uid ]['timestamp'],
-                    'last_update': self.metadata[ uid ]['last_update'],
-                    'blacklisted': self.metadata[ uid ]['blacklisted'],
-                    'average_losses': page_average_losses,
-                    'average_loss': average_loss,
-                    'win_rate': win_rate[ uid ],
-                    'win_total': wins[ uid ],
-                    'weight': self.weights[ uid ].item()
-                }
-            except:
-                continue
+            step_log['uid_data'][ str(uid) ] = {
+                'uid': uid,
+                'runid': pt.graph.runid( uid ),
+                'timestamp': pt.graph.timestamp( uid ),
+                'last_update':  pt.graph.last_update( uid ),
+                'average_loss': sum( losses_per_uid[uid] ) / len( batches ),
+                'win_rate': win_rate[ uid ],
+                'win_total': wins[ uid ],
+                'weight': self.weights[ uid ].item()
+            }
         table = Table(title="Step")
         table.add_column("uid", justify="right", style="cyan", no_wrap=True)
         table.add_column("average_loss", style="magenta")

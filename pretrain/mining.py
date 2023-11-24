@@ -267,27 +267,37 @@ def load_run(wallet: int, metagraph: typing.Optional[bt.metagraph] = None) -> ty
         return run
     return None
 
-def push(wallet, model, wandb_run):
+def push( wallet, wandb_run ):
     """
-    Saves the model state and updates the wandb run.
+    Saves the model state previously saved and updates the wandb run.
 
     Parameters:
-    wallet: Wallet object containing user credentials.
-    model: The model to be saved.
-    wandb_run: The wandb run object to be updated.
+        wallet: Wallet object containing user credentials.
+        wandb_run: The wandb run object to be updated.
 
     Returns:
-    None.
+        None.
     """
     _path = path(wallet)
+    _model_path = model_path( wallet )
+    # Save the new best model to wandb.
+    wandb_run.save( _model_path, base_path = _path )
+
+def save( wallet, model ):
+    """
+    Saves the model state to your wallet path.
+
+    Parameters:
+        wallet: Wallet object containing user credentials.
+        model: The model to be saved.
+
+    Returns:
+        None.
+    """
     _model_path = model_path(wallet)
 
     # Save the model state to the specified path
     torch.save(model.state_dict(), _model_path)
-
-    # Save the new best model to wandb.
-    wandb_run.save( _model_path, base_path = _path )
-
 
 
 
