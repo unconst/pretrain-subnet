@@ -20,6 +20,7 @@ import json
 import math
 import time
 import torch
+import typing
 import random
 import asyncio
 import argparse
@@ -183,7 +184,8 @@ class Validator:
             7. Logs all relevant data for the step, including model IDs, pages, batches, wins, win rates, and losses.
         """
 
-        # Pull relevant uids, timestamps and metadata for step.
+        # Pull relevant uids, timestamps and metadata for step. 
+        # Remove uids without valid runs on wandb or which are not synced.
         uids = []
         timestamps = []
         for uid in list( self.uids_to_eval ):
@@ -202,7 +204,7 @@ class Validator:
         pages = [random.randint(1, pt.dataset.SubsetFalconLoader.max_pages) for _ in range(self.config.pages_per_eval)]
         batches = list( pt.dataset.SubsetFalconLoader( batch_size = pt.batch_size, sequence_length = pt.sequence_length, pages = pages) )
                        
-        # Compute model scoring.
+        # Compute model losses on batches.
         bt.logging.debug(f"computing losses on {uids}")
         losses_per_uid = { muid: None for muid in uids }
         for uid_i in uids:
@@ -235,27 +237,22 @@ class Validator:
             # Calculate win rate for uid i
             win_rate[ uid_i ] = wins[ uid_i ] / total_matches if total_matches > 0 else 0
 
+        # Compute softmaxed weights based on win rate.
         model_weights = torch.tensor([ win_rate[ uid ] for uid in uids ], dtype=torch.float32)
         step_weights = torch.softmax( model_weights / pt.temperature, dim=0 )
         bt.logging.success( f'Computed model wins: {wins}')
 
-        # Moving average of normalized weights.
+        # Update weights based on moving average.
         new_weights = self.weights.clone()
         for i, uid_i in enumerate(uids): new_weights[ uid_i ] = step_weights[ i ]
         new_weights /= new_weights.sum()
         self.weights = pt.alpha * self.weights + ( 1 - pt.alpha ) * new_weights
         self.weights.nan_to_num( 0.0 )
 
-        # Blacklist bad miners. Here we remove uids from eval set 
-        # based on their win rate, this prunes miners down the sample min
-        # miner uids are replaced when their model is updated on wandb after a timeout.
-        win_rate_copy = win_rate.copy()
-        while len( self.uids_to_eval ) > self.config.sample_min:
-            min_win_rate_uid = min( win_rate_copy, key=win_rate.get ) 
-            self.uids_to_eval.remove( min_win_rate_uid )
-            del win_rate_copy[min_win_rate_uid]
-            bt.logging.trace(f'Removing uid: {min_win_rate_uid} from eval with win_rate: {win_rate[ min_win_rate_uid ]} ')
+        # Filter based on win rate removing all by the sample_min best models for evaluation.
+        self.uids_to_eval = set( sorted(win_rate, key=win_rate.get, reverse=True)[:self.config.sample_min] )
 
+        # Log to screen and wandb.
         self.log_step(
             uids,
             pages,
@@ -344,7 +341,7 @@ class Validator:
                     bt.logging.debug(f"{self.metagraph.block.item() - self.last_epoch } / {self.config.blocks_per_epoch} blocks until next epoch.")
                     self.global_step += 1
 
-                if not self.config.dont_set_weights and not self.config.offline:
+                if not self.config.dont_set_weights and not self.config.offline and not self.config.test:
                     await self.try_set_weights( ttl = 60 )
                 self.last_epoch = self.metagraph.block.item()
                 self.epoch_step += 1

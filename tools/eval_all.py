@@ -73,21 +73,33 @@ for i, uid_i in enumerate( losses.keys() ):
             total_matches += 1
     win_rate[ uid_i ] = wins[ uid_i ] / total_matches if total_matches > 0 else 0
 
+# Create a list of tuples (uid, average_loss, win_rate, wins, timestamp)
+data = []
+for uid in losses.keys():
+    average_loss = sum(losses[uid]) / len(batches)
+    data.append((uid, average_loss, win_rate[uid], wins[uid], timestamps[uid]))
 
+# Sort the data by average_loss in ascending order
+sorted_data = sorted(data, key=lambda x: x[1])
+
+# Create and populate the table
 table = Table(title="Step")
 table.add_column("uid", justify="right", style="cyan", no_wrap=True)
 table.add_column("average_loss", style="magenta")
 table.add_column("win_rate", style="magenta")
 table.add_column("win_total", style="magenta")
 table.add_column("timestamp", style="magenta")
-for uid in losses.keys():
+
+for row in sorted_data:
     table.add_row(
-        str( uid ), 
-        str( round( sum(losses[ uid ])/len(batches), 4)), 
-        str( round( win_rate[ uid ], 4)),
-        str( wins[ uid ]),
-        str( timestamps[ uid ]),
+        str(row[0]),
+        str(round(row[1], 4)),
+        str(round(row[2], 4)),
+        str(row[3]),
+        str(row[4])
     )
+
+# Print the table
 console = Console()
 console.print(table)
 
