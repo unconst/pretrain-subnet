@@ -40,7 +40,7 @@ def timestamp( uid: int ) -> typing.Optional[ int ]:
     try:
         return metadata(uid)['timestamp']
     except Exception as e:
-        bt.logging.error('Failed to get timestamp for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get timestamp for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
         return None
     
 def run( uid: int ) -> typing.Optional[ 'wandb.run' ]:
@@ -49,35 +49,35 @@ def run( uid: int ) -> typing.Optional[ 'wandb.run' ]:
         run = api.run(f"opentensor-dev/{pretrain.WANDB_PROJECT}/{metadata(uid)['runid']}")
         return run
     except Exception as e:
-        bt.logging.error('Failed to get run for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get run for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
         return None
       
 def runid( uid: int ) -> typing.Optional[ str ]:
     try:
         return metadata(uid)['runid']
     except Exception as e:
-        bt.logging.error('Failed to get runid for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get runid for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
         return None
 
 def version( uid: int ) -> typing.Optional[ str ]:
     try:
         return metadata(uid)['version']
     except Exception as e:
-        bt.logging.error('Failed to get version for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get version for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
         return None
     
 def path( uid: int ) -> typing.Optional[ str ]:
     try:
         return os.path.dirname(metadata(uid)['model_path'])
     except Exception as e:
-        bt.logging.error('Failed to get model_path for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get model_path for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
         return None
     
 def model_path( uid: int ) -> typing.Optional[ str ]:
     try:
         return metadata(uid)['model_path']
     except Exception as e:
-        bt.logging.error('Failed to get model_path for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get model_path for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
         return None
 
 def is_synced( uid: int ) -> typing.Optional[ str ]:
@@ -86,28 +86,28 @@ def is_synced( uid: int ) -> typing.Optional[ str ]:
         if _model_path == None: return False
         return os.path.exists( _model_path )
     except Exception as e:
-        bt.logging.error(f'Failed to get is_synced for uid: {uid}')
+        bt.logging.debug(f'Failed to get is_synced for uid: {uid}')
         return None
 
 def hotkey( uid: int ) -> typing.Optional[ str ]:
     try:
         return metadata(uid)['hotkey']
     except Exception as e:
-        bt.logging.error('Failed to get hotkey for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get hotkey for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
         return None
 
 def last_update( uid: int ) -> typing.Optional[ float ]:
     try:
         return metadata(uid)['last_update']
     except Exception as e:
-        bt.logging.error('Failed to get last_update for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get last_update for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
         return None
     
 def has_valid_run( uid: int, metagraph: typing.Optional[ bt.metagraph ] = None ) -> typing.Optional[ bool ]:
     try:
         return check_run_validity( run( uid ), metagraph = metagraph )[0]
     except Exception as e:
-        bt.logging.error('Failed to get last_update for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get last_update for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
         return None
     
 def metadata( uid: int ):
@@ -126,14 +126,14 @@ def metadata( uid: int ):
             # bt.logging.trace(f'Failed Metadata: uid:{uid}, no file under path:{model_dir}')
             return None
         if 'version' not in meta or 'timestamp' not in meta or 'runid' not in meta:
-            bt.logging.trace(f'Failed Metadata: uid:{uid}, metadata file corrupted.')
+            bt.logging.debug(f'Failed Metadata: uid:{uid}, metadata file corrupted.')
             return None
         else:
             # Valid metadata.
             return meta
     except Exception as e:
         # Skip this UID if any error occurs during loading of model or timestamp.
-        bt.logging.trace(f'Failed Metadata: uid:{uid}, metadata could not be loaded with error:{e}')
+        bt.logging.debug(f'Failed Metadata: uid:{uid}, metadata could not be loaded with error:{e}')
         return None
     
 def model(uid: int, device: str = 'cpu') -> typing.Optional[torch.nn.Module]:
@@ -155,7 +155,7 @@ def model(uid: int, device: str = 'cpu') -> typing.Optional[torch.nn.Module]:
         model.load_state_dict(model_weights)
         return model
     except Exception as e:
-        bt.logging.error(f'Error loading model for uid: {uid} with error: {e}, try pulling data for this uid with pretrain.utils.pull( {uid} )')
+        bt.logging.debug(f'Error loading model for uid: {uid} with error: {e}, try pulling data for this uid with pretrain.utils.pull( {uid} )')
         return None
     
 def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
@@ -357,12 +357,11 @@ def get_run_for_uid( uid: int, metagraph: typing.Optional[ bt.metagraph ] = None
 
     # Iterate through runs. Newer runs are processed first.
     for run in runs:
-        check_run_validity(run, metagraph)
-        return run
+        if check_run_validity(run, metagraph=metagraph)[0]:
+            return run
+        else: continue
     
     return None
-
-
 
 
 

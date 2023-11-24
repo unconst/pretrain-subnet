@@ -28,6 +28,7 @@ from rich.console import Console
 parser = argparse.ArgumentParser()
 parser.add_argument( "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")        
 parser.add_argument( '--pages_per_eval', type=int, default=3, help='Number of pages used to eval each step.' )
+parser.add_argument( '--no_sync', action='store_true', help='Does not resync runs.' )
 bt.logging.add_args(parser)
 config = bt.config(parser)
 bt.logging( config = config )
@@ -38,11 +39,11 @@ metagraph = bt.metagraph( pt.NETUID )
 uids = []
 timestamps = {}
 for uid in metagraph.uids.tolist():
-    pt.graph.sync( uid, metagraph )
+    if not config.no_sync:
+        pt.graph.sync( uid, metagraph )
     if pt.graph.timestamp( uid ) != None:
         uids.append( uid )
         timestamps[uid] = pt.graph.timestamp( uid )
-uids = uids[:10]
 
 # Get all batches.
 pages = [random.randint(1, pt.dataset.SubsetFalconLoader.max_pages) for _ in range(config.pages_per_eval)]
