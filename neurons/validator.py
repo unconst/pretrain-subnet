@@ -51,6 +51,7 @@ class Validator:
         parser.add_argument( '--sample_min', type=int, default=30, help='Number of uids to eval each step.' )
         parser.add_argument( '--reset_wandb', action='store_true', help='Creates a new wandb run instead of using an older on.' )
         parser.add_argument( '--dont_set_weights', action='store_true', help='Creates a new wandb run instead of using an older on.' )
+        parser.add_argument( '--offline', action='store_true', help='Creates a new wandb run instead of using an older on.' )
         bt.subtensor.add_args(parser)
         bt.logging.add_args(parser)
         bt.wallet.add_args(parser)
@@ -113,10 +114,16 @@ class Validator:
         self.dendrite = bt.dendrite( wallet = self.wallet )
         self.metagraph = self.subtensor.metagraph( pt.NETUID )
         torch.backends.cudnn.benchmark = True
-        if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys: raise Exception(f"You are not registered. Use `btcli s register --netuid {pt.NETUID}` to register.")
-        self.uid = self.metagraph.hotkeys.index( self.wallet.hotkey.ss58_address )
-        bt.logging.success( f'You are registered with address: {self.wallet.hotkey.ss58_address} and uid: {self.uid}' )
-        self.init_wandb()
+
+        # Dont check registration status if offline.
+        if not self.config.offline: 
+            if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys: raise Exception(f"You are not registered. Use `btcli s register --netuid {pt.NETUID}` to register.")
+            self.uid = self.metagraph.hotkeys.index( self.wallet.hotkey.ss58_address )
+            bt.logging.success( f'You are registered with address: {self.wallet.hotkey.ss58_address} and uid: {self.uid}' )
+
+        # Dont log to wandb if offline.
+        if not self.config.offline: 
+            self.init_wandb()
 
         # === Running args ===
         self.weights = torch.zeros_like(self.metagraph.S)
@@ -234,7 +241,7 @@ class Validator:
         bt.logging.debug(f"computing losses on {uids}")
         losses_per_uid = { muid: None for muid in uids }
         for uid_i in uids:
-            model_i = pt.model.get_model_for_uid( uid_i, device = self.config.device )
+            model_i = pt.graph.model( uid_i, device = self.config.device )
             losses = pt.validation.compute_losses( model_i, batches, device = self.config.device )
             losses_per_uid[ uid_i ] = losses
             average_model_loss = sum( losses ) / len( losses )
@@ -347,7 +354,7 @@ class Validator:
             'weight_data': {str(uid): self.weights[uid].item() for uid in uids}
         }
 
-        if self.config.wandb.on: 
+        if self.config.wandb.on and not self.config.offline:
             bt.logging.trace('Logging to Wandb')
             self.wandb_run.log({ **graphed_data, "original_format_json": original_format_json}, step=self.global_step)
             bt.logging.trace('finished log to Wandb')
@@ -362,14 +369,14 @@ class Validator:
                     bt.logging.debug(f"{self.metagraph.block.item() - self.last_epoch } / {self.config.blocks_per_epoch} blocks until next epoch.")
                     self.global_step += 1
 
-                if not self.config.dont_set_weights:
+                if not self.config.dont_set_weights and not self.config.offline:
                     await self.try_set_weights( ttl = 60 )
                 self.last_epoch = self.metagraph.block.item()
                 self.epoch_step += 1
 
             except KeyboardInterrupt:
                 bt.logging.info("KeyboardInterrupt caught, gracefully closing the wandb run...")
-                if self.config.wandb.on: self.wandb_run.finish()
+                if self.config.wandb.on and not self.config.offline: self.wandb_run.finish()
                 exit()
 
             except Exception as e:
