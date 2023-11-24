@@ -25,7 +25,6 @@ import string
 import typing
 import pretrain as pt
 import bittensor as bt
-from datetime import datetime
 
 def path(wallet: int) -> str:
     """
@@ -150,7 +149,7 @@ def new_runid(wallet):
     return run_id
 
 
-def uid(wallet, metagraph: typing.Optional[bt.metagraph] = None):
+def uid(wallet, metagraph: typing.Optional[bt.metagraph] = None) -> typing.Optional[ int ]:
     """
     Retrieves the user ID (UID) based on the wallet and metagraph.
 
@@ -170,14 +169,14 @@ def uid(wallet, metagraph: typing.Optional[bt.metagraph] = None):
 
 def init(wallet, metagraph: typing.Optional[bt.metagraph] = None):
     """
-    Initializes the mining process by setting up necessary directories, wandb run, and configurations.
+    Initializes the mining process wandb run by setting up necessary directories, wandb run, and configurations.
 
     Parameters:
-    wallet: Wallet object containing user credentials.
-    metagraph (Optional[bt.metagraph]): Metagraph object for additional network data.
+        wallet: Wallet object containing user credentials.
+        metagraph (Optional[bt.metagraph]): Metagraph object for additional network data.
 
     Returns:
-    wandb_run: Returns a wandb run object if initialization is successful, otherwise None.
+        wandb_run: Returns a wandb run object if initialization is successful, otherwise None.
     """
 
     # Create the directory for the model if it does not exist
@@ -211,6 +210,70 @@ def init(wallet, metagraph: typing.Optional[bt.metagraph] = None):
     config.run_name = run_name
     config.version = pt.__version__
     config.type = 'miner'
+
+    # Initialize wandb run
+    wandb_run = wandb.init(
+        id = _run_id,
+        name=run_name,
+        anonymous="allow",
+        project=pt.WANDB_PROJECT,
+        entity='opentensor-dev',
+        config=config,
+        dir=config.full_path,
+        allow_val_change=True,
+    )
+
+    # Creating a signature for security
+    signature = wallet.hotkey.sign(wandb_run.id.encode()).hex()
+    config.signature = signature
+    wandb.config.update(config, allow_val_change=True)
+
+    return wandb_run
+
+
+def init_validator(wallet, metagraph: typing.Optional[bt.metagraph] = None):
+    """
+    Initializes the validator process wandb run by setting up necessary directories, wandb run, and configurations.
+
+    Parameters:
+        wallet: Wallet object containing user credentials.
+        metagraph (Optional[bt.metagraph]): Metagraph object for additional network data.
+
+    Returns:
+        wandb_run: Returns a wandb run object if initialization is successful, otherwise None.
+    """
+
+    # Create the directory for the model if it does not exist
+    mpath = model_path(wallet)
+    if not os.path.exists(os.path.dirname(mpath)):
+        os.makedirs(os.path.dirname(mpath), exist_ok=True)
+
+    # Get the metagraph if not provided
+    if not metagraph:
+        metagraph = bt.subtensor().metagraph(pt.NETUID)
+
+    # Find the UID for this wallet.
+    my_uid = uid(wallet, metagraph)
+    if my_uid is None: 
+        return None
+
+    # Try to load the run ID from the file system.
+    if load_runid(wallet) is None:
+        # If we cant load the runid, try to load the run ID from wandb based on wallet.
+        if find_runid(wallet, metagraph) is None:
+            save_runid(wallet, new_runid(wallet) )
+
+    # Load the run ID from the file system.
+    _run_id = load_runid(wallet)
+    
+    # Creating a unique run name
+    run_name = f'validator-{my_uid}-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+    config = bt.config()
+    config.uid = my_uid
+    config.hotkey = wallet.hotkey.ss58_address
+    config.run_name = run_name
+    config.version = pt.__version__
+    config.type = 'validator'
 
     # Initialize wandb run
     wandb_run = wandb.init(

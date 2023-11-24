@@ -16,14 +16,10 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-import os
 import json
 import math
 import time
-import wandb
 import torch
-import typing
-import string
 import random
 import asyncio
 import argparse
@@ -31,8 +27,6 @@ import pretrain
 import traceback
 import threading
 import multiprocessing
-from tqdm import tqdm
-from typing import Dict, List
 from rich.table import Table
 from rich.console import Console
 
@@ -58,52 +52,7 @@ class Validator:
         bt.wallet.add_args(parser)
         bt.axon.add_args(parser)
         config = bt.config(parser)
-        config.full_path = os.path.expanduser(
-            "{}/{}/{}/netuid{}/{}".format(
-                config.logging.logging_dir,
-                config.wallet.name,
-                config.wallet.hotkey,
-                pt.NETUID,
-                "validator",
-            )
-        )
-        if not os.path.exists(config.full_path):
-            os.makedirs(config.full_path, exist_ok=True)
         return config
-
-    def init_wandb(self):
-        if self.config.wandb.on:
-            import json
-            run_id_file = self.config.full_path + '/run.json'
-            try:
-                if self.config.reset_wandb: raise Exception('go to create new run.')
-                with open( run_id_file, 'r' ) as f:
-                    self.run_id = json.load( f )['WANDB_RUN_ID']
-                    bt.logging.success(f'Continuing run, loaded run_id: {self.run_id}')
-            except Exception as e: 
-                self.run_id = wandb.util.generate_id()
-                bt.logging.success(f'First run, creating new run_id: {self.run_id} {e}')
-            with open( run_id_file, 'w' ) as f:
-                json.dump({'WANDB_RUN_ID': self.run_id}, f)
-                bt.logging.success(f'Saved: {self.run_id} to file.')
-            self.run_name = f'validator-{self.uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
-            self.config.uid = self.uid
-            self.config.hotkey = self.wallet.hotkey.ss58_address
-            self.config.run_name = self.run_name
-            self.config.type = "validator"
-            self.config.version = pt.__version__
-            self.wandb_run = wandb.init(
-                id = self.run_id,
-                name = self.run_name,
-                anonymous = "allow",
-                reinit = False,
-                project = pt.WANDB_PROJECT,
-                entity = 'opentensor-dev',
-                config = self.config,
-                dir = self.config.full_path,
-            )
-            self.config.signature = self.wallet.hotkey.sign( self.wandb_run.id.encode() ).hex()
-            wandb.config.update( self.config, allow_val_change=True )
 
     def __init__(self ):
         self.config = Validator.config()
@@ -124,7 +73,7 @@ class Validator:
 
         # Dont log to wandb if offline.
         if not self.config.offline: 
-            self.init_wandb()
+            self.wandb_run = pt.mining.init_validator( self.wallet, metagraph = self.metagraph )
 
         # === Running args ===
         self.weights = torch.zeros_like(self.metagraph.S)
@@ -166,7 +115,7 @@ class Validator:
                 time.sleep(1)
                 continue
             last_uid_update = uid
-            bt.logging.success( f'Updating model under uid: {uid} for block: {block}')
+            bt.logging.success( f'Syncing miner for uid: {uid} and block: {block}')
             pretrain.graph.sync( uid, self.metagraph )
             self.uids_to_eval.add( uid )
             bt.logging.trace(f'uids to eval add: {uid}')
@@ -221,8 +170,17 @@ class Validator:
         except asyncio.TimeoutError: 
             bt.logging.error(f'Failed to run step after {ttl} seconds')
 
-    # Add a 20 minute max timeout.
     async def run_step( self ):
+        """
+            Executes a step in the evaluation process of models. This function performs several key tasks:
+            1. Identifies valid models for evaluation based on metadata and synchronization status.
+            2. Generates random pages for evaluation and prepares batches for each page from the dataset.
+            3. Computes the scoring for each model based on the losses incurred on the evaluation batches.
+            4. Calculates wins and win rates for each model to determine their performance relative to others.
+            5. Updates the weights of each model based on their performance and applies a softmax normalization.
+            6. Implements a blacklist mechanism to remove underperforming models from the evaluation set.
+            7. Logs all relevant data for the step, including model IDs, pages, batches, wins, win rates, and losses.
+        """
 
         # Pull relevant uids, timestamps and metadata for step.
         uids = []
@@ -295,6 +253,18 @@ class Validator:
             if win_rate[ muid ] < 0.5: 
                 self.uids_to_eval.remove( muid )
 
+        self.log_step(
+            uids,
+            pages,
+            batches,
+            wins,
+            win_rate,
+            losses_per_uid,
+        )
+        bt.logging.debug('Finished run step.')
+
+
+    def log_step( self, uids, pages, batches, wins, win_rate, losses_per_uid):
         # Build step log
         step_log = {
             'timestamp': time.time(),
@@ -357,12 +327,10 @@ class Validator:
             'uid_data': {str(uid): uid_data[str(uid)]['average_loss'] for uid in uids},
             'weight_data': {str(uid): self.weights[uid].item() for uid in uids}
         }
-
         if self.config.wandb.on and not self.config.offline:
             bt.logging.trace('Logging to Wandb')
             self.wandb_run.log({ **graphed_data, "original_format_json": original_format_json}, step=self.global_step)
             bt.logging.trace('finished log to Wandb')
-        bt.logging.debug('Finished run step.')
 
     async def run(self):
         while True:
