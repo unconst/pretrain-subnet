@@ -63,7 +63,7 @@ You can view the entire validation system by reading the code in `neurons/valida
         set_weights( weight )
 ```
 
-The behaviour of `iswin( loss_a, loss_b, timestamp_a, timestamp_b)` function intentionally skews the win function to reward models which have been hosted earlier. Specifically, a newer model or delta is only better than another if it is more than `epsilon` percent lower accoring to the following function.
+The behaviour of `iswin( loss_a, loss_b, timestamp_a, timestamp_b)` function intentionally skews the win function to reward models which have been hosted earlier such that newer models are only better than others iff their loss if `epsilon` percent lower accoring to the following function. Currently `epsilon` is set to 1% and is a hyper parameter of the mechanism
 ```python
 
 def iswin( loss_a, loss_b, timestamp_a, timestamp_b, epsilon ):
@@ -252,8 +252,24 @@ print (f'''Wallet: {wallet}
 # Init or reinit the wandb run associtated with this wallet.
 wandb_run = pt.mining.init( wallet )
 
-# Push a new model to your wandb run.
-pt.mining.push( pt.model.get_model(), wallet, wandb_run )
+# Load a specific model based on uid.
+uid = 200
+pt.graph.sync( uid, metagraph )
+model = pt.graph.model( uid, device = config.device )
+
+# Load the best model on the network based on incentive.
+best_uid = pt.graph.best_uid( metagraph )
+pt.graph.sync( best_uid, metagraph )
+model = pt.graph.model( best_uid, device = config.device )
+
+# Create a from scratch model.
+model = pt.model.get_model()
+
+# Save your model
+pt.mining.save( wallet, model )
+
+# Push your saved model to your wandb_run.
+pt.mining.push( wallet, wandb_run )
 ```
 
 The pretrain package also contains the following commands for pulling state from the network and performing validation. 
