@@ -17,7 +17,7 @@ Bittensor subnet 9 rewards miners (engineers etc) for producing pretrained Found
 
     1. Miners train and periodically host trained model weights linked to their miner key as exampled by the code in neurons/miner.py.
     2. Validators run a continuous eval on the hosted models, performing the validation system outlined in neurons/validator.py and setting weights to the chain based on the performance of each miner on the Falcon dataset.
-    3. The chain aggregates weights from all active validators and runs [Yuma Consensus](https://github.com/opentensor/subtensor/blob/feature/consensus-readme/docs/consensus.md) to determine the proportion of TAO emission rewarded to miners and validators. 
+    3. The chain aggregates weights from all active validators and runs Yuma Consensus to determine the proportion of TAO emission rewarded to miners and validators. 
 
 ---
 ## Pretraining
@@ -29,7 +29,7 @@ ensures the most incentive.
 
 You can view the entire validation system by reading the code in `neurons/validator.py`. Pseudocode for the validation system is as follows:
 ```python
-    weights = zeros()
+    weights = zeros(256)
     while True:
         # Fetch random sample of batches to evaluate models on
         batches = get_random_sample_of_batches_from_falcon()
