@@ -116,7 +116,7 @@ class Validator:
                 continue
             last_uid_update = uid
             bt.logging.success( f'Syncing miner for uid: {uid} and block: {block}')
-            pretrain.graph.sync( uid, self.metagraph )
+            pt.graph.sync( uid, self.metagraph )
             self.uids_to_eval.add( uid )
             bt.logging.trace(f'uids to eval add: {uid}')
 
@@ -125,7 +125,7 @@ class Validator:
             try:
                 self.weights.nan_to_num( 0.0 )
                 self.subtensor.set_weights(
-                    netuid = pretrain.NETUID,
+                    netuid = pt.NETUID,
                     wallet = self.wallet,
                     uids = self.metagraph.uids,
                     weights = self.weights,
@@ -149,7 +149,7 @@ class Validator:
 
     async def try_sync_metagraph( self, ttl: int ):
         def sync_metagraph( endpoint ):
-            metagraph = bt.subtensor( endpoint ).metagraph( pretrain.NETUID )
+            metagraph = bt.subtensor( endpoint ).metagraph( pt.NETUID )
             metagraph.save()
         process = multiprocessing.Process(target=sync_metagraph, args=( self.subtensor.chain_endpoint, ))
         process.start()
@@ -249,8 +249,11 @@ class Validator:
         # based on their win rate, this prunes miners down the sample min
         # miner uids are replaced when their model is updated on wandb after a timeout.
         for muid in uids:
-            if len( list(self.uids_to_eval) ) <= self.config.sample_min: break
+            if len( list(self.uids_to_eval) ) <= self.config.sample_min: 
+                bt.logging.trace(f'Eval set hit min at size:{ len( list(self.uids_to_eval) )}')
+                break
             if win_rate[ muid ] < 0.5: 
+                bt.logging.trace(f'Removing uid: {muid} from eval with win_rate: {win_rate[ muid ]} ')
                 self.uids_to_eval.remove( muid )
 
         self.log_step(

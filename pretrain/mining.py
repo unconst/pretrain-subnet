@@ -358,6 +358,8 @@ def save( wallet, model ):
         None.
     """
     _model_path = model_path(wallet)
+    if not os.path.exists(os.path.dirname(_model_path)):
+        os.makedirs(os.path.dirname(_model_path), exist_ok=True)
 
     # Save the model state to the specified path
     torch.save(model.state_dict(), _model_path)
