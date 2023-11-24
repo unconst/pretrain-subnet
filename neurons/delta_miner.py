@@ -17,7 +17,7 @@
 # DEALINGS IN THE SOFTWARE.
 
 import os
-import json
+import copy
 import wandb
 import torch
 import string
@@ -41,23 +41,8 @@ def get_config():
     # Initialize an argument parser
     parser = argparse.ArgumentParser()
 
-    # Add model_path argument which allows the user to specify the path of the model
-    parser.add_argument("--model_path", type=str, required=False, help="Override model path")
-
     # Add device argument which defaults to 'cuda' if available, else 'cpu'
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
-
-    # Add device argument which defaults to 'cuda' if available, else 'cpu'
-    parser.add_argument("--load_best", action='store_true', help='If set, the miner loads the best model from wandb to train off.' ) 
-
-    # Add device argument which defaults to 'cuda' if available, else 'cpu'
-    parser.add_argument("--load_run_id", type=str, default=None, help='If passed loads the model under this run id' )  
-
-    # Add device argument which defaults to 'cuda' if available, else 'cpu'
-    parser.add_argument("--continue_id", type=str, default=None, help='If passed continues from the model on the passed run.' )  
-
-    # Set the number of epochs
-    parser.add_argument("--num_epochs", type = int, default = -1, help="Number of training epochs (-1 is infinite)")
 
     # Training lr.
     parser.add_argument("--lr", type = float, default = 0.00001, help="Learning rate.")
@@ -94,12 +79,12 @@ def get_config():
     )
 
     # Set the default model path if it wasn't provided in the command line
-    if config.model_path == None:
-        config.model_path = config.full_path + '/' + 'model.pth'
+    if config.delta_path == None:
+        config.delta_path = config.full_path + '/' + 'delta.pth'
 
     # Create the directory for the model path if it does not exist
-    if not os.path.exists(os.path.dirname(config.model_path)):
-        os.makedirs(os.path.dirname(config.model_path), exist_ok=True)
+    if not os.path.exists(os.path.dirname(config.delta_path)):
+        os.makedirs(os.path.dirname(config.delta_path), exist_ok=True)
 
     return config
 
@@ -125,60 +110,42 @@ model = pretrain.model.get_model()  # Get the model from the pretrain module
 torch.save(model.state_dict(), config.model_path)
 api = wandb.Api( timeout = 100 )
 
-
 def get_run_from_id( run_id ):
     run_path = f"opentensor-dev/{pretrain.WANDB_PROJECT}/{run_id}"
     bt.logging.success(f'Loading model from path: {run_path}')
     return api.run(run_path)
 
-# Optionall load the model from the passed run id:
+# Optionally load the model from the passed run id:
 def load_model_from_run( run ):
     model_file = run.file("model.pth")
     model_file.download(replace=True, root = os.path.dirname(config.model_path) )
     bt.logging.success(f'Loaded and saved model to: {config.model_path}')
 
-# Model is pulled from specific run.
-if config.load_run_id != None:
-    bt.logging.success(f'Loading based on --config.load_run_id {config.model_path}')
-    load_model_from_run( get_run_from_id( config.load_run_id ) )
-    
-# Model is pulled from best on network
-elif config.load_best:
-    bt.logging.success(f'Loading based on --config.load_best')
-    best_uid = max(range(256), key=lambda uid: metagraph.I[uid].item())
-    print(f"best uid is {best_uid}")
+def reload( uid:int, hotkey:str ):
     runs = api.runs(
         f"opentensor-dev/{pretrain.WANDB_PROJECT}",
         filters={
             "config.version": pretrain.__version__,
             "config.type": "miner",
             "config.run_name": {
-                "$regex": f"miner-{best_uid}-.*"
-            }
+                "$regex": f"miner-{uid}-.*"
+            },
+            "config.hotkey": str(hotkey)
         }
     )
-    load_model_from_run( get_run_from_id(runs[0].id) )
-
-elif config.continue_id:
-    run = get_run_from_id( config.continue_id  )
-    run_hotkey = run.config['hotkey']
-    load_model_from_run( run )
-
-# Model is reinited fresh.
-else:
-    bt.logging.success(f'Starting model from scratch')
-
-# Load the model.
-model_weights = torch.load( config.model_path, map_location=torch.device(config.device) )
-model.load_state_dict( model_weights )
-model.zero_grad()  # Reset gradients to zero
-model.train()  # Set the model to training mode
-model.to(config.device)  # Move the model to the specified device
-
-# Initialize the optimizer
-optimizer = torch.optim.AdamW( model.parameters(), lr = config.lr, weight_decay=0.01)
+    run = f"opentensor-dev/{pretrain.WANDB_PROJECT}/{runs[0].id}"
+    model_file = run.file("model.pth")
+    model_file.download(replace=True, root = os.path.dirname(config.model_path) )
+    model_weights = torch.load( config.model_path, map_location=torch.device(config.device) )
+    model.load_state_dict( model_weights )
+    model.zero_grad()  # Reset gradients to zero
+    model.train()  # Set the model to training mode
+    model.to(config.device)  # Move the model to the specified device
+    optimizer = torch.optim.AdamW( model.parameters(), lr = config.lr, weight_decay=0.01)
+    return model, optimizer
 
 # Loads your wandb run from file or creates a new one.
+import json
 run_id_file = config.full_path + '/run.json'
 try:
     with open( run_id_file, 'r' ) as f:
@@ -193,12 +160,11 @@ with open( run_id_file, 'w' ) as f:
     bt.logging.success(f'Saved: {run_id} to file.')
 
 # Start wandb run.
-run_name = f'miner-{my_uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
+run_name = f'delta-miner-{my_uid}-' + ''.join(random.choice( string.ascii_uppercase + string.digits ) for i in range(10))
 config.uid = my_uid
 config.hotkey = wallet.hotkey.ss58_address
 config.run_name = run_name
-config.version = pretrain.__version__
-config.type = 'miner'
+config.type = 'delta-miner'
 wandb_run = wandb.init(
     id = run_id,
     name = run_name,
@@ -216,20 +182,64 @@ config.signature = signature
 wandb.config.update( config, allow_val_change=True )
 bt.logging.success(f'Successfully signed wandb run with signature {config.signature}')
 
-# Save the model to wandb.
-wandb.save( config.model_path )
-bt.logging.success('Pushed artifact to the wandb run.')
-
 # Start the training loop
 epoch_step = 0
 global_step = 0
 n_acc_steps = 0
 accumulation_steps = config.accumulation_steps  
 
+def update_head( head_uid:int ):
+    pretrain.utils.update_model_for_uid( head_uid )
+    meta = pretrain.utils.load_metadata_for_uid( head_uid )
+    current_model = pretrain.model.get_model()
+    current_model.load_state_dict( 
+        torch.load(meta['model_path'], map_location=torch.device( config.device ))
+    )
+    current_model.train() 
+    current_model.to( config.device ) 
+    optimizer = torch.optim.AdamW( model.parameters(), lr = config.lr, weight_decay = 0.01 )
+    # Get a clone of the original model
+    initial_model = pretrain.model.get_model()
+    initial_model.load_state_dict(copy.deepcopy(model.state_dict()))
+
+    return current_model, initial_model, optimizer
+
+def update_delta( current_model, initial_model ):
+    initial_state_dict = initial_model.state_dict()
+    current_state_dict = current_model.state_dict()
+    delta_state_dict = {name: current_state_dict[ name ] - initial_state_dict[ name ] for name in initial_state_dict}
+    delta_model = pretrain.model.get_model()
+    delta_model.load_state_dict( delta_state_dict )
+    torch.save( delta_model.state_dict(), config.delta_path )
+    wandb.save( config.delta_path, policy = "now" )
+
+# Load the current model and initial model from best miner.
+current_head_uid = max( range(256), key=lambda uid: metagraph.I[uid].item() )
+current_model, initial_model, optimizer = update_head( current_head_uid )
+
+# Update the zero delta 
+update_delta( current_model, initial_model )
+
 try:
-    while epoch_step < config.num_epochs or config.num_epochs == -1:
+    while True:
+
+        metagraph = subtensor.metagraph( pretrain.NETUID )
+        next_head_uid = max( range(256), key=lambda uid: metagraph.I[uid].item() )
+
+        # If the head has not changed. We update the model here.
+        if next_head_uid == current_head_uid:
+            # Update delta on wandb.
+            update_delta( current_model, initial_model )
+        
+        # If the head HAS changed, we need to load the new model and initial model.
+        else:
+            # Start from fresh state based on changed head.
+            current_model, initial_model, optimizer = update_head( current_head_uid )
+
         # Initialize loss accumulator for the epoch
         epoch_loss = 0.0
+        n_batches = 0
+        optimizer.zero_grad() 
 
         # Prepare the data loader with random pages for each epoch
         bt.logging.success( f"Loading {config.pages_per_epoch} pages for training this epoch" )
@@ -240,20 +250,14 @@ try:
             pages = random_pages
         )
 
-        # Enumerate over the data loader
-        n_batches = 0
-        optimizer.zero_grad()  # Initialize gradients to zero
+        # Train model.
+        for i, batch in enumerate( loader ):
+            inputs = batch.to(model.device) # Inputs to device.           
+            outputs = model( inputs, labels = inputs ) # Forward.
+            loss = outputs.loss / accumulation_steps  # Scale loss.
+            loss.backward() # Accumulate gradients.
 
-        for i, batch in enumerate(loader):
-            # Move the input batch to the device
-            inputs = batch.to(model.device)
-            
-            # Forward pass: compute the model output and loss
-            outputs = model(inputs, labels=inputs)
-
-            loss = outputs.loss / accumulation_steps  # Scale loss
-            loss.backward()  # Accumulate gradients
-
+            # Accumulat gradients.
             if (i + 1) % accumulation_steps == 0:
                 n_acc_steps += 1
                 optimizer.step()  # Perform a single optimization step
@@ -275,17 +279,6 @@ try:
         bt.logging.success(f'Epoch: {epoch_step} average loss: {avg_loss}')
         epoch_step += 1
 
-        # Check if the average loss of this epoch is the best we've seen so far
-        if avg_loss < best_avg_loss * ( 1 - pretrain.timestamp_epsilon ):
-            best_avg_loss = avg_loss  # Update the best average loss
-            bt.logging.success(f'New best average loss: {best_avg_loss}. Saving model...')
-            
-            # Save the model state to the specified path
-            torch.save( model.state_dict(), config.model_path )
-
-            # Save the new best model to wandb.
-            wandb.save( config.model_path )
-            bt.logging.success('Pushed the new artifact to the wandb run.')
 
 finally: 
     wandb.finish()

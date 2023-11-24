@@ -17,6 +17,8 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
+import torch
+import pretrain
 from transformers import GPT2Config, GPT2LMHeadModel
 
 config = GPT2Config()
@@ -28,4 +30,6 @@ def get_model():
         n_embd = 760,
     )
     return GPT2LMHeadModel(config)
+
+
 
