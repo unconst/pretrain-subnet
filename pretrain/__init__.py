@@ -17,14 +17,14 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-__version__ = "1.0.4"
+__version__ = "2.0.0"
 version_split = __version__.split(".")
 __spec_version__ = (
     (1000 * int(version_split[0]))
     + (10 * int(version_split[1]))
     + (1 * int(version_split[2]))
 )
-weights_version_key = 1000
+weights_version_key = 2001
 NETUID = 9
 WANDB_PROJECT = 'pretraining-subnet'
 
