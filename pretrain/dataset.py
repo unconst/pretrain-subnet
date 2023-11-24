@@ -45,7 +45,7 @@ class SubsetFalconLoader(IterableDataset):
         }
         self.pages = pages
         self.buffer = []
-        self.retry_limit = 5  # Number of retries
+        self.retry_limit = 10  # Number of retries
         self.retry_delay = 5  # Seconds to wait between retries
 
         for page in self.pages:
@@ -66,7 +66,7 @@ class SubsetFalconLoader(IterableDataset):
                 break  # If the request was successful, break out of the retry loop
             except requests.exceptions.RequestException as e:
                 attempt += 1
-                bt.logging.error(f"Failed to fetch data, attempt {attempt}/{self.retry_limit}. Reason: {str(e)}")
+                bt.logging.warning(f"Failed to fetch data, retrying. Attempt {attempt}/{self.retry_limit}")
                 if attempt < self.retry_limit:
                     time.sleep(self.retry_delay)  # Wait before the next retry
                 else:
