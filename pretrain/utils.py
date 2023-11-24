@@ -27,7 +27,20 @@ import pretrain
 import bittensor as bt
 from datetime import datetime
 
-def check_run_validity( run: 'wandb.run', metagraph: typing.Optional[ bt.metagraph ] = None  ) -> typing.Tuple[bool, str]:
+
+def check_run_exists( uid, metadata: dict, metagraph ):
+    try:
+        expected_runid = metadata['runid']
+        api = wandb.Api( timeout = 100 )
+        run = api.run(f"opentensor-dev/{pretrain.WANDB_PROJECT}/{expected_runid}")
+        assert run.config['uid'] == uid
+        assert run.config['hotkey'] == metagraph.hotkeys[uid]
+        return True
+    except Exception as e:
+        bt.logging.debug(f'Check run failed with error: {e}')
+        return False
+
+def check_model_run_validity( run: 'wandb.run', metagraph: typing.Optional[ bt.metagraph ] = None  ) -> typing.Tuple[bool, str]:
     """
         Checks the validity of a Weights & Biases (wandb) run against a metagraph.
 
@@ -81,17 +94,59 @@ def check_run_validity( run: 'wandb.run', metagraph: typing.Optional[ bt.metagra
         return False, f'Failed Signature: An exception occurred while checking the signature with error: {e}'
 
 
-def check_run_exists( uid, metadata: dict, metagraph ):
+def check_delta_run_validity( run: 'wandb.run', metagraph: typing.Optional[ bt.metagraph ] = None  ) -> typing.Tuple[bool, str]:
+    """
+        Checks the validity of a Weights & Biases (wandb) delta run against a metagraph.
+
+        This function verifies the integrity and authenticity of a wandb run by checking its hotkey and signature 
+        against the provided metagraph. It also validates the presence of a delta artifact file ('delta.pth') 
+        and its timestamp.
+
+    Parameters:
+        run (wandb.run): The wandb run to be validated.
+        metagraph: The metagraph against which the run's validity is checked.
+
+    Returns:
+        Tuple[bool, str]: A tuple containing a boolean indicating the validity of the run and a string message 
+                      explaining the validity status.
+
+    Note:
+        - The function requires the hotkey and signature to be present in the run's configuration.
+        - It assumes the presence of 'delta.pth' as a key artifact in the run.
+        - The function catches and handles exceptions, providing an appropriate message in case of failure.
+    """
+    if not metagraph: metagraph = bt.subtensor().metagraph( pretrain.NETUID )
     try:
-        expected_runid = metadata['runid']
-        api = wandb.Api( timeout = 100 )
-        run = api.run(f"opentensor-dev/{pretrain.WANDB_PROJECT}/{expected_runid}")
-        assert run.config['uid'] == uid
-        assert run.config['hotkey'] == metagraph.hotkeys[uid]
-        return True
+        # Extract hotkey and signature from the run's configuration
+        hotkey = run.config['hotkey']
+        signature = run.config['signature']
+
+        # Check if the hotkey is registered in the metagraph
+        if hotkey not in metagraph.hotkeys:
+            return False, f'Failed Signature: The hotkey: {hotkey} is not in the metagraph.'
+
+        # Verify the signature using the hotkey
+        if not bt.Keypair(ss58_address=hotkey).verify(run.id, bytes.fromhex(signature)):
+            return False, f'Failed Signature: The signature: {signature} is not valid'
+
+        # Attempt to access the delta artifact file
+        try: 
+            delta_artifact = run.file('delta.pth')
+        except: 
+            return False, f'Failed Signature: Does not have a delta.pth file'
+
+        # Check and convert the updated at timestamp
+        try: 
+            int(datetime.strptime(delta_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
+        except: 
+            return False, f'Failed validity: Does not have a valid delta.pth file'
+
+        # The run has a valid signature
+        return True, f'Passed Validity check.'
     except Exception as e:
-        bt.logging.debug(f'Check run failed with error: {e}')
-        return False
+        # Handle exceptions during the validity check
+        return False, f'Failed Signature: An exception occurred while checking the signature with error: {e}'
+
 
 def update_model_on_run(model: torch.nn.Module, run: 'wandb.run', path: str = os.path.expanduser('~/tmp/model.pth')):
     """
@@ -114,6 +169,30 @@ def update_model_on_run(model: torch.nn.Module, run: 'wandb.run', path: str = os
         os.makedirs(os.path.dirname(path), exist_ok=True)
     # Save the model state to the specified path
     torch.save(model.state_dict(), path)
+    # Log the saved model file to wandb run.
+    run.save( path )
+
+def update_delta_on_run(delta: torch.nn.Module, run: 'wandb.run', path: str = os.path.expanduser('~/tmp/delta.pth')):
+    """
+    Saves the state of a given delta and updates the corresponding Weights & Biases (wandb) run with the delta file.
+
+    This function serializes the state of the provided PyTorch delta and saves it to a specified file path. 
+    It then uses the wandb API to log this file to the associated run, allowing for tracking and versioning of model states in wandb.
+
+    Parameters:
+        delta (torch.nn.Module): The PyTorch delta whose state is to be saved.
+        run (wandb.run): The wandb run to which the delta state will be logged.
+        path (str): The file path where the delta state will be saved. Defaults to '~/tmp/delta.pth'.
+
+    Note:
+        - The function does not perform any checks on the validity of the provided delta or wandb run.
+        - The default save path is in the user's home directory under 'tmp', which should be verified or changed based on the system setup.
+    """
+    # Create the directory for the model path if it does not exist
+    if not os.path.exists(os.path.dirname(path)):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    # Save the model state to the specified path
+    torch.save( delta.state_dict(), path )
     # Log the saved model file to wandb run.
     run.save( path )
 
@@ -154,10 +233,36 @@ def get_run_for_uid( uid: int, metagraph: typing.Optional[ bt.metagraph ] = None
 
     # Iterate through runs. Newer runs are processed first.
     for run in runs:
-        check_run_validity(run, metagraph)
+        check_model_run_validity(run, metagraph)
         return run
     
     return None
+
+def load_model_metadata_for_uid( uid: int ):
+    """
+        Retrieves the file path to the model checkpoint for uid with associated timestamps and verion.
+    Args:
+        uid: Uid to find metadata on.    
+    """
+    try:
+        # Fill metadata from files and check if we can load weights.
+        model_dir = os.path.join(pretrain.netuid_dir, 'models', str(uid))
+        try:
+            with open(os.path.join(model_dir, 'metadata.json'), 'r') as f: 
+                meta = json.load(f)
+        except Exception as e:
+            # bt.logging.trace(f'Failed Metadata: uid:{uid}, no file under path:{model_dir}')
+            return None
+        if 'version' not in meta or 'timestamp' not in meta or 'runid' not in meta:
+            bt.logging.trace(f'Failed Metadata: uid:{uid}, metadata file corrupted.')
+            return None
+        else:
+            # Valid metadata.
+            return meta
+    except Exception as e:
+        # Skip this UID if any error occurs during loading of model or timestamp.
+        bt.logging.trace(f'Failed Metadata: uid:{uid}, metadata could not be loaded with error:{e}')
+        return None
 
 def update_model_for_uid(uid: int, metagraph: typing.Optional[bt.metagraph] = None) -> bool:
     """
@@ -206,7 +311,7 @@ def update_model_for_uid(uid: int, metagraph: typing.Optional[bt.metagraph] = No
     # Load model artifact and get timestamp
     model_artifact = latest_valid_run.file('model.pth')
     timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-    current_meta = load_metadata_for_uid(uid)
+    current_meta = load_model_metadata_for_uid(uid)
 
     # Update metadata file
     with open(metadata_file, 'w') as f: 
@@ -232,118 +337,79 @@ def update_model_for_uid(uid: int, metagraph: typing.Optional[bt.metagraph] = No
         return True
 
 
-def load_metadata_for_uid( uid: int ):
-    """
-        Retrieves the file path to the model checkpoint for uid with associated timestamps and verion.
-    Args:
-        uid: Uid to find metadata on.    
-    """
-    try:
-        # Fill metadata from files and check if we can load weights.
-        model_dir = os.path.join(pretrain.netuid_dir, 'models', str(uid))
-        try:
-            with open(os.path.join(model_dir, 'metadata.json'), 'r') as f: 
-                meta = json.load(f)
-        except Exception as e:
-            # bt.logging.trace(f'Failed Metadata: uid:{uid}, no file under path:{model_dir}')
-            return None
-        if 'version' not in meta or 'timestamp' not in meta or 'runid' not in meta:
-            bt.logging.trace(f'Failed Metadata: uid:{uid}, metadata file corrupted.')
-            return None
-        else:
-            # Valid metadata.
-            return meta
-    except Exception as e:
-        # Skip this UID if any error occurs during loading of model or timestamp.
-        bt.logging.trace(f'Failed Metadata: uid:{uid}, metadata could not be loaded with error:{e}')
-        return None
-
 def update_delta_for_uid( uid:int, metagraph: typing.Optional[ bt.metagraph ] = None ):
 
-    if not metagraph: metagraph = bt.subtensor().metagraph( pretrain.NETUID )
-    # Retrieve runs from the wandb project for this uid
-    api = wandb.Api( timeout = 100 )
-    expected_hotkey = metagraph.hotkeys[uid]
-    runs = api.runs(
-        f"opentensor-dev/{pretrain.WANDB_PROJECT}",
-        filters={
-            "config.version": pretrain.__version__,
-            "config.type": "delta-miner",
-            "config.run_name": {
-                "$regex": f"delta-miner-{uid}-.*"
-            },
-            "config.hotkey": expected_hotkey,
-        },
-    )
-    models_dir = os.path.join( pretrain.netuid_dir, 'models', str(uid) )
-    delta_metadata_file = os.path.join( models_dir, 'delta_metadata.json' )
-    delta_path = os.path.join( models_dir, 'delta.pth' )
+    """
+    Updates the delta for a given user ID (uid) if there is a newer valid run.
 
-    # Delete models where there is no file.
-    if len( runs ) == 0:
-        if os.path.exists(delta_metadata_file):
-            os.remove(delta_metadata_file)
+    This function checks for the latest valid run for the specified uid and updates the local delta files 
+    if there is a newer version available. It manages the metadata and delta files based on the latest run's 
+    information. If no valid run is found, it cleans up any existing delta and metadata files.
+
+    Parameters:
+        uid (int): The user ID for which the delta update is to be checked and performed.
+        metagraph (Optional[bt.metagraph]): The metagraph to use for finding the latest valid run. 
+                                        If not provided, it's fetched using pretrain.NETUID.
+
+    Returns:
+        bool: True if the delta was updated, False otherwise.
+
+    Note:
+        - The function assumes the existence of specific directories and file paths as defined in 'pretrain'.
+        - It manages delta files in a directory structure based on the uid.
+    """
+    # Get the latest valid run for this uid
+    if not metagraph: 
+        metagraph = bt.subtensor().metagraph(pretrain.NETUID)
+
+    latest_valid_run = get_run_for_uid(uid, metagraph=metagraph)
+    expected_hotkey = metagraph.hotkeys[uid]
+
+    # Paths for delta and metadata
+    delta_dir = os.path.join(pretrain.netuid_dir, 'models', str(uid))
+    dela_metadata_file = os.path.join(delta_dir, 'metadata.json')
+    delta_path = os.path.join(delta_dir, 'delta.pth')
+
+    # If no valid runs, delete existing model and metadata
+    if latest_valid_run is None:
+        if os.path.exists(dela_metadata_file):
+            os.remove(dela_metadata_file)
         if os.path.exists(delta_path):
             os.remove(delta_path)
             bt.logging.debug(f'Deleting {uid} model with no run.')
         return False
 
-    # Iterate through runs. Newer runs first.
-    for run in runs:
-        bt.logging.trace(f'check run: {run.id}')
+    # Create model directory if it doesn't exist
+    os.makedirs(delta_path, exist_ok=True)
 
-        # Check if the run is valid.
-        valid, reason = check_run_validity( run, metagraph )
-        if valid:
-            bt.logging.trace(f'Run:{run.id}, for uid:{uid} was valid.')
-            
-            # Run artifact.
-            try:
-                delta_artifact = run.file('delta.pth')
-            except:
-                # No model, continue.
-                continue
+    # Load model artifact and get timestamp
+    model_artifact = latest_valid_run.file('model.pth')
+    timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
+    current_meta = load_delta_metadata_for_uid(uid)
 
-            # Define the local model directory and timestamp file paths
-            timestamp = int(datetime.strptime(delta_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
-            current_meta = load_metadata_for_uid( uid )  
-                      
-            # The run is valid, lets update it
-            os.makedirs( models_dir , exist_ok=True)
-            with open(delta_metadata_file, 'w') as f: 
-                json.dump( 
-                    { 
-                        'timestamp': timestamp, 
-                        'runid': run.id,
-                        'delta_path': delta_path,
-                        'version': run.config['version'],
-                        'blacklisted': False,
-                        'last_update': time.time(),
-                        'uid': uid,
-                        'hotkey': expected_hotkey,
-                    }, f)
+    # Update metadata file
+    with open(dela_metadata_file, 'w') as f: 
+        json.dump({
+            'timestamp': timestamp, 
+            'runid': latest_valid_run.id,
+            'delta_path': delta_path,
+            'version': latest_valid_run.config['version'],
+            'blacklisted': False,
+            'last_update': time.time(),
+            'uid': uid,
+            'hotkey': expected_hotkey,
+        }, f)
 
-            # Check to see if model needs updating.
-            if current_meta != None and current_meta.get('timestamp', -1) == timestamp:
-                bt.logging.trace( f'Model is up to date: uid: {uid}, under path: {models_dir}, with timestamp: { timestamp }')
-                return False
-            else:
-                delta_artifact.download( replace=True, root=models_dir )
-            bt.logging.success( f'Updated model: uid: {uid}, under path: {models_dir}, with timestamp: { timestamp }')
-            return True
+    # Check if model needs updating
+    if current_meta is not None and current_meta.get('timestamp', -1) == timestamp:
+        bt.logging.trace(f'Model is up to date: uid: {uid}, under path: {delta_dir}, with timestamp: {timestamp}')
+        return False
+    else:
+        # Download the updated model artifact
+        model_artifact.download(replace=True, root=delta_dir)
+        bt.logging.success(f'Updated model: uid: {uid}, under path: {delta_dir}, with timestamp: {timestamp}')
+        return True
 
-        else:
-            # The run failed the signature check. Moving to the next run.
-            bt.logging.trace(f'Run:{run.id}, for uid:{uid} was not valid with error: {reason}')
-            continue
-
-    # Deleting model path if no valid runs.
-    if os.path.exists(delta_metadata_file):
-        os.remove(delta_metadata_file)
-    if os.path.exists(delta_path):
-        os.remove(delta_path)
-        bt.logging.debug(f'Deleting {uid} delta with no valid run.')
-    return False
 
 def load_delta_metadata_for_uid( uid: int ):
     """
@@ -465,7 +531,7 @@ def get_and_update_model_for_uid(uid: int, device: str = 'cpu') -> typing.Option
     try:
         update_model_for_uid(uid)
         model = pretrain.model.get_model()
-        model_meta = load_metadata_for_uid(uid)
+        model_meta = load_model_metadata_for_uid(uid)
         model_weights = torch.load(model_meta['model_path'], map_location=torch.device(device))
         model.load_state_dict(model_weights)
         return model
