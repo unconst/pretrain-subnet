@@ -30,6 +30,7 @@ import threading
 import multiprocessing
 from rich.table import Table
 from rich.console import Console
+from multiprocessing import Value
 
 import bittensor as bt
 import pretrain as pt
@@ -110,7 +111,7 @@ class Validator:
         last_uid_update = -1
         while not self.stop_event.is_set():
             if self.stop_event.is_set(): return
-            block = self.subtensor.block 
+            block = bt.subtensor(config = self.config).block 
             uid = block % 256
             if uid == last_uid_update: 
                 time.sleep(1)
@@ -323,7 +324,7 @@ class Validator:
         # Create a new dictionary with the required format
         graphed_data = {
             'time': time.time(),
-            'block': self.subtensor.block,
+            'block': self.metagraph.block.item(),
             'uid_data': {str(uid): uid_data[str(uid)]['average_loss'] for uid in uids},
             'weight_data': {str(uid): self.weights[uid].item() for uid in uids}
         }
