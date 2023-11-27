@@ -82,6 +82,7 @@ def model_path( uid: int ) -> typing.Optional[ str ]:
 
 def is_synced( uid: int ) -> typing.Optional[ str ]:
     try:
+        if metadata( uid ) == None: return False
         _model_path = model_path( uid )
         if _model_path == None: return False
         return os.path.exists( _model_path )
