@@ -55,6 +55,9 @@ def get_config():
     # Add device argument which defaults to 'cuda' if available, else 'cpu'
     parser.add_argument("--load_uid", type=int, default=None, help='If passed loads the model under the specified uid.' )  
 
+    # Add device argument which defaults to 'cuda' if available, else 'cpu'
+    parser.add_argument("--load_disk", type=int, default=None, help='If passed loads the model from disk under your wallet dir.' )  
+
     # Set the number of epochs
     parser.add_argument("--num_epochs", type = int, default = -1, help="Number of training epochs (-1 is infinite)")
 
@@ -112,6 +115,9 @@ elif config.load_uid is not None:
     pt.graph.sync( config.load_uid, metagraph )
     model = pt.graph.model( config.load_uid, device = config.device )
     bt.logging.success(f'Training with model from uid: {config.load_uid}')
+
+elif config.load_disk:
+    model = pt.mining.load( wallet, device = 'cpu')
 
 # Initialize the model from scratch.
 else:

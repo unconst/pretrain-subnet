@@ -365,4 +365,20 @@ def save( wallet, model ):
     torch.save(model.state_dict(), _model_path)
 
 
+def load( wallet, device: str = 'cpu'):
+    """
+    Loads the model state to your wallet path.
+
+    Parameters:
+        wallet: Wallet object containing user credentials.
+
+    Returns:
+        model: model loaded under wallet path.
+    """
+    _model_path = model_path(wallet)
+    model = pt.model.get_model()
+    model_weights = torch.load( _model_path, map_location=torch.device(device))
+    model.load_state_dict(model_weights)
+    return model
+
 
