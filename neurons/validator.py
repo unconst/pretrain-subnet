@@ -293,15 +293,17 @@ class Validator:
         table.add_column("last_update", style="magenta")
         table.add_column("timestamp", style="magenta")
         for uid in uids:
-            table.add_row(
-                str(uid), 
-                str( round(step_log['uid_data'][ str(uid) ]['average_loss'], 4)), 
-                str( round(step_log['uid_data'][ str(uid) ]['win_rate'], 4)),
-                str(step_log['uid_data'][ str(uid) ]['win_total']),
-                str( round(self.weights[uid].item(), 4) ),
-                str( round(step_log['uid_data'][ str(uid) ]['last_update'], 0)),
-                str( step_log['uid_data'][ str(uid) ]['timestamp']),
-            )
+            try:
+                table.add_row(
+                    str(uid), 
+                    str( round(step_log['uid_data'][ str(uid) ]['average_loss'], 4)), 
+                    str( round(step_log['uid_data'][ str(uid) ]['win_rate'], 4)),
+                    str(step_log['uid_data'][ str(uid) ]['win_total']),
+                    str( round(self.weights[uid].item(), 4) ),
+                    str( round(step_log['uid_data'][ str(uid) ]['last_update'], 0)),
+                    str( step_log['uid_data'][ str(uid) ]['timestamp']),
+                )
+            except: pass
         console = Console()
         console.print(table)
 
