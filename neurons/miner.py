@@ -56,7 +56,7 @@ def get_config():
     parser.add_argument("--load_uid", type=int, default=None, help='If passed loads the model under the specified uid.' )  
 
     # Add device argument which defaults to 'cuda' if available, else 'cpu'
-    parser.add_argument("--load_disk", type=int, default=None, help='If passed loads the model from disk under your wallet dir.' )  
+    parser.add_argument("--load_disk",action='store_true', help='If set, loads the model from disk' )  
 
     # Set the number of epochs
     parser.add_argument("--num_epochs", type = int, default = -1, help="Number of training epochs (-1 is infinite)")
