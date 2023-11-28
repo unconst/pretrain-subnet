@@ -244,7 +244,7 @@ class Validator:
         bt.logging.success( f'Computed model wins: {wins}')
 
         # Update weights based on moving average.
-        new_weights = self.weights.clone()
+        new_weights = torch.zeros_like( self.weights )
         for i, uid_i in enumerate(uids): new_weights[ uid_i ] = step_weights[ i ]
         new_weights /= new_weights.sum()
         self.weights = pt.alpha * self.weights + ( 1 - pt.alpha ) * new_weights
