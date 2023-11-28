@@ -110,17 +110,20 @@ class Validator:
         # if they should be updated.
         last_uid_update = -1
         while not self.stop_event.is_set():
-            if self.stop_event.is_set(): return
-            block = bt.subtensor(config = self.config).block 
-            uid = block % 256
-            if uid == last_uid_update: 
-                time.sleep(1)
-                continue
-            last_uid_update = uid
-            bt.logging.success( f'Syncing miner for uid: {uid} and block: {block}')
-            pt.graph.sync( uid, self.metagraph )
-            self.uids_to_eval.add( uid )
-            bt.logging.trace(f'uids to eval add: {uid}')
+            try:
+                if self.stop_event.is_set(): return
+                block = bt.subtensor(config = self.config).block 
+                uid = block % 256
+                if uid == last_uid_update: 
+                    time.sleep(1)
+                    continue
+                last_uid_update = uid
+                bt.logging.success( f'Syncing miner for uid: {uid} and block: {block}')
+                pt.graph.sync( uid, self.metagraph )
+                self.uids_to_eval.add( uid )
+                bt.logging.trace(f'uids to eval add: {uid}')
+            except Exception as e:
+                bt.logging.error(f'Error in update loop: {e}')
 
     async def try_set_weights( self, ttl: int ):
         async def _try_set_weights():
