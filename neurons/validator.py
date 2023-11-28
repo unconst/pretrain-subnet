@@ -16,6 +16,8 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
+import os
+import tqdm
 import json
 import math
 import time
@@ -34,6 +36,8 @@ from multiprocessing import Value
 
 import bittensor as bt
 import pretrain as pt
+
+os.environ['TOKENIZERS_PARALLELISM'] = 'true'
 
 class Validator:
 
@@ -112,7 +116,8 @@ class Validator:
         while not self.stop_event.is_set():
             try:
                 if self.stop_event.is_set(): return
-                block = bt.subtensor(config = self.config).block 
+                block = self.try_get_block( 10 )
+                if block == None: continue
                 uid = block % 256
                 if uid == last_uid_update: 
                     time.sleep(1)
@@ -124,6 +129,26 @@ class Validator:
                 bt.logging.trace(f'uids to eval add: {uid}')
             except Exception as e:
                 bt.logging.error(f'Error in update loop: {e}')
+
+    def try_get_block(self, ttl: int):
+        def get_block(endpoint, queue):
+            try:
+                block_number = bt.subtensor(endpoint).block
+                queue.put(block_number)
+            except Exception as e:
+                queue.put(None)
+                bt.logging.error(f'Error getting block: {e}')
+        queue = multiprocessing.Queue()
+        process = multiprocessing.Process(target=get_block, args=(self.subtensor.chain_endpoint, queue))
+        process.start()
+        process.join(timeout=ttl)
+        if process.is_alive():
+            process.terminate()
+            process.join()
+            bt.logging.error(f'Failed to get_block after {ttl} seconds')
+            return None
+        block_number = queue.get()
+        return block_number
 
     async def try_set_weights( self, ttl: int ):
         async def _try_set_weights():
