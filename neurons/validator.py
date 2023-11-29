@@ -98,6 +98,7 @@ class Validator:
         # If test, only samples 3 initial uids.
         if self.config.test: self.uids_to_eval = self.uids_to_eval[ : self.config.sample_min + 1]
         self.uids_to_eval = set( self.uids_to_eval )
+        self.pending_uids_to_eval = set()
         
         # == Initialize the update thread ==
         self.stop_event = threading.Event()
@@ -125,7 +126,7 @@ class Validator:
                 last_uid_update = uid
                 bt.logging.success( f'Syncing miner for uid: {uid} and block: {block}')
                 pt.graph.sync( uid, self.metagraph )
-                self.uids_to_eval.add( uid )
+                self.pending_uids_to_eval.add( uid )
                 bt.logging.trace(f'uids to eval add: {uid}')
             except Exception as e:
                 bt.logging.error(f'Error in update loop: {e}')
@@ -280,6 +281,8 @@ class Validator:
 
         # Filter based on win rate removing all by the sample_min best models for evaluation.
         self.uids_to_eval = set( sorted(win_rate, key=win_rate.get, reverse=True)[:self.config.sample_min] )
+        self.uids_to_eval.update( self.pending_uids_to_eval )
+        self.pending_uids_to_eval.clear()
 
         # Log to screen and wandb.
         self.log_step(
