@@ -221,7 +221,7 @@ class Validator:
             meta = pt.graph.metadata( uid ) 
             if meta == None: continue
             # Check that the uid has a valid wandb run and the model is synced locally.
-            if pt.graph.has_valid_run( uid, self.metagraph ) and pt.graph.is_synced( uid ):
+            if pt.graph.has_valid_run( uid, self.metagraph ):
                 uids.append( uid )
                 timestamps.append( meta['timestamp'] )
             else:
