@@ -125,9 +125,12 @@ class Validator:
                     continue
                 last_uid_update = uid
                 bt.logging.success( f'Syncing miner for uid: {uid} and block: {block}')
-                pt.graph.sync( uid, self.metagraph )
+                if pt.graph.sync( uid, self.metagraph ):
+                    bt.logging.success(f'Pulled new model for uid: {uid}')
+                else:
+                    bt.logging.success(f'Model up to date for uid: {uid}')
+                bt.logging.trace(f'adding {uid} to pending uids to eval.')
                 self.pending_uids_to_eval.add( uid )
-                bt.logging.trace(f'uids to eval add: {uid}')
             except Exception as e:
                 bt.logging.error(f'Error in update loop: {e}')
 
@@ -224,7 +227,7 @@ class Validator:
             # Check that the uid has a valid wandb run and the model is synced locally.
             if pt.graph.has_valid_run( uid, self.metagraph ):
                 uids.append( uid )
-                timestamps.append( meta['timestamp'] )
+                timestamps.append( pt.graph.last_download( uid ) )
             else:
                 bt.logging.debug( f'uid:{uid} run does not exist or is not valid, removing from uids to eval.')
         bt.logging.success( f'Runnning step with uids: {uids} and timestamps: {timestamps}')

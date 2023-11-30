@@ -381,4 +381,8 @@ def load( wallet, device: str = 'cpu'):
     model.load_state_dict(model_weights)
     return model
 
-
+def update( wallet, model ):
+    _run = init( wallet )
+    save( wallet, model )
+    push( wallet, _run )
+    _run.finish()
