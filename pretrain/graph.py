@@ -72,6 +72,17 @@ def path( uid: int ) -> typing.Optional[ str ]:
     except Exception as e:
         bt.logging.debug('Failed to get model_path for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
         return None
+
+def last_download( uid: int ) -> typing.Optional[ float ]:
+    try:
+        _metadata = metadata(uid)
+        if 'last_download' not in _metadata:
+            return _metadata[ 'last_update' ]
+        else:
+            return _metadata[ 'last_download' ]
+    except Exception as e:
+        bt.logging.debug('Failed to get last_download for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} ) with error: { }'.format(uid, uid, e))
+        return None
     
 def model_path( uid: int ) -> typing.Optional[ str ]:
     try:
@@ -205,13 +216,13 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
 
     # Load model artifact and get timestamp
     model_artifact = latest_valid_run.file('model.pth')
-    timestamp = int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
+    heartbeat = int(datetime.strptime(latest_valid_run.metadata['heartbeatAt'], '%Y-%m-%dT%H:%M:%S.%f').timestamp())
     current_meta = metadata(uid)
 
     # Update metadata file
     with open(metadata_file, 'w') as f: 
         json.dump({
-            'timestamp': timestamp, 
+            'timestamp': heartbeat, 
             'runid': latest_valid_run.id,
             'model_path': model_path,
             'version': latest_valid_run.config['version'],
@@ -222,13 +233,25 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
         }, f)
 
     # Check if model needs updating
-    if current_meta is not None and current_meta.get('timestamp', -1) == timestamp:
-        bt.logging.trace(f'Model is up to date: uid: {uid}, under path: {models_dir}, with timestamp: {timestamp}')
+    if current_meta is not None and current_meta.get('last_download', -1) - heartbeat < 60*60:
+        bt.logging.trace(f'Model is up to date: uid: {uid}, under path: {models_dir}, with heartbeat: {heartbeat}')
         return False
     else:
         # Download the updated model artifact
         model_artifact.download(replace=True, root=models_dir)
-        bt.logging.debug(f'Updated model: uid: {uid}, under path: {models_dir}, with timestamp: {timestamp}')
+        with open(metadata_file, 'w') as f: 
+            json.dump({
+                'timestamp': heartbeat, 
+                'runid': latest_valid_run.id,
+                'model_path': model_path,
+                'version': latest_valid_run.config['version'],
+                'blacklisted': False,
+                'last_update': time.time(),
+                'uid': uid,
+                'hotkey': expected_hotkey,
+                'last_download': heartbeat
+            }, f)
+        bt.logging.debug(f'Updated model: uid: {uid}, under path: {models_dir}, with heartbeat: {heartbeat}')
         return True
 
 def push( uid, model: torch.nn.Module, path: str = os.path.expanduser('~/tmp/model.pth') ):
