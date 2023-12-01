@@ -216,7 +216,7 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
 
     # Load model artifact and get timestamp
     model_artifact = latest_valid_run.file('model.pth')
-    heartbeat = int(datetime.strptime(latest_valid_run.metadata['heartbeatAt'], '%Y-%m-%dT%H:%M:%S.%f').timestamp())
+    heartbeat = int(datetime.strptime(latest_valid_run._attrs['heartbeatAt'], '%Y-%m-%dT%H:%M:%S').timestamp())
     current_meta = metadata(uid)
 
     # Update metadata file
