@@ -280,7 +280,7 @@ class Validator:
         for i, uid_i in enumerate(uids): new_weights[ uid_i ] = step_weights[ i ]
         new_weights /= new_weights.sum()
         self.weights = pt.alpha * self.weights + ( 1 - pt.alpha ) * new_weights
-        self.weights.nan_to_num( 0.0 )
+        self.weights = self.weights.nan_to_num( 0.0 )
 
         # Filter based on win rate removing all by the sample_min best models for evaluation.
         self.uids_to_eval = set( sorted(win_rate, key=win_rate.get, reverse=True)[:self.config.sample_min] )

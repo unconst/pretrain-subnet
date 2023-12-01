@@ -212,4 +212,5 @@ try:
                 pt.mining.push( wallet, wandb_run )
 
 finally: 
-    wandb.finish()
+    # Important step.
+    wandb_run.finish()
