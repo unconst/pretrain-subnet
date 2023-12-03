@@ -230,6 +230,7 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
             'last_update': time.time(),
             'uid': uid,
             'hotkey': expected_hotkey,
+            'last_download': heartbeat
         }, f)
 
     # Check if model needs updating
