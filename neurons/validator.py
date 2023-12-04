@@ -290,6 +290,7 @@ class Validator:
         # Log to screen and wandb.
         self.log_step(
             uids,
+            timestamps,
             pages,
             batches,
             wins,
@@ -299,7 +300,7 @@ class Validator:
         bt.logging.debug('Finished run step.')
 
 
-    def log_step( self, uids, pages, batches, wins, win_rate, losses_per_uid):
+    def log_step( self, uids, timestamps, pages, batches, wins, win_rate, losses_per_uid):
         # Build step log
         step_log = {
             'timestamp': time.time(),
@@ -307,11 +308,11 @@ class Validator:
             'uids': uids,
             'uid_data': {}
         }
-        for uid in uids:
+        for i, uid in enumerate( uids ) :
             step_log['uid_data'][ str(uid) ] = {
                 'uid': uid,
                 'runid': pt.graph.runid( uid ),
-                'timestamp': pt.graph.timestamp( uid ),
+                'timestamp': timestamps[ i ],
                 'last_update':  pt.graph.last_update( uid ),
                 'average_loss': sum( losses_per_uid[uid] ) / len( batches ),
                 'win_rate': win_rate[ uid ],
