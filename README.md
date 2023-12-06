@@ -206,8 +206,6 @@ python neurons/validator.py
     --wallet.name YOUR_WALLET_NAME
     --wallet.hotkey YOUR_WALLET_HOTKEY 
     --device YOUR_CUDA DEVICE
-    --wandb.off
-    --offline
 ```
 ---
 
