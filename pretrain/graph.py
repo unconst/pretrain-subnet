@@ -25,6 +25,8 @@ import typing
 import pretrain
 import bittensor as bt
 from datetime import datetime
+from safetensors import safe_open
+from safetensors.torch import load_model, save_model
 
 def best_uid( metagraph: typing.Optional[ bt.metagraph ] = None ):
     if not metagraph: metagraph = bt.subtensor().metagraph(pretrain.NETUID)
@@ -40,7 +42,7 @@ def timestamp( uid: int ) -> typing.Optional[ int ]:
     try:
         return metadata(uid)['timestamp']
     except Exception as e:
-        bt.logging.debug('Failed to get timestamp for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get timestamp for uid: {}, try pulling data for this uid with pretrain.graph.sync( {} )'.format(uid, uid))
         return None
     
 def run( uid: int ) -> typing.Optional[ 'wandb.run' ]:
@@ -49,28 +51,28 @@ def run( uid: int ) -> typing.Optional[ 'wandb.run' ]:
         run = api.run(f"opentensor-dev/{pretrain.WANDB_PROJECT}/{metadata(uid)['runid']}")
         return run
     except Exception as e:
-        bt.logging.debug('Failed to get run for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get run for uid: {}, try pulling data for this uid with pretrain.graph.sync( {} )'.format(uid, uid))
         return None
       
 def runid( uid: int ) -> typing.Optional[ str ]:
     try:
         return metadata(uid)['runid']
     except Exception as e:
-        bt.logging.debug('Failed to get runid for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get runid for uid: {}, try pulling data for this uid with pretrain.graph.sync( {} )'.format(uid, uid))
         return None
 
 def version( uid: int ) -> typing.Optional[ str ]:
     try:
         return metadata(uid)['version']
     except Exception as e:
-        bt.logging.debug('Failed to get version for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get version for uid: {}, try pulling data for this uid with pretrain.graph.sync( {} )'.format(uid, uid))
         return None
     
 def path( uid: int ) -> typing.Optional[ str ]:
     try:
         return os.path.dirname(metadata(uid)['model_path'])
     except Exception as e:
-        bt.logging.debug('Failed to get model_path for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get model_path for uid: {}, try pulling data for this uid with pretrain.graph.sync( {} )'.format(uid, uid))
         return None
 
 def last_download( uid: int ) -> typing.Optional[ float ]:
@@ -81,14 +83,14 @@ def last_download( uid: int ) -> typing.Optional[ float ]:
         else:
             return _metadata[ 'last_download' ]
     except Exception as e:
-        bt.logging.debug('Failed to get last_download for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} ) with error: { }'.format(uid, uid, e))
+        bt.logging.debug('Failed to get last_download for uid: {}, try pulling data for this uid with pretrain.graph.sync( {} ) with error: { }'.format(uid, uid, e))
         return None
     
 def model_path( uid: int ) -> typing.Optional[ str ]:
     try:
         return metadata(uid)['model_path']
     except Exception as e:
-        bt.logging.debug('Failed to get model_path for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get model_path for uid: {}, try pulling data for this uid with pretrain.graph.sync( {} )'.format(uid, uid))
         return None
 
 def is_synced( uid: int ) -> typing.Optional[ str ]:
@@ -105,21 +107,21 @@ def hotkey( uid: int ) -> typing.Optional[ str ]:
     try:
         return metadata(uid)['hotkey']
     except Exception as e:
-        bt.logging.debug('Failed to get hotkey for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get hotkey for uid: {}, try pulling data for this uid with pretrain.graph.sync( {} )'.format(uid, uid))
         return None
 
 def last_update( uid: int ) -> typing.Optional[ float ]:
     try:
         return metadata(uid)['last_update']
     except Exception as e:
-        bt.logging.debug('Failed to get last_update for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get last_update for uid: {}, try pulling data for this uid with pretrain.graph.sync( {} )'.format(uid, uid))
         return None
     
 def has_valid_run( uid: int, metagraph: typing.Optional[ bt.metagraph ] = None ) -> typing.Optional[ bool ]:
     try:
         return check_run_validity( run( uid ), metagraph = metagraph )[0]
     except Exception as e:
-        bt.logging.debug('Failed to get last_update for uid: {}, try pulling data for this uid with pretrain.utils.sync( {} )'.format(uid, uid))
+        bt.logging.debug('Failed to get last_update for uid: {}, try pulling data for this uid with pretrain.graph.sync( {} )'.format(uid, uid))
         return None
     
 def metadata( uid: int ):
@@ -163,11 +165,10 @@ def model(uid: int, device: str = 'cpu') -> typing.Optional[torch.nn.Module]:
     try:
         model = pretrain.model.get_model()
         model_meta = metadata(uid)
-        model_weights = torch.load(model_meta['model_path'], map_location=torch.device(device))
-        model.load_state_dict(model_weights)
+        load_model( model, model_meta['model_path'] )
         return model
     except Exception as e:
-        bt.logging.debug(f'Error loading model for uid: {uid} with error: {e}, try pulling data for this uid with pretrain.utils.pull( {uid} )')
+        bt.logging.debug(f'Error loading model for uid: {uid} with error: {e}, try pulling data for this uid with pretrain.graph.pull( {uid} )')
         return None
     
 def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
@@ -200,7 +201,7 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
     # Paths for model and metadata
     models_dir = os.path.join(pretrain.netuid_dir, 'models', str(uid))
     metadata_file = os.path.join(models_dir, 'metadata.json')
-    model_path = os.path.join(models_dir, 'model.pth')
+    model_path = os.path.join(models_dir, 'model.safe')
 
     # If no valid runs, delete existing model and metadata
     if latest_valid_run is None:
@@ -215,7 +216,7 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
     os.makedirs(models_dir, exist_ok=True)
 
     # Load model artifact and get timestamp
-    model_artifact = latest_valid_run.file('model.pth')
+    model_artifact = latest_valid_run.file('model.safe')
     heartbeat = int(datetime.strptime(latest_valid_run._attrs['heartbeatAt'], '%Y-%m-%dT%H:%M:%S').timestamp())
     current_meta = metadata(uid)
 
@@ -234,7 +235,7 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
         }, f)
 
     # Check if model needs updating
-    if current_meta is not None and current_meta.get('last_download', -1) - heartbeat < 60*60:
+    if current_meta is not None:
         bt.logging.trace(f'Model is up to date: uid: {uid}, under path: {models_dir}, with heartbeat: {heartbeat}')
         return False
     else:
@@ -255,7 +256,7 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
         bt.logging.debug(f'Updated model: uid: {uid}, under path: {models_dir}, with heartbeat: {heartbeat}')
         return True
 
-def push( uid, model: torch.nn.Module, path: str = os.path.expanduser('~/tmp/model.pth') ):
+def push( uid, model: torch.nn.Module, path: str = os.path.expanduser('~/tmp/model.safe') ):
     """
     Saves the state of a given model and updates the corresponding Weights & Biases (wandb) run with the model file.
 
@@ -265,7 +266,7 @@ def push( uid, model: torch.nn.Module, path: str = os.path.expanduser('~/tmp/mod
     Parameters:
         model (torch.nn.Module): The PyTorch model whose state is to be saved.
         run (wandb.run): The wandb run to which the model state will be logged.
-        path (str): The file path where the model state will be saved. Defaults to '~/tmp/model.pth'.
+        path (str): The file path where the model state will be saved. Defaults to '~/tmp/model.safe'.
 
     Note:
         - The function does not perform any checks on the validity of the provided model or wandb run.
@@ -276,7 +277,7 @@ def push( uid, model: torch.nn.Module, path: str = os.path.expanduser('~/tmp/mod
     if not os.path.exists(os.path.dirname(path)):
         os.makedirs(os.path.dirname(path), exist_ok=True)
     # Save the model state to the specified path
-    torch.save(model.state_dict(), path)
+    save_model(model, path)
     # Log the saved model file to wandb run.
     run.save( path )
 
@@ -285,7 +286,7 @@ def check_run_validity( run: 'wandb.run', metagraph: typing.Optional[ bt.metagra
         Checks the validity of a Weights & Biases (wandb) run against a metagraph.
 
         This function verifies the integrity and authenticity of a wandb run by checking its hotkey and signature 
-        against the provided metagraph. It also validates the presence of a model artifact file ('model.pth') 
+        against the provided metagraph. It also validates the presence of a model artifact file ('model.safe') 
         and its timestamp.
 
     Parameters:
@@ -298,7 +299,7 @@ def check_run_validity( run: 'wandb.run', metagraph: typing.Optional[ bt.metagra
 
     Note:
         - The function requires the hotkey and signature to be present in the run's configuration.
-        - It assumes the presence of 'model.pth' as a key artifact in the run.
+        - It assumes the presence of 'model.safe' as a key artifact in the run.
         - The function catches and handles exceptions, providing an appropriate message in case of failure.
     """
     if not metagraph: metagraph = bt.subtensor().metagraph( pretrain.NETUID )
@@ -317,15 +318,15 @@ def check_run_validity( run: 'wandb.run', metagraph: typing.Optional[ bt.metagra
 
         # Attempt to access the model artifact file
         try: 
-            model_artifact = run.file('model.pth')
+            model_artifact = run.file('model.safe')
         except: 
-            return False, f'Failed Signature: Does not have a model.pth file'
+            return False, f'Failed Signature: Does not have a model.safe file'
 
         # Check and convert the updated at timestamp
         try: 
             int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
         except: 
-            return False, f'Failed validity: Does not have a valid model.pth file'
+            return False, f'Failed validity: Does not have a valid model.safe file'
 
         # The run has a valid signature
         return True, f'Passed Validity check.'

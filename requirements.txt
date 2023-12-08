@@ -4,3 +4,4 @@ transformers==4.34.1
 wandb
 rich
 matplotlib
+safetensors
