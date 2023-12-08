@@ -63,7 +63,7 @@ def model_path(wallet: int) -> str:
             wallet.name,
             wallet.hotkey_str,
             pt.NETUID,
-            "miner/model.safe",
+            "miner/model.pth",
         )
     )
 
