@@ -201,7 +201,7 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
     # Paths for model and metadata
     models_dir = os.path.join(pretrain.netuid_dir, 'models', str(uid))
     metadata_file = os.path.join(models_dir, 'metadata.json')
-    model_path = os.path.join(models_dir, 'model.pth')
+    model_path = os.path.join(models_dir, 'model.safe')
 
     # If no valid runs, delete existing model and metadata
     if latest_valid_run is None:
@@ -216,7 +216,7 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
     os.makedirs(models_dir, exist_ok=True)
 
     # Load model artifact and get timestamp
-    model_artifact = latest_valid_run.file('model.pth')
+    model_artifact = latest_valid_run.file('model.safe')
     heartbeat = int(datetime.strptime(latest_valid_run._attrs['heartbeatAt'], '%Y-%m-%dT%H:%M:%S').timestamp())
     current_meta = metadata(uid)
 
@@ -256,7 +256,7 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
         bt.logging.debug(f'Updated model: uid: {uid}, under path: {models_dir}, with heartbeat: {heartbeat}')
         return True
 
-def push( uid, model: torch.nn.Module, path: str = os.path.expanduser('~/tmp/model.pth') ):
+def push( uid, model: torch.nn.Module, path: str = os.path.expanduser('~/tmp/model.safe') ):
     """
     Saves the state of a given model and updates the corresponding Weights & Biases (wandb) run with the model file.
 
@@ -266,7 +266,7 @@ def push( uid, model: torch.nn.Module, path: str = os.path.expanduser('~/tmp/mod
     Parameters:
         model (torch.nn.Module): The PyTorch model whose state is to be saved.
         run (wandb.run): The wandb run to which the model state will be logged.
-        path (str): The file path where the model state will be saved. Defaults to '~/tmp/model.pth'.
+        path (str): The file path where the model state will be saved. Defaults to '~/tmp/model.safe'.
 
     Note:
         - The function does not perform any checks on the validity of the provided model or wandb run.
@@ -286,7 +286,7 @@ def check_run_validity( run: 'wandb.run', metagraph: typing.Optional[ bt.metagra
         Checks the validity of a Weights & Biases (wandb) run against a metagraph.
 
         This function verifies the integrity and authenticity of a wandb run by checking its hotkey and signature 
-        against the provided metagraph. It also validates the presence of a model artifact file ('model.pth') 
+        against the provided metagraph. It also validates the presence of a model artifact file ('model.safe') 
         and its timestamp.
 
     Parameters:
@@ -299,7 +299,7 @@ def check_run_validity( run: 'wandb.run', metagraph: typing.Optional[ bt.metagra
 
     Note:
         - The function requires the hotkey and signature to be present in the run's configuration.
-        - It assumes the presence of 'model.pth' as a key artifact in the run.
+        - It assumes the presence of 'model.safe' as a key artifact in the run.
         - The function catches and handles exceptions, providing an appropriate message in case of failure.
     """
     if not metagraph: metagraph = bt.subtensor().metagraph( pretrain.NETUID )
@@ -318,15 +318,15 @@ def check_run_validity( run: 'wandb.run', metagraph: typing.Optional[ bt.metagra
 
         # Attempt to access the model artifact file
         try: 
-            model_artifact = run.file('model.pth')
+            model_artifact = run.file('model.safe')
         except: 
-            return False, f'Failed Signature: Does not have a model.pth file'
+            return False, f'Failed Signature: Does not have a model.safe file'
 
         # Check and convert the updated at timestamp
         try: 
             int(datetime.strptime(model_artifact.updatedAt, '%Y-%m-%dT%H:%M:%S').timestamp())
         except: 
-            return False, f'Failed validity: Does not have a valid model.pth file'
+            return False, f'Failed validity: Does not have a valid model.safe file'
 
         # The run has a valid signature
         return True, f'Passed Validity check.'
