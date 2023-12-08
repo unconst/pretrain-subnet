@@ -25,6 +25,7 @@ import string
 import typing
 import pretrain as pt
 import bittensor as bt
+from safetensors.torch import load_model, save_model
 
 def path(wallet: int) -> str:
     """
@@ -62,7 +63,7 @@ def model_path(wallet: int) -> str:
             wallet.name,
             wallet.hotkey_str,
             pt.NETUID,
-            "miner/model.pth",
+            "miner/model.safe",
         )
     )
 
@@ -362,7 +363,7 @@ def save( wallet, model ):
         os.makedirs(os.path.dirname(_model_path), exist_ok=True)
 
     # Save the model state to the specified path
-    torch.save(model.state_dict(), _model_path)
+    save_model( model, _model_path )
 
 
 def load( wallet, device: str = 'cpu'):
@@ -377,8 +378,7 @@ def load( wallet, device: str = 'cpu'):
     """
     _model_path = model_path(wallet)
     model = pt.model.get_model()
-    model_weights = torch.load( _model_path, map_location=torch.device(device))
-    model.load_state_dict(model_weights)
+    load_model( model, _model_path )
     return model
 
 def update( wallet, model ):
