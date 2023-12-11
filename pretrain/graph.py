@@ -335,7 +335,7 @@ def check_run_validity( run: 'wandb.run', metagraph: typing.Optional[ bt.metagra
             model_size = sum(p.numel() for p in model_architecture.parameters())
             # current size of gpt2 is 122268040, previous size is 57868320. 
             # distilgpt2 size is 81912576 try to get a new model size that no one pretrained before 
-            if model_size > 122200000 and model_size <82000000:
+            if model_size > 122200000 or model_size <82000000:
                 return False, f'Failed Signature: Model_size is invalid'
         except: 
             return False, f'Failed Signature: Does not have a model_architecture.pth file'
