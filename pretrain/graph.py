@@ -235,7 +235,7 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
         }, f)
 
     # Check if model needs updating
-    if current_meta is not None:
+    if current_meta is not None and heartbeat <= current_meta['last_download'] :
         bt.logging.trace(f'Model is up to date: uid: {uid}, under path: {models_dir}, with heartbeat: {heartbeat}')
         return False
     else:
@@ -251,7 +251,7 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
                 'last_update': time.time(),
                 'uid': uid,
                 'hotkey': expected_hotkey,
-                'last_download': time.time()
+                'last_download': heartbeat
             }, f)
         bt.logging.debug(f'Updated model: uid: {uid}, under path: {models_dir}, with heartbeat: {heartbeat}')
         return True
