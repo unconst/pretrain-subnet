@@ -67,6 +67,26 @@ def model_path(wallet: int) -> str:
         )
     )
 
+def model_architecture_path(wallet: int) -> str:
+    """
+    Constructs a file path for storing the model related to a specific wallet.
+
+    Parameters:
+    wallet (int): An object representing the wallet.
+
+    Returns:
+    str: A string representing the model file path.
+    """
+    return os.path.expanduser(
+        "{}/{}/{}/netuid{}/{}".format(
+            bt.logging.config().logging.logging_dir,
+            wallet.name,
+            wallet.hotkey_str,
+            pt.NETUID,
+            "miner/model_architecture.pth",
+        )
+    )
+
 
 def runidpath(wallet) -> str:
     """
@@ -344,8 +364,11 @@ def push( wallet, wandb_run ):
     """
     _path = path(wallet)
     _model_path = model_path( wallet )
+    _model_architecture_path = model_architecture_path(wallet)
     # Save the new best model to wandb.
     wandb_run.save( _model_path, base_path = _path )
+    # Save the new model architecture to wandb.
+    wandb_run.save( _model_architecture_path, base_path = _path )
 
 def save( wallet, model ):
     """
@@ -359,10 +382,12 @@ def save( wallet, model ):
         None.
     """
     _model_path = model_path(wallet)
+    _model_architecture_path = model_architecture_path(wallet)
     if not os.path.exists(os.path.dirname(_model_path)):
         os.makedirs(os.path.dirname(_model_path), exist_ok=True)
 
     # Save the model state to the specified path
+    torch.save(model, _model_architecture_path)
     save_model( model, _model_path )
 
 
@@ -377,7 +402,8 @@ def load( wallet, device: str = 'cpu'):
         model: model loaded under wallet path.
     """
     _model_path = model_path(wallet)
-    model = pt.model.get_model()
+    _model_architecture_path = model_architecture_path(wallet)
+    model = torch.load(_model_architecture_path)
     load_model( model, _model_path )
     return model
 
@@ -386,3 +412,4 @@ def update( wallet, model ):
     save( wallet, model )
     push( wallet, _run )
     _run.finish()
+

@@ -163,8 +163,8 @@ def model(uid: int, device: str = 'cpu') -> typing.Optional[torch.nn.Module]:
     torch.nn.Module or None: The model if successful, None otherwise.
     """
     try:
-        model = pretrain.model.get_model()
         model_meta = metadata(uid)
+        model = torch.load(model_meta['model_architecture_path'])
         load_model( model, model_meta['model_path'] )
         return model
     except Exception as e:
@@ -202,6 +202,7 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
     models_dir = os.path.join(pretrain.netuid_dir, 'models', str(uid))
     metadata_file = os.path.join(models_dir, 'metadata.json')
     model_path = os.path.join(models_dir, 'model.safe')
+    model_architecture_path = os.path.join(models_dir, 'model_architecture.pth')
 
     # If no valid runs, delete existing model and metadata
     if latest_valid_run is None:
@@ -210,6 +211,9 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
         if os.path.exists(model_path):
             os.remove(model_path)
             bt.logging.debug(f'Deleting {uid} model with no run.')
+        if os.path.exists(model_architecture_path):
+            os.remove(model_architecture_path)
+            bt.logging.debug(f'Deleting {uid} model with no run.')
         return False
 
     # Create model directory if it doesn't exist
@@ -217,6 +221,7 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
 
     # Load model artifact and get timestamp
     model_artifact = latest_valid_run.file('model.safe')
+    model_architecture = latest_valid_run.file('model_architecture.pth')
     heartbeat = int(datetime.strptime(latest_valid_run._attrs['heartbeatAt'], '%Y-%m-%dT%H:%M:%S').timestamp())
     current_meta = metadata(uid)
 
@@ -226,6 +231,7 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
             'timestamp': heartbeat, 
             'runid': latest_valid_run.id,
             'model_path': model_path,
+            'model_architecture_path': model_architecture_path, 
             'version': latest_valid_run.config['version'],
             'blacklisted': False,
             'last_update': time.time(),
@@ -241,11 +247,13 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
     else:
         # Download the updated model artifact
         model_artifact.download(replace=True, root=models_dir)
+        model_architecture.download(replace=True, root=models_dir)
         with open(metadata_file, 'w') as f: 
             json.dump({
                 'timestamp': heartbeat, 
                 'runid': latest_valid_run.id,
                 'model_path': model_path,
+                'model_architecture_path': model_architecture_path, 
                 'version': latest_valid_run.config['version'],
                 'blacklisted': False,
                 'last_update': time.time(),
@@ -321,6 +329,17 @@ def check_run_validity( run: 'wandb.run', metagraph: typing.Optional[ bt.metagra
             model_artifact = run.file('model.safe')
         except: 
             return False, f'Failed Signature: Does not have a model.safe file'
+        
+        try: 
+            model_architecture = run.file('model_architecture.pth')
+            model_size = sum(p.numel() for p in model_architecture.parameters())
+            # current size of gpt2 is 122268040, previous size is 57868320. 
+            # distilgpt2 size is 81912576 try to get a new model size that no one pretrained before 
+            if model_size > 122200000 and model_size <82000000:
+                return False, f'Failed Signature: Model_size is invalid'
+        except: 
+            return False, f'Failed Signature: Does not have a model_architecture.pth file'
+        
 
         # Check and convert the updated at timestamp
         try: 
@@ -388,6 +407,7 @@ def get_run_for_uid( uid: int, metagraph: typing.Optional[ bt.metagraph ] = None
         else: continue
     
     return None
+
 
 
 
