@@ -23,6 +23,7 @@ import wandb
 import random
 import string
 import typing
+import warnings
 import pretrain as pt
 import bittensor as bt
 from safetensors.torch import load_model, save_model
@@ -370,6 +371,24 @@ def push( wallet, wandb_run ):
     # Save the new model architecture to wandb.
     wandb_run.save( _model_architecture_path, base_path = _path )
 
+def model_size_valid(model):
+    """
+    check the size of model
+    Parameters:
+        model: The pytorch pretrained model
+
+    Returns:
+        Bool.
+    """
+    model_size = sum(p.numel() for p in model.parameters())
+    # current size of gpt2 is 122268040, previous size is 57868320. 
+    # distilgpt2 size is 81912576 try to get a new model size that no one pretrained before 
+    if model_size > 122200000 or model_size <82000000:
+        warnings.warn("This model size is not Valid, please make sure you model parameter size is between 82M and 122M .")
+        return False
+    return True
+
+
 def save( wallet, model ):
     """
     Saves the model state to your wallet path.
@@ -381,16 +400,18 @@ def save( wallet, model ):
     Returns:
         None.
     """
-    _model_path = model_path(wallet)
-    _model_architecture_path = model_architecture_path(wallet)
-    if not os.path.exists(os.path.dirname(_model_path)):
-        os.makedirs(os.path.dirname(_model_path), exist_ok=True)
+    if model_size_valid(model):
+        _model_path = model_path(wallet)
+        _model_architecture_path = model_architecture_path(wallet)
+        if not os.path.exists(os.path.dirname(_model_path)):
+            os.makedirs(os.path.dirname(_model_path), exist_ok=True)
 
-    # Save the model state to the specified path
-    torch.save(model, _model_architecture_path)
-    save_model( model, _model_path )
-
-
+        # Save the model state to the specified path
+        torch.save(model, _model_architecture_path)
+        save_model( model, _model_path )
+    else:
+        raise ValueError('Model failed to save.')
+    
 def load( wallet, device: str = 'cpu'):
     """
     Loads the model state to your wallet path.
@@ -401,15 +422,19 @@ def load( wallet, device: str = 'cpu'):
     Returns:
         model: model loaded under wallet path.
     """
-    _model_path = model_path(wallet)
-    _model_architecture_path = model_architecture_path(wallet)
-    model = torch.load(_model_architecture_path)
-    load_model( model, _model_path )
-    return model
+    if model_size_valid(model):
+        _model_path = model_path(wallet)
+        _model_architecture_path = model_architecture_path(wallet)
+        model = torch.load(_model_architecture_path)
+        load_model( model, _model_path )
+        return model
+    else:
+        raise ValueError('Model failed to load.')
 
 def update( wallet, model ):
     _run = init( wallet )
     save( wallet, model )
     push( wallet, _run )
     _run.finish()
+
 

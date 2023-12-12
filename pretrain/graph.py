@@ -280,14 +280,18 @@ def push( uid, model: torch.nn.Module, path: str = os.path.expanduser('~/tmp/mod
         - The function does not perform any checks on the validity of the provided model or wandb run.
         - The default save path is in the user's home directory under 'tmp', which should be verified or changed based on the system setup.
     """
-    run = get_run_for_uid( uid )
-    # Create the directory for the model path if it does not exist
-    if not os.path.exists(os.path.dirname(path)):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-    # Save the model state to the specified path
-    save_model(model, path)
-    # Log the saved model file to wandb run.
-    run.save( path )
+    if pretrain.mining.model_size_valid(model):
+        run = get_run_for_uid( uid )
+        # Create the directory for the model path if it does not exist
+        if not os.path.exists(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+        # Save the model state to the specified path
+        save_model(model, path)
+        # Log the saved model file to wandb run.
+        run.save( path )
+    else:
+        ValueError('Model failed to save.')
+    
 
 def check_run_validity( run: 'wandb.run', metagraph: typing.Optional[ bt.metagraph ] = None  ) -> typing.Tuple[bool, str]:
     """
@@ -332,10 +336,7 @@ def check_run_validity( run: 'wandb.run', metagraph: typing.Optional[ bt.metagra
         
         try: 
             model_architecture = run.file('model_architecture.pth')
-            model_size = sum(p.numel() for p in model_architecture.parameters())
-            # current size of gpt2 is 122268040, previous size is 57868320. 
-            # distilgpt2 size is 81912576 try to get a new model size that no one pretrained before 
-            if model_size > 122200000 or model_size <82000000:
+            if not pretrain.mining.model_size_valid(model_architecture):
                 return False, f'Failed Signature: Model_size is invalid'
         except: 
             return False, f'Failed Signature: Does not have a model_architecture.pth file'
@@ -407,6 +408,7 @@ def get_run_for_uid( uid: int, metagraph: typing.Optional[ bt.metagraph ] = None
         else: continue
     
     return None
+
 
 
 

@@ -123,7 +123,8 @@ elif config.load_disk:
 else:
     bt.logging.success(f'Training from scratch.')
     model = pt.model.get_model()
-
+if not pt.mining.model_size_valid(model):
+    raise ValueError('Model size is not valid, please check your setting.')
 # Init model.
 model.train() 
 model.to( config.device ) 
