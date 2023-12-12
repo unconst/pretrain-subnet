@@ -132,7 +132,6 @@ class Validator:
                 bt.logging.trace(f'adding {uid} to pending uids to eval.')
                 self.pending_uids_to_eval.add( uid )
             except Exception as e:
-                traceback.print_exception()
                 bt.logging.error(f'Error in update loop: {e}')
 
     def try_get_block(self, ttl: int):
