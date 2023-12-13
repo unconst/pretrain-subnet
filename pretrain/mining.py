@@ -23,8 +23,10 @@ import wandb
 import random
 import string
 import typing
+import warnings
 import pretrain as pt
 import bittensor as bt
+from transformers import AutoModelForCausalLM
 from safetensors.torch import load_model, save_model
 
 def path(wallet: int) -> str:
@@ -66,7 +68,6 @@ def model_path(wallet: int) -> str:
             "miner/model.safe",
         )
     )
-
 
 def runidpath(wallet) -> str:
     """
@@ -331,21 +332,51 @@ def load_run(wallet: int, metagraph: typing.Optional[bt.metagraph] = None) -> ty
         return run
     return None
 
-def push( wallet, wandb_run ):
+def push( model, repo_name, token, uid):
     """
-    Saves the model state previously saved and updates the wandb run.
+    Saves the model state previously saved and updates the huggingface run.
 
     Parameters:
         wallet: Wallet object containing user credentials.
-        wandb_run: The wandb run object to be updated.
-
+        model: model to be pushed.
+        repo_name: the name of huggingface repo
+        uid: uid of subnet 9
     Returns:
         None.
     """
-    _path = path(wallet)
-    _model_path = model_path( wallet )
-    # Save the new best model to wandb.
-    wandb_run.save( _model_path, base_path = _path )
+    model.push_to_hub(repo_name=repo_name, repo_id=f"subnet9_uid{uid}", token=token, safe_serialization=True)
+
+# def get_run_id_from_huggingface(uid):
+#     """
+#     This function used to get hub_model_id from uid
+#     Parameters:
+#         model: uid
+#         *
+#         *
+#         *
+#     Returns:
+#        hub_model_id: repo_name/repo_id
+#     """
+
+#     return hub_model_id
+
+def model_size_valid(model):
+    """
+    check the size of model
+    Parameters:
+        model: The pytorch pretrained model
+
+    Returns:
+        Bool.
+    """
+    model_size = sum(p.numel() for p in model.parameters())
+    # current size of gpt2 is 122268040, previous size is 57868320. 
+    # distilgpt2 size is 81912576 try to get a new model size that no one pretrained before 
+    if model_size > 122200000 or model_size <82000000:
+        warnings.warn("This model size is not Valid, please make sure you model parameter size is between 82M and 122M .")
+        return False
+    return True
+
 
 def save( wallet, model ):
     """
@@ -358,13 +389,34 @@ def save( wallet, model ):
     Returns:
         None.
     """
-    _model_path = model_path(wallet)
-    if not os.path.exists(os.path.dirname(_model_path)):
-        os.makedirs(os.path.dirname(_model_path), exist_ok=True)
+    if model_size_valid(model):
+        _model_path = model_path(wallet)
+        if not os.path.exists(os.path.dirname(_model_path)):
+            os.makedirs(os.path.dirname(_model_path), exist_ok=True)
+        # Save the model state to the specified path
+        save_model( model, _model_path )
+    else:
+        raise ValueError('Model failed to save.')
 
-    # Save the model state to the specified path
-    save_model( model, _model_path )
 
+
+def load_from_hf(wallet, repo_name, token, uid, device: str = 'cpu'):
+    """
+    Loads the model state to your wallet path.
+
+    Parameters:
+        wallet: Wallet object containing user credentials.
+
+    Returns:
+        model: model loaded under wallet path.
+    """
+    
+    model = AutoModelForCausalLM.from_pretrained(f"{repo_name}/subnet9_uid{uid}", use_safetensors=True) 
+    if model_size_valid(model):
+        save(wallet, model)
+        return model
+    else:
+        raise ValueError('Model failed to load.')
 
 def load( wallet, device: str = 'cpu'):
     """
@@ -376,13 +428,18 @@ def load( wallet, device: str = 'cpu'):
     Returns:
         model: model loaded under wallet path.
     """
+    
     _model_path = model_path(wallet)
-    model = pt.model.get_model()
-    load_model( model, _model_path )
-    return model
+    model = AutoModelForCausalLM.from_pretrained(_model_path) 
+    if model_size_valid(model):
+        return model
+    else:
+        raise ValueError('Model failed to load.')
 
-def update( wallet, model ):
+def update( wallet, model , repo_name, token, uid):
     _run = init( wallet )
     save( wallet, model )
-    push( wallet, _run )
+    push( model, repo_name, token, uid)
     _run.finish()
+
+

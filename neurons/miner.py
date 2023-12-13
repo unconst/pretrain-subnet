@@ -46,6 +46,12 @@ def get_config():
     # Add model_path argument which allows the user to specify the path of the model
     parser.add_argument("--model_path", type=str, required=False, help="Override model path")
 
+    # Add model_path argument which allows the user to specify the path of the model
+    parser.add_argument("--huggingface_repo_name",  type=str, required=True, help="Please clarify the huggingface repo name")
+
+    # Add model_path argument which allows the user to specify the path of the model
+    parser.add_argument("--huggingface_api_token", type=str, required=True, help="Please only give api token")
+
     # Add device argument which defaults to 'cuda' if available, else 'cpu'
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
 
@@ -123,7 +129,8 @@ elif config.load_disk:
 else:
     bt.logging.success(f'Training from scratch.')
     model = pt.model.get_model()
-
+if not pt.mining.model_size_valid(model):
+    raise ValueError('Model size is not valid, please check your setting.')
 # Init model.
 model.train() 
 model.to( config.device ) 
@@ -133,16 +140,10 @@ pt.mining.save( wallet, model )
 # Build optimizer
 optimizer = torch.optim.AdamW( model.parameters(), lr = config.lr, weight_decay=0.01)
 
-# Initialize pretraining wandb run from wallet.
 if not config.offline:
-    wandb_run = pt.mining.init( 
-        wallet, 
-        metagraph = metagraph 
-    )
-    # Push the model state to your wandb run.
-    pt.mining.push( wallet, wandb_run )
+    pt.mining.push( model, config.huggingface_repo_name, config.huggingface_api_token, uid)
 else:
-    bt.logging.success(f'Running with --offline, does not post model to wandb.')
+    bt.logging.success(f'Running with --offline, does not post model to huggingface.')
 
 # Start the training loop
 epoch_step = 0
@@ -184,7 +185,6 @@ try:
                 optimizer.step()  # Perform a single optimization step
                 optimizer.zero_grad()  # Clear gradients
                 bt.logging.success(f'Step: {n_acc_steps} loss: {outputs.loss.detach().item()}')
-                if not config.offline: wandb_run.log( { 'loss': outputs.loss.detach(), 'n_batches': n_batches }, step = n_acc_steps )
 
             torch.cuda.empty_cache()
                         
@@ -209,8 +209,8 @@ try:
             pt.mining.save( wallet, model )
             # Push the model to your run.
             if not config.offline:
-                pt.mining.push( wallet, wandb_run )
+                pt.mining.push( model, config.huggingface_repo_name, config.huggingface_api_token, uid)
 
 finally: 
     # Important step.
-    wandb_run.finish()
+    bt.logging.success(f'Training Done.')

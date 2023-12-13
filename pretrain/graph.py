@@ -163,8 +163,9 @@ def model(uid: int, device: str = 'cpu') -> typing.Optional[torch.nn.Module]:
     torch.nn.Module or None: The model if successful, None otherwise.
     """
     try:
-        model = pretrain.model.get_model()
         model_meta = metadata(uid)
+        # todo replace with huggingface 
+        model = torch.load(model_meta['model_architecture_path'])
         load_model( model, model_meta['model_path'] )
         return model
     except Exception as e:
@@ -217,6 +218,7 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
 
     # Load model artifact and get timestamp
     model_artifact = latest_valid_run.file('model.safe')
+    model_architecture = latest_valid_run.file('model_architecture.pth')
     heartbeat = int(datetime.strptime(latest_valid_run._attrs['heartbeatAt'], '%Y-%m-%dT%H:%M:%S').timestamp())
     current_meta = metadata(uid)
 
@@ -241,6 +243,7 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
     else:
         # Download the updated model artifact
         model_artifact.download(replace=True, root=models_dir)
+        model_architecture.download(replace=True, root=models_dir)
         with open(metadata_file, 'w') as f: 
             json.dump({
                 'timestamp': heartbeat, 
@@ -272,14 +275,18 @@ def push( uid, model: torch.nn.Module, path: str = os.path.expanduser('~/tmp/mod
         - The function does not perform any checks on the validity of the provided model or wandb run.
         - The default save path is in the user's home directory under 'tmp', which should be verified or changed based on the system setup.
     """
-    run = get_run_for_uid( uid )
-    # Create the directory for the model path if it does not exist
-    if not os.path.exists(os.path.dirname(path)):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-    # Save the model state to the specified path
-    save_model(model, path)
-    # Log the saved model file to wandb run.
-    run.save( path )
+    if pretrain.mining.model_size_valid(model):
+        run = get_run_for_uid( uid )
+        # Create the directory for the model path if it does not exist
+        if not os.path.exists(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+        # Save the model state to the specified path
+        save_model(model, path)
+        # Log the saved model file to wandb run.
+        run.save( path )
+    else:
+        ValueError('Model failed to save.')
+    
 
 def check_run_validity( run: 'wandb.run', metagraph: typing.Optional[ bt.metagraph ] = None  ) -> typing.Tuple[bool, str]:
     """
@@ -321,6 +328,14 @@ def check_run_validity( run: 'wandb.run', metagraph: typing.Optional[ bt.metagra
             model_artifact = run.file('model.safe')
         except: 
             return False, f'Failed Signature: Does not have a model.safe file'
+        
+        try: 
+            model_architecture = run.file('model_architecture.pth')
+            if not pretrain.mining.model_size_valid(model_architecture):
+                return False, f'Failed Signature: Model_size is invalid'
+        except: 
+            return False, f'Failed Signature: Does not have a model_architecture.pth file'
+        
 
         # Check and convert the updated at timestamp
         try: 
@@ -388,6 +403,8 @@ def get_run_for_uid( uid: int, metagraph: typing.Optional[ bt.metagraph ] = None
         else: continue
     
     return None
+
+
 
 
 
