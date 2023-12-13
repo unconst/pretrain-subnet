@@ -26,6 +26,7 @@ import typing
 import warnings
 import pretrain as pt
 import bittensor as bt
+from transformers import AutoModelForCausalLM
 from safetensors.torch import load_model, save_model
 
 def path(wallet: int) -> str:
@@ -352,24 +353,33 @@ def load_run(wallet: int, metagraph: typing.Optional[bt.metagraph] = None) -> ty
         return run
     return None
 
-def push( wallet, wandb_run ):
+def push( model, repo_name, token, uid):
     """
-    Saves the model state previously saved and updates the wandb run.
+    Saves the model state previously saved and updates the huggingface run.
 
     Parameters:
         wallet: Wallet object containing user credentials.
-        wandb_run: The wandb run object to be updated.
-
+        model: model to be pushed.
+        repo_name: the name of huggingface repo
+        uid: uid of subnet 9
     Returns:
         None.
     """
-    _path = path(wallet)
-    _model_path = model_path( wallet )
-    _model_architecture_path = model_architecture_path(wallet)
-    # Save the new best model to wandb.
-    wandb_run.save( _model_path, base_path = _path )
-    # Save the new model architecture to wandb.
-    wandb_run.save( _model_architecture_path, base_path = _path )
+    model.push_to_hub(repo_name=repo_name, repo_id=f"subnet9_uid{uid}", token=token, safe_serialization=True)
+
+# def get_run_id_from_huggingface(uid):
+#     """
+#     This function used to get hub_model_id from uid
+#     Parameters:
+#         model: uid
+#         *
+#         *
+#         *
+#     Returns:
+#        hub_model_id: repo_name/repo_id
+#     """
+
+#     return hub_model_id
 
 def model_size_valid(model):
     """
@@ -402,16 +412,33 @@ def save( wallet, model ):
     """
     if model_size_valid(model):
         _model_path = model_path(wallet)
-        _model_architecture_path = model_architecture_path(wallet)
         if not os.path.exists(os.path.dirname(_model_path)):
             os.makedirs(os.path.dirname(_model_path), exist_ok=True)
-
         # Save the model state to the specified path
-        torch.save(model, _model_architecture_path)
         save_model( model, _model_path )
     else:
         raise ValueError('Model failed to save.')
+
+
+
+def load_from_hf(wallet, repo_name, token, uid, device: str = 'cpu'):
+    """
+    Loads the model state to your wallet path.
+
+    Parameters:
+        wallet: Wallet object containing user credentials.
+
+    Returns:
+        model: model loaded under wallet path.
+    """
     
+    model = AutoModelForCausalLM.from_pretrained(f"{repo_name}/subnet9_uid{uid}", use_safetensors=True) 
+    if model_size_valid(model):
+        save(wallet, model)
+        return model
+    else:
+        raise ValueError('Model failed to load.')
+
 def load( wallet, device: str = 'cpu'):
     """
     Loads the model state to your wallet path.
@@ -422,19 +449,18 @@ def load( wallet, device: str = 'cpu'):
     Returns:
         model: model loaded under wallet path.
     """
+    
+    _model_path = model_path(wallet)
+    model = AutoModelForCausalLM.from_pretrained(_model_path) 
     if model_size_valid(model):
-        _model_path = model_path(wallet)
-        _model_architecture_path = model_architecture_path(wallet)
-        model = torch.load(_model_architecture_path)
-        load_model( model, _model_path )
         return model
     else:
         raise ValueError('Model failed to load.')
 
-def update( wallet, model ):
+def update( wallet, model , repo_name, token, uid):
     _run = init( wallet )
     save( wallet, model )
-    push( wallet, _run )
+    push( model, repo_name, token, uid)
     _run.finish()
 
 
