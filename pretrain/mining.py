@@ -69,27 +69,6 @@ def model_path(wallet: int) -> str:
         )
     )
 
-def model_architecture_path(wallet: int) -> str:
-    """
-    Constructs a file path for storing the model related to a specific wallet.
-
-    Parameters:
-    wallet (int): An object representing the wallet.
-
-    Returns:
-    str: A string representing the model file path.
-    """
-    return os.path.expanduser(
-        "{}/{}/{}/netuid{}/{}".format(
-            bt.logging.config().logging.logging_dir,
-            wallet.name,
-            wallet.hotkey_str,
-            pt.NETUID,
-            "miner/model_architecture.pth",
-        )
-    )
-
-
 def runidpath(wallet) -> str:
     """
     Constructs a file path for storing the run ID.

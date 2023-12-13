@@ -164,6 +164,7 @@ def model(uid: int, device: str = 'cpu') -> typing.Optional[torch.nn.Module]:
     """
     try:
         model_meta = metadata(uid)
+        # todo replace with huggingface 
         model = torch.load(model_meta['model_architecture_path'])
         load_model( model, model_meta['model_path'] )
         return model
@@ -202,7 +203,6 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
     models_dir = os.path.join(pretrain.netuid_dir, 'models', str(uid))
     metadata_file = os.path.join(models_dir, 'metadata.json')
     model_path = os.path.join(models_dir, 'model.safe')
-    model_architecture_path = os.path.join(models_dir, 'model_architecture.pth')
 
     # If no valid runs, delete existing model and metadata
     if latest_valid_run is None:
@@ -210,9 +210,6 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
             os.remove(metadata_file)
         if os.path.exists(model_path):
             os.remove(model_path)
-            bt.logging.debug(f'Deleting {uid} model with no run.')
-        if os.path.exists(model_architecture_path):
-            os.remove(model_architecture_path)
             bt.logging.debug(f'Deleting {uid} model with no run.')
         return False
 
@@ -231,7 +228,6 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
             'timestamp': heartbeat, 
             'runid': latest_valid_run.id,
             'model_path': model_path,
-            'model_architecture_path': model_architecture_path, 
             'version': latest_valid_run.config['version'],
             'blacklisted': False,
             'last_update': time.time(),
@@ -253,7 +249,6 @@ def sync( uid: int, metagraph: typing.Optional[bt.metagraph] = None ) -> bool:
                 'timestamp': heartbeat, 
                 'runid': latest_valid_run.id,
                 'model_path': model_path,
-                'model_architecture_path': model_architecture_path, 
                 'version': latest_valid_run.config['version'],
                 'blacklisted': False,
                 'last_update': time.time(),
