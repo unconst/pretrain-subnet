@@ -40,10 +40,10 @@ def get_config():
     parser = argparse.ArgumentParser()
 
     # Add model_path argument which allows the user to specify the path of the model
-    parser.add_argument("--huggingface_repo_name",  type=str, default= "TdL/test1", help="Please clarify the huggingface repo name (your huggingface space)/(model_name) e.g. James/model1")
+    parser.add_argument("--huggingface_repo_name",  type=str, default= "", help="Please clarify the huggingface repo name (your huggingface space)/(model_name) e.g. James/model1")
 
     # Add model_path argument which allows the user to specify the path of the model
-    parser.add_argument("--huggingface_api_token", type=str, default= "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", help="Please only give api token")
+    parser.add_argument("--huggingface_api_token", type=str, default= "", help="Please only give api token")
 
     # Set the number of epochs
     parser.add_argument( '--offline', action='store_true', help='Does not launch a wandb run, does not send model to wandb, does not check if registered' )
