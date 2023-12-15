@@ -72,7 +72,7 @@ class Validator:
         torch.backends.cudnn.benchmark = True
 
         # Dont check registration status if offline.
-        if not self.config.offline:
+        if not self.config.offline: 
             if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys: raise Exception(f"You are not registered. Use `btcli s register --netuid {pt.NETUID}` to register.")
             self.uid = self.metagraph.hotkeys.index( self.wallet.hotkey.ss58_address )
             bt.logging.success( f'You are registered with address: {self.wallet.hotkey.ss58_address} and uid: {self.uid}' )
@@ -80,7 +80,7 @@ class Validator:
 
         # === Running args ===
         self.weights = torch.zeros_like(self.metagraph.S)
-        self.epoch_step = 0
+        self.epoch_step = 0 
         self.global_step = 0
         self.last_epoch = self.metagraph.block.item()
         self.last_update_check = {}
@@ -97,11 +97,39 @@ class Validator:
         self.uids_to_eval = set( self.uids_to_eval )
         self.pending_uids_to_eval = set()
 
+        # == Initialize the update thread ==
+        self.stop_event = threading.Event()
+        self.update_thread = threading.Thread(target=self.update_models, daemon=True)
+        self.update_thread.start()        
 
     def __del__(self):
         if hasattr( self, 'stop_event'):
             self.stop_event.set()
             self.update_thread.join()
+
+    def update_models( self ):
+        # The below loop iterates across all miner uids and checks to see 
+        # if they should be updated.
+        last_uid_update = -1
+        while not self.stop_event.is_set():
+            try:
+                if self.stop_event.is_set(): return
+                block = self.try_get_block( 10 )
+                if block == None: continue
+                uid = block % 256
+                if uid == last_uid_update: 
+                    time.sleep(1)
+                    continue
+                last_uid_update = uid
+                bt.logging.success( f'Syncing miner for uid: {uid} and block: {block}')
+                if pt.graph.sync( self.subtensor, uid, self.metagraph ):
+                    bt.logging.success(f'Pulled new model for uid: {uid}')
+                else:
+                    bt.logging.success(f'Model up to date for uid: {uid}')
+                bt.logging.trace(f'adding {uid} to pending uids to eval.')
+                self.pending_uids_to_eval.add( uid )
+            except Exception as e:
+                bt.logging.error(f'Error in update loop: {e}')
 
     def try_get_block(self, ttl: int):
         def get_block(endpoint, queue):
@@ -145,20 +173,20 @@ class Validator:
             console = Console()
             console.print(table)
         try:
-            bt.logging.debug(f'Setting weights.')
+            bt.logging.debug(f'Setting weights.') 
             await asyncio.wait_for( _try_set_weights() , ttl )
-            bt.logging.debug(f'Finished setting weights.')
-        except asyncio.TimeoutError:
+            bt.logging.debug(f'Finished setting weights.') 
+        except asyncio.TimeoutError: 
             bt.logging.error(f'Failed to set weights after {ttl} seconds')
 
     async def try_run_step( self, ttl: int ):
         async def _try_run_step():
             await self.run_step()
-        try:
-            bt.logging.debug(f'Running step.')
+        try: 
+            bt.logging.debug(f'Running step.') 
             await asyncio.wait_for( _try_run_step() , ttl )
-            bt.logging.debug(f'Finished running step.')
-        except asyncio.TimeoutError:
+            bt.logging.debug(f'Finished running step.') 
+        except asyncio.TimeoutError: 
             bt.logging.error(f'Failed to run step after {ttl} seconds')
 
     async def run_step( self ):
@@ -173,18 +201,16 @@ class Validator:
             7. Logs all relevant data for the step, including model IDs, pages, batches, wins, win rates, and losses.
         """
 
-        # Pull relevant uids, timestamps and metadata for step.
+        # Pull relevant uids, timestamps and metadata for step. 
         # Remove uids without valid runs on wandb or which are not synced.
         uids = []
         timestamps = []
-        metas = []
         for uid in list( self.uids_to_eval ):
-            meta = pt.graph.metadata( self.subtensor, uid )
-            if meta == None:
+            meta = pt.graph.metadata( self.subtensor, uid ) 
+            if meta == None: 
                 bt.logging.debug( f'uid:{uid} run does not exist or is not valid')
                 continue
             else:
-                metas.apepnd(meta)
                 uids.append(uid)
                 timestamps.append(meta["timestamp"])
 
@@ -192,15 +218,15 @@ class Validator:
         # the dataset contains >900 million pages to eval over.
         pages = [random.randint(1, pt.dataset.SubsetFalconLoader.max_pages) for _ in range(self.config.pages_per_eval)]
         batches = list( pt.dataset.SubsetFalconLoader( batch_size = pt.batch_size, sequence_length = pt.sequence_length, pages = pages) )
-
+                       
         # Compute model losses on batches.
         bt.logging.debug(f"computing losses on {uids}")
         losses_per_uid = { muid: None for muid in uids }
-        for uid_i, meta_i in zip(uids, metas):
+        for uid_i in uids:
 
             # get model or uid or None if we have not synced the model.
-            model_i = pt.graph.model(meta_i, uid_i, device = self.config.device )
-            if model_i == None:
+            model_i = pt.graph.load_model(uid_i, device = self.config.device )
+            if model_i == None: 
                 losses = [ math.inf  for _ in batches ]
             else:
                 losses = pt.validation.compute_losses( model_i, batches, device = self.config.device )
@@ -220,7 +246,7 @@ class Validator:
                 time_j = timestamps[ j ]
                 for batch_idx, _ in enumerate( batches ):
                     loss_i = losses_per_uid[ uid_i ][ batch_idx ]
-                    loss_j = losses_per_uid[ uid_j ][ batch_idx ]
+                    loss_j = losses_per_uid[ uid_j ][ batch_idx ] 
                     wins[ uid_i ] += 1 if pt.validation.iswin( loss_i, loss_j, time_i, time_j ) else 0
                     total_matches += 1
             # Calculate win rate for uid i
@@ -285,8 +311,8 @@ class Validator:
         for uid in uids:
             try:
                 table.add_row(
-                    str(uid),
-                    str( round(step_log['uid_data'][ str(uid) ]['average_loss'], 4)),
+                    str(uid), 
+                    str( round(step_log['uid_data'][ str(uid) ]['average_loss'], 4)), 
                     str( round(step_log['uid_data'][ str(uid) ]['win_rate'], 4)),
                     str(step_log['uid_data'][ str(uid) ]['win_total']),
                     str( round(self.weights[uid].item(), 4) ),
@@ -327,7 +353,7 @@ class Validator:
 
     async def run(self):
         while True:
-            try:
+            try:            
                 while self.metagraph.block.item() - self.last_epoch < self.config.blocks_per_epoch:
                     await self.try_run_step( ttl = 60 * 20  )
                     # await self.try_sync_metagraph( ttl = 60 )
@@ -349,4 +375,4 @@ class Validator:
 
 
 if __name__ == "__main__":
-    asyncio.run( Validator().run() )
+    asyncio.run( Validator().run() ) 

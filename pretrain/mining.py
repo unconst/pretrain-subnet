@@ -25,6 +25,8 @@ import typing
 import warnings
 import pretrain as pt
 import bittensor as bt
+import shutil
+from huggingface_hub import snapshot_download
 from transformers import AutoModelForCausalLM
 from safetensors.torch import load_model, save_model
 
@@ -121,24 +123,30 @@ def model_size_valid(model):
     return True
 
 
-def save( wallet, model ):
+def save( wallet, repo_name ):
     """
     Saves the model state to your wallet path.
 
     Parameters:
         wallet: Wallet object containing user credentials.
-        model: The model to be saved.
+        repo_name: The repo to be saved.
 
     Returns:
-        None.
+        model .
     """
-    if model_size_valid(model):
-        _model_path = model_path(wallet)
-        if not os.path.exists(os.path.dirname(_model_path)):
-            os.makedirs(os.path.dirname(_model_path), exist_ok=True)
+    _model_path = path(wallet)
+    if not os.path.exists(os.path.dirname(_model_path)):
+        os.makedirs(os.path.dirname(_model_path), exist_ok=True)
+    try:
         # Save the model state to the specified path
-        save_model( model, _model_path )
-    else:
+        snapshot_download(repo_id=repo_name, \
+                        local_dir=_model_path, \
+                            local_dir_use_symlinks=False)
+        model = AutoModelForCausalLM.from_pretrained(_model_path, use_safetensors=True, local_files_only=True) 
+        if model_size_valid(model):
+            return model
+    except:
+        shutil.rmtree(_model_path) 
         raise ValueError('Model failed to save.')
 
 
@@ -154,14 +162,15 @@ def load_from_hf(wallet, repo_name):
         model: model loaded under wallet path.
     """
     
-    model = AutoModelForCausalLM.from_pretrained(f"{repo_name}", use_safetensors=True) 
+    model = save(wallet, repo_name)
+    
     if model_size_valid(model):
         save(wallet, model)
         return model
     else:
         raise ValueError('Model failed to load.')
 
-def load( wallet, model, device: str = 'cpu'):
+def load( wallet, device: str = 'cpu'):
     """
     Loads the model state to your wallet path.
 
@@ -172,16 +181,17 @@ def load( wallet, model, device: str = 'cpu'):
         model: model loaded under wallet path.
     """
     
-    _model_path = model_path(wallet)
+    _model_path = path(wallet)
+    model = AutoModelForCausalLM.from_pretrained(_model_path, use_safetensors=True, local_files_only=True) 
     model.to(device)
     if model_size_valid(model):
-        load_model( model, _model_path )
         return model
     else:
+        shutil.rmtree(_model_path) 
         raise ValueError('Model failed to load.')
 
-def update( wallet, model , repo_name, token, uid):
-    save( wallet, model )
+def update( wallet, repo_name, token, uid):
+    model = save( wallet,repo_name)
     push( model, repo_name, token, uid)
 
 

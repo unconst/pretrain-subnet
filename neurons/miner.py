@@ -46,7 +46,7 @@ def get_config():
     parser.add_argument("--huggingface_api_token", type=str, default= "", help="Please only give api token")
 
     # Set the number of epochs
-    parser.add_argument( '--offline', action='store_true', help='Does not launch a wandb run, does not send model to wandb, does not check if registered' )
+    parser.add_argument( '--early_publish', action='store_true', help='Does not launch a wandb run, does not send model to wandb, does not check if registered' )
 
     # Add model_path argument which allows the user to specify the path of the model
     parser.add_argument("--model_path", type=str, required=False, help="Override model path")
@@ -121,33 +121,33 @@ elif config.load_uid is not None:
     model = pt.mining.load_from_hf(wallet, repo_name)
     bt.logging.success(f'Training with model from uid: {config.load_uid}')
 # Initialize the model from scratch.
+elif config.load_disk:
+        model = pt.mining.load( wallet)
+        bt.logging.success(f'Load from disk.')
 else:
     model = pt.model.get_model()
-    if config.load_disk:
-        model = pt.mining.load( wallet, model)
-        bt.logging.success(f'Load from disk.')
-    else:
-        bt.logging.success(f'Training from scratch.')
+    bt.logging.success(f'Training from scratch.')
 if not pt.mining.model_size_valid(model):
     raise ValueError('Model size is not valid, please check your setting.')
 # Init model.
 model.train() 
 model.to( config.device ) 
-bt.logging.success(f'Saving model to path: {pt.mining.model_path( wallet )}.')
-pt.mining.save( wallet, model )
+
 
 # Build optimizer
 optimizer = torch.optim.AdamW( model.parameters(), lr = config.lr, weight_decay=0.01)
 
-if not config.offline: 
+
+if config.early_publish:
     try:
         push_flag = pt.mining.push( model, config.huggingface_repo_name, config.huggingface_api_token)
         info = config.huggingface_repo_name
-        bt.extrinsics.serving.publish_metadata(subtensor, wallet, netuid=9, type=f"Raw{len(info)}", data=info.encode())
+        #bt.extrinsics.serving.publish_metadata(subtensor, wallet, netuid=pt.NETUID, type=f"Raw{len(info)}", data=info.encode())
+        # this is a workaround, some model don't have config when save, need to use huggingface to save model config, will change in next release 
+        bt.logging.success(f'Saving model to path: {pt.mining.path( wallet )}.')
+        pt.mining.save( wallet, config.huggingface_repo_name)
     except:
         raise ValueError('Model failed to save.')
-else:
-    bt.logging.success(f'Running with --offline, does not post model to huggingface.')
 
 # Start the training loop
 epoch_step = 0
@@ -208,17 +208,16 @@ try:
         if avg_loss < best_avg_loss * ( 1 - pt.timestamp_epsilon ):
             best_avg_loss = avg_loss  # Update the best average loss
             bt.logging.success(f'New best average loss: {best_avg_loss}.')
-            # Save the model to your mining dir.
-            bt.logging.success(f'Saving model to path: {pt.mining.model_path( wallet )}.')
-            pt.mining.save( wallet, model )
             # Push the model to your run.
-            if not config.offline:
-                try:
-                    push_flag = pt.mining.push( model, config.huggingface_repo_name, config.huggingface_api_token)
-                    info = config.huggingface_repo_name
-                    bt.extrinsics.serving.publish_metadata(subtensor, wallet, netuid=9, type=f"Raw{len(info)}", data=info.encode())
-                except:
-                    raise ValueError('Model failed to save.')
+            try:
+                push_flag = pt.mining.push( model, config.huggingface_repo_name, config.huggingface_api_token)
+                info = config.huggingface_repo_name
+                #bt.extrinsics.serving.publish_metadata(subtensor, wallet, netuid=pt.NETUID, type=f"Raw{len(info)}", data=info.encode())
+                # Save the model to your mining dir.
+                bt.logging.success(f'Saving model to path: {pt.mining.path( wallet )}.')
+                pt.mining.save( wallet, config.huggingface_repo_name )
+            except:
+                raise ValueError('Model failed to save.')
 
 finally: 
     # Important step.
