@@ -21,7 +21,6 @@ import wandb
 import torch
 import random
 import argparse
-import pretrain
 import pretrain as pt
 import bittensor as bt
 
@@ -40,17 +39,17 @@ def get_config():
     # Initialize an argument parser
     parser = argparse.ArgumentParser()
 
+    # Add model_path argument which allows the user to specify the path of the model
+    parser.add_argument("--huggingface_repo_name",  type=str, default= "TdL/test1", help="Please clarify the huggingface repo name (your huggingface space)/(model_name) e.g. James/model1")
+
+    # Add model_path argument which allows the user to specify the path of the model
+    parser.add_argument("--huggingface_api_token", type=str, default= "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", help="Please only give api token")
+
     # Set the number of epochs
     parser.add_argument( '--offline', action='store_true', help='Does not launch a wandb run, does not send model to wandb, does not check if registered' )
 
     # Add model_path argument which allows the user to specify the path of the model
     parser.add_argument("--model_path", type=str, required=False, help="Override model path")
-
-    # Add model_path argument which allows the user to specify the path of the model
-    parser.add_argument("--huggingface_repo_name",  type=str, required=True, help="Please clarify the huggingface repo name")
-
-    # Add model_path argument which allows the user to specify the path of the model
-    parser.add_argument("--huggingface_api_token", type=str, required=True, help="Please only give api token")
 
     # Add device argument which defaults to 'cuda' if available, else 'cpu'
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
@@ -71,10 +70,10 @@ def get_config():
     parser.add_argument("--lr", type = float, default = 0.00001, help="Learning rate.")
 
     # Training batch size
-    parser.add_argument("--bs", type = int, default = pretrain.batch_size, help="Batch size")
+    parser.add_argument("--bs", type = int, default = pt.batch_size, help="Batch size")
 
     # Training sequence length
-    parser.add_argument("--sl", type = int, default = pretrain.sequence_length, help="Sequence length")
+    parser.add_argument("--sl", type = int, default = pt.sequence_length, help="Sequence length")
 
     # Training accumulation steps per step.
     parser.add_argument("--accumulation_steps", type = int, default = 5, help="The number of training accumulation steps.")
@@ -100,7 +99,7 @@ print(config)
 bt.logging( config = config )
 wallet = bt.wallet( config = config ) 
 subtensor = bt.subtensor( config = config )
-metagraph = subtensor.metagraph( pretrain.NETUID )
+metagraph = subtensor.metagraph( pt.NETUID )
 if not config.offline: 
     if wallet.hotkey.ss58_address not in metagraph.hotkeys: 
         raise Exception(f"You are not registered. \nUse: \n`btcli s register --netuid {pt.NETUID}` to register via burn \n or btcli s pow_register --netuid {pt.NETUID} to register with a proof of work")
@@ -111,24 +110,24 @@ if not config.offline:
 if config.load_best:
     # Get the best UID be incentive and load it.
     best_uid = pt.graph.best_uid( metagraph )
-    pt.graph.sync( best_uid, metagraph )
-    model = pt.graph.model( best_uid, device = config.device )
+    repo_name = subtensor.get_commitment( pt.NETUID, best_uid )
+    model = pt.mining.load_from_hf(wallet, repo_name)
     bt.logging.success(f'Training with best uid: {best_uid}')
 
 # Initialize the model based on a passed uid.
 elif config.load_uid is not None:
     # Sync the state from the passed uid.
-    pt.graph.sync( config.load_uid, metagraph )
-    model = pt.graph.model( config.load_uid, device = config.device )
+    repo_name = subtensor.get_commitment(pt.NETUID, config.load_uid )
+    model = pt.mining.load_from_hf(wallet, repo_name)
     bt.logging.success(f'Training with model from uid: {config.load_uid}')
-
-elif config.load_disk:
-    model = pt.mining.load( wallet, device = 'cpu')
-
 # Initialize the model from scratch.
 else:
-    bt.logging.success(f'Training from scratch.')
     model = pt.model.get_model()
+    if config.load_disk:
+        model = pt.mining.load( wallet, model)
+        bt.logging.success(f'Load from disk.')
+    else:
+        bt.logging.success(f'Training from scratch.')
 if not pt.mining.model_size_valid(model):
     raise ValueError('Model size is not valid, please check your setting.')
 # Init model.
@@ -140,8 +139,13 @@ pt.mining.save( wallet, model )
 # Build optimizer
 optimizer = torch.optim.AdamW( model.parameters(), lr = config.lr, weight_decay=0.01)
 
-if not config.offline:
-    pt.mining.push( model, config.huggingface_repo_name, config.huggingface_api_token, uid)
+if not config.offline: 
+    try:
+        push_flag = pt.mining.push( model, config.huggingface_repo_name, config.huggingface_api_token)
+        info = config.huggingface_repo_name
+        bt.extrinsics.serving.publish_metadata(subtensor, wallet, netuid=9, type=f"Raw{len(info)}", data=info.encode())
+    except:
+        raise ValueError('Model failed to save.')
 else:
     bt.logging.success(f'Running with --offline, does not post model to huggingface.')
 
@@ -159,8 +163,8 @@ try:
 
         # Prepare the data loader with random pages for each epoch
         bt.logging.success( f"Loading {config.pages_per_epoch} pages for training this epoch" )
-        random_pages = [random.randint(1, pretrain.dataset.SubsetFalconLoader.max_pages) for _ in range( config.pages_per_epoch )]
-        loader = pretrain.dataset.SubsetFalconLoader(
+        random_pages = [random.randint(1, pt.dataset.SubsetFalconLoader.max_pages) for _ in range( config.pages_per_epoch )]
+        loader = pt.dataset.SubsetFalconLoader(
             batch_size = config.bs, 
             sequence_length = config.sl, 
             pages = random_pages
@@ -201,7 +205,7 @@ try:
         epoch_step += 1
 
         # Check if the average loss of this epoch is the best we've seen so far
-        if avg_loss < best_avg_loss * ( 1 - pretrain.timestamp_epsilon ):
+        if avg_loss < best_avg_loss * ( 1 - pt.timestamp_epsilon ):
             best_avg_loss = avg_loss  # Update the best average loss
             bt.logging.success(f'New best average loss: {best_avg_loss}.')
             # Save the model to your mining dir.
@@ -209,7 +213,12 @@ try:
             pt.mining.save( wallet, model )
             # Push the model to your run.
             if not config.offline:
-                pt.mining.push( model, config.huggingface_repo_name, config.huggingface_api_token, uid)
+                try:
+                    push_flag = pt.mining.push( model, config.huggingface_repo_name, config.huggingface_api_token)
+                    info = config.huggingface_repo_name
+                    bt.extrinsics.serving.publish_metadata(subtensor, wallet, netuid=9, type=f"Raw{len(info)}", data=info.encode())
+                except:
+                    raise ValueError('Model failed to save.')
 
 finally: 
     # Important step.
