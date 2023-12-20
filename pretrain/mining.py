@@ -157,7 +157,7 @@ def load_from_hf(wallet, repo_name):
 
     Parameters:
         wallet: Wallet object containing user credentials.
-
+        repo_name: huggingface repo name
     Returns:
         model: model loaded under wallet path.
     """
@@ -165,7 +165,6 @@ def load_from_hf(wallet, repo_name):
     model = save(wallet, repo_name)
     
     if model_size_valid(model):
-        save(wallet, model)
         return model
     else:
         raise ValueError('Model failed to load.')
