@@ -251,7 +251,6 @@ class Validator:
                     total_matches += 1
             # Calculate win rate for uid i
             win_rate[ uid_i ] = wins[ uid_i ] / total_matches if total_matches > 0 else 0
-
         # Compute softmaxed weights based on win rate.
         model_weights = torch.tensor([ win_rate[ uid ] for uid in uids ], dtype=torch.float32)
         step_weights = torch.softmax( model_weights / pt.temperature, dim=0 )
@@ -339,21 +338,9 @@ class Validator:
         uids = step_log['uids']
         uid_data = step_log['uid_data']
 
-        # # Create a new dictionary with the required format
-        # graphed_data = {
-        #     'time': time.time(),
-        #     'block': self.metagraph.block.item(),
-        #     'uid_data': {str(uid): uid_data[str(uid)]['average_loss'] for uid in uids},
-        #     'weight_data': {str(uid): self.weights[uid].item() for uid in uids}
-        # }
-        # if self.config.wandb.on and not self.config.offline:
-        #     bt.logging.trace('Logging to Wandb')
-        #     self.wandb_run.log({ **graphed_data, "original_format_json": original_format_json}, step=self.global_step)
-        #     bt.logging.trace('finished log to Wandb')
-
     async def run(self):
         while True:
-            try:            
+            try:
                 while self.metagraph.block.item() - self.last_epoch < self.config.blocks_per_epoch:
                     await self.try_run_step( ttl = 60 * 20  )
                     # await self.try_sync_metagraph( ttl = 60 )
