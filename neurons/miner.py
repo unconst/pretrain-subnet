@@ -17,7 +17,7 @@
 # DEALINGS IN THE SOFTWARE.
 
 import math
-import wandb
+#import pdb
 import torch
 import random
 import argparse
@@ -142,7 +142,7 @@ if config.early_publish:
     try:
         push_flag = pt.mining.push( model, config.huggingface_repo_name, config.huggingface_api_token)
         info = config.huggingface_repo_name
-        #bt.extrinsics.serving.publish_metadata(subtensor, wallet, netuid=pt.NETUID, type=f"Raw{len(info)}", data=info.encode())
+        bt.extrinsics.serving.publish_metadata(subtensor, wallet, netuid=pt.NETUID, type=f"Raw{len(info)}", data=info.encode())
         # this is a workaround, some model don't have config when save, need to use huggingface to save model config, will change in next release 
         bt.logging.success(f'Saving model to path: {pt.mining.path( wallet )}.')
         pt.mining.save( wallet, config.huggingface_repo_name)
@@ -212,7 +212,7 @@ try:
             try:
                 push_flag = pt.mining.push( model, config.huggingface_repo_name, config.huggingface_api_token)
                 info = config.huggingface_repo_name
-                #bt.extrinsics.serving.publish_metadata(subtensor, wallet, netuid=pt.NETUID, type=f"Raw{len(info)}", data=info.encode())
+                bt.extrinsics.serving.publish_metadata(subtensor, wallet, netuid=pt.NETUID, type=f"Raw{len(info)}", data=info.encode())
                 # Save the model to your mining dir.
                 bt.logging.success(f'Saving model to path: {pt.mining.path( wallet )}.')
                 pt.mining.save( wallet, config.huggingface_repo_name )
