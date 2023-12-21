@@ -86,9 +86,9 @@ def metadata( uid: int ):
             with open(os.path.join(model_dir, 'metadata.json'), 'r') as f: 
                 meta = json.load(f)
         except Exception as e:
-            # bt.logging.trace(f'Failed Metadata: uid:{uid}, no file under path:{model_dir}')
+            bt.logging.trace(f'Failed Metadata: uid:{uid}, no file under path:{model_dir}')
             return None
-        if 'version' not in meta or 'timestamp' not in meta or 'runid' not in meta:
+        if 'timestamp' not in meta or 'uid' not in meta:
             bt.logging.debug(f'Failed Metadata: uid:{uid}, metadata file corrupted.')
             return None
         else:
@@ -128,10 +128,11 @@ def sync( subtensor, uid: int, metagraph: typing.Optional[bt.metagraph] = None )
     # Paths for model and metadata
     models_dir = os.path.join(pretrain.netuid_dir, 'models', str(uid))
     metadata_file = os.path.join(models_dir, 'metadata.json')
+    expected_hotkey = metagraph.hotkeys[uid]
     try:
-        commit = subtensor.get_commitment( netuid = pretrain.NETUID, uid = uid )
-        key_name = list[commit['info']['fields'][0].keys()][0]
-        repo_name = bytes.fromhex(commit['info']['fields'][0][key_name][2:]).decode()
+        commit = bt.extrinsics.serving.get_metadata( subtensor, netuid = pretrain.NETUID, hotkey=expected_hotkey)
+        commitment = commit["info"]["fields"][0]
+        repo_name = bytes.fromhex(commitment[list(commitment.keys())[0]][2:]).decode()
         # if repo not valid return 
         if not check_repo_valid(repo_name, uid):
             remove_local_files(metadata_file, models_dir)
@@ -142,7 +143,6 @@ def sync( subtensor, uid: int, metagraph: typing.Optional[bt.metagraph] = None )
         bt.logging.debug(f'Deleting {uid} model with no run.')
         return False
     
-    expected_hotkey = metagraph.hotkeys[uid]
     # flag to determine if we need new model and update metadata
     changed_flag = False
     if os.path.exists(models_dir):
@@ -169,6 +169,8 @@ def sync( subtensor, uid: int, metagraph: typing.Optional[bt.metagraph] = None )
                 'uid': uid,
                 'hotkey': expected_hotkey,
         }
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f)
         return True
 
 def save_model( models_dir, repo_name):

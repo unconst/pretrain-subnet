@@ -84,7 +84,7 @@ class Validator:
         self.global_step = 0
         self.last_epoch = self.metagraph.block.item()
         self.last_update_check = {}
-        self.metadata = { uid: pt.graph.metadata( self.subtensor, uid ) for uid in self.metagraph.uids.tolist() }
+        self.metadata = { uid: pt.graph.metadata( uid ) for uid in self.metagraph.uids.tolist() }
 
         # === Build initial uids to eval ===
         self.uids_to_eval = []
@@ -179,6 +179,19 @@ class Validator:
         except asyncio.TimeoutError: 
             bt.logging.error(f'Failed to set weights after {ttl} seconds')
 
+    async def try_sync_metagraph( self, ttl: int ):
+        def sync_metagraph( endpoint ):
+            metagraph = bt.subtensor( endpoint ).metagraph( pt.NETUID )
+            metagraph.save()
+        process = multiprocessing.Process(target=sync_metagraph, args=( self.subtensor.chain_endpoint, ))
+        process.start()
+        process.join(timeout=ttl)
+        if process.is_alive():
+            process.terminate()
+            process.join()
+            bt.logging.error(f'Failed to sync metagraph after {ttl} seconds')
+        self.metagraph.load()
+
     async def try_run_step( self, ttl: int ):
         async def _try_run_step():
             await self.run_step()
@@ -206,7 +219,7 @@ class Validator:
         uids = []
         timestamps = []
         for uid in list( self.uids_to_eval ):
-            meta = pt.graph.metadata( self.subtensor, uid ) 
+            meta = pt.graph.metadata( uid ) 
             if meta == None: 
                 bt.logging.debug( f'uid:{uid} run does not exist or is not valid')
                 continue
@@ -343,7 +356,7 @@ class Validator:
             try:
                 while self.metagraph.block.item() - self.last_epoch < self.config.blocks_per_epoch:
                     await self.try_run_step( ttl = 60 * 20  )
-                    # await self.try_sync_metagraph( ttl = 60 )
+                    await self.try_sync_metagraph( ttl = 60 )
                     bt.logging.debug(f"{self.metagraph.block.item() - self.last_epoch } / {self.config.blocks_per_epoch} blocks until next epoch.")
                     self.global_step += 1
 
