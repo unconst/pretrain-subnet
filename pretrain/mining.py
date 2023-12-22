@@ -95,10 +95,9 @@ def push( model, repo_name, token):
     Saves the model state previously saved and updates the huggingface run.
 
     Parameters:
-        wallet: Wallet object containing user credentials.
         model: model to be pushed.
         repo_name: the name of huggingface repo
-        uid: uid of subnet 9
+        token: credential HF access token
     Returns:
         None
     """
@@ -190,6 +189,17 @@ def load( wallet, device: str = 'cpu'):
         raise ValueError('Model failed to load.')
 
 def update( wallet, repo_name, token, uid):
+    """
+    Update the model in huggingface and this subnet.
+
+    Parameters:
+        wallet: Wallet object containing user credentials.
+        repo_name: huggingface repo name
+        token: credential HF access token
+        uid: User ID 
+    Returns:
+        None
+    """
     model = save( wallet,repo_name)
     push( model, repo_name, token, uid)
 

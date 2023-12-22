@@ -75,7 +75,7 @@ def hotkey( uid: int ) -> typing.Optional[ str ]:
 
 def metadata( uid: int ):
     """
-        Retrieves the file path to the model checkpoint for uid with associated timestamps and verion.
+        Retrieves the file path to the model checkpoint for uid with associated timestamps.
     Args:
         uid: Uid to find metadata on.    
     """
@@ -109,7 +109,8 @@ def sync( subtensor, uid: int, metagraph: typing.Optional[bt.metagraph] = None )
     if there is a newer version available. It manages the metadata and model files based on the latest run's 
     information. If no valid run is found, it cleans up any existing model and metadata files.
 
-    Parameters:
+    Parameters:      
+        subtensor: subtensor object, in here we will use subtensor block-chain infra to get time-stamps
         uid (int): The user ID for which the model update is to be checked and performed.
         metagraph (Optional[bt.metagraph]): The metagraph to use for finding the latest valid run. 
                                         If not provided, it's fetched using pretrain.NETUID.
@@ -179,7 +180,7 @@ def save_model( models_dir, repo_name):
 
     Parameters:
         wallet: Wallet object containing user credentials.
-        repo_name: The repo to be saved.
+        repo_name: The repo (huggingface) to be saved.
 
     Returns:
         model .
@@ -196,12 +197,31 @@ def save_model( models_dir, repo_name):
         raise ValueError('Model failed to save.')
 
 def remove_local_files(metadata_file, models_dir):
+    """
+    util function to remove invalid run's metadata and models.
+
+    Parameters:
+        metadata_file: path of metadata_file
+        models_dir: path of models
+
+    Returns:
+        None .
+    """
     if os.path.exists(metadata_file):
         os.remove(metadata_file)
     if os.path.exists(models_dir):
         shutil.rmtree(models_dir) 
         bt.logging.debug(f'No valid run, Deleting {metadata_file}  and {models_dir}')
 def check_repo_valid(repo, uid):
+    """
+    Check if a HF repo is valid.
+
+    Parameters:
+        repo: The repo (huggingface) to be checked.
+        uid (int): The user ID for which the model update is to be checked and performed.
+    Returns:
+        bool .
+    """
     try:
         # todo replace with huggingface 
         model = AutoModelForCausalLM.from_pretrained(repo, use_safetensors=True) 
@@ -216,9 +236,12 @@ def check_repo_valid(repo, uid):
 
 def get_latest_model( subtensor, metadata):
     """
-        Retrieves the uid info from subtensor.
+        Retrieves the uid info from subtensor
     Args:
-        uid: Uid to find metadata on.    
+        subtensor: subtensor object used to get commit info
+        metadata: metadata of specific uid
+    Returns:
+        bool, Dict
     """
     try:
         commit = subtensor.get_commitment( netuid = pretrain.NETUID, uid = metadata['uid'] )
