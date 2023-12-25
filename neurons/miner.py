@@ -17,208 +17,259 @@
 # DEALINGS IN THE SOFTWARE.
 
 import math
-#import pdb
-import torch
 import random
-import argparse
-import pretrain as pt
+from argparse import ArgumentParser
+from functools import cached_property
+from itertools import islice
+from typing import Iterator
+
 import bittensor as bt
+import torch
+from transformers.models.auto.auto_factory import _BaseAutoModelClass
 
-# === Config ===
-def get_config():
-    """
-    Set up and parse the command-line arguments to configure the system.
-
-    The configuration is responsible for setting up the environment including
-    the model path, device to use, and the bittensor wallet and logging configurations.
-
-    Returns:
-        A namespace object containing the configuration parameters.
-    """
-
-    # Initialize an argument parser
-    parser = argparse.ArgumentParser()
-
-    # Add model_path argument which allows the user to specify the path of the model
-    parser.add_argument("--huggingface_repo_name",  type=str, default= "", help="Please clarify the huggingface repo name (your huggingface space)/(model_name) e.g. James/model1")
-
-    # Add model_path argument which allows the user to specify the path of the model
-    parser.add_argument("--huggingface_api_token", type=str, default= "", help="Please only give api token")
-
-    # Set the number of epochs
-    parser.add_argument( '--early_publish', action='store_true', help='Does not launch a wandb run, does not send model to wandb, does not check if registered' )
-
-    # Add model_path argument which allows the user to specify the path of the model
-    parser.add_argument("--model_path", type=str, required=False, help="Override model path")
-
-    # Add device argument which defaults to 'cuda' if available, else 'cpu'
-    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
-
-    # Add device argument which defaults to 'cuda' if available, else 'cpu'
-    parser.add_argument("--load_best", action='store_true', help='If set, the miner loads the best model from wandb to train off.' ) 
-
-    # Add device argument which defaults to 'cuda' if available, else 'cpu'
-    parser.add_argument("--load_uid", type=int, default=None, help='If passed loads the model under the specified uid.' )  
-
-    # Add device argument which defaults to 'cuda' if available, else 'cpu'
-    parser.add_argument("--load_disk",action='store_true', help='If set, loads the model from disk' )  
-
-    # Set the number of epochs
-    parser.add_argument("--num_epochs", type = int, default = -1, help="Number of training epochs (-1 is infinite)")
-
-    # Training lr.
-    parser.add_argument("--lr", type = float, default = 0.00001, help="Learning rate.")
-
-    # Training batch size
-    parser.add_argument("--bs", type = int, default = pt.batch_size, help="Batch size")
-
-    # Training sequence length
-    parser.add_argument("--sl", type = int, default = pt.sequence_length, help="Sequence length")
-
-    # Training accumulation steps per step.
-    parser.add_argument("--accumulation_steps", type = int, default = 5, help="The number of training accumulation steps.")
-
-    # Set the number of pages trained per epoch
-    parser.add_argument("--pages_per_epoch", type = int, default=10, help="Number of pages trained on per epoch")
-
-    # Include wallet and logging arguments from bittensor
-    bt.wallet.add_args(parser)
-    bt.subtensor.add_args(parser)
-    bt.logging.add_args(parser)
-
-    # Parse the arguments and create a configuration namespace
-    config = bt.config(parser)
-
-    return config
-
-# Parse and print configuration
-config = get_config()
-print(config)
-
-# Create bittensor objects.
-bt.logging( config = config )
-wallet = bt.wallet( config = config ) 
-subtensor = bt.subtensor( config = config )
-metagraph = subtensor.metagraph( pt.NETUID )
-if not config.offline: 
-    if wallet.hotkey.ss58_address not in metagraph.hotkeys: 
-        raise Exception(f"You are not registered. \nUse: \n`btcli s register --netuid {pt.NETUID}` to register via burn \n or btcli s pow_register --netuid {pt.NETUID} to register with a proof of work")
-    uid = metagraph.hotkeys.index( wallet.hotkey.ss58_address )
-    bt.logging.success( f'You are registered with address: {wallet.hotkey.ss58_address} and uid: {uid}' )
-
-# Initialize the model based on the best on the network.
-if config.load_best:
-    # Get the best UID be incentive and load it.
-    best_uid = pt.graph.best_uid( metagraph )
-    repo_name = subtensor.get_commitment( pt.NETUID, best_uid )
-    model = pt.mining.load_from_hf(wallet, repo_name)
-    bt.logging.success(f'Training with best uid: {best_uid}')
-
-# Initialize the model based on a passed uid.
-elif config.load_uid is not None:
-    # Sync the state from the passed uid.
-    repo_name = subtensor.get_commitment(pt.NETUID, config.load_uid )
-    model = pt.mining.load_from_hf(wallet, repo_name)
-    bt.logging.success(f'Training with model from uid: {config.load_uid}')
-# Initialize the model from scratch.
-elif config.load_disk:
-        model = pt.mining.load( wallet)
-        bt.logging.success(f'Load from disk.')
-else:
-    model = pt.model.get_model()
-    bt.logging.success(f'Training from scratch.')
-if not pt.mining.model_size_valid(model):
-    raise ValueError('Model size is not valid, please check your setting.')
-# Init model.
-model.train() 
-model.to( config.device ) 
+import pretrain as pt
 
 
-# Build optimizer
-optimizer = torch.optim.AdamW( model.parameters(), lr = config.lr, weight_decay=0.01)
+class NotRegisteredError(Exception):
+    pass
 
 
-if config.early_publish:
-    try:
-        push_flag = pt.mining.push( model, config.huggingface_repo_name, config.huggingface_api_token)
-        info = config.huggingface_repo_name
-        bt.extrinsics.serving.publish_metadata(subtensor, wallet, netuid=pt.NETUID, type=f"Raw{len(info)}", data=info.encode())
-        # this is a workaround, some model don't have config when save, need to use huggingface to save model config, will change in next release 
-        bt.logging.success(f'Saving model to path: {pt.mining.path( wallet )}.')
-        pt.mining.save( wallet, config.huggingface_repo_name)
-    except:
-        raise ValueError('Model failed to save.')
+class Miner:
+    config: bt.config
+    wallet: bt.wallet
+    subtensor: bt.subtensor
+    metagraph: bt.metagraph
 
-# Start the training loop
-epoch_step = 0
-global_step = 0
-n_acc_steps = 0
-best_avg_loss = math.inf
-accumulation_steps = config.accumulation_steps  
+    @classmethod
+    def get_argument_parser(cls) -> ArgumentParser:
+        """
+        Set up and parse the command-line arguments to configure the system.
 
-try:
-    while epoch_step < config.num_epochs or config.num_epochs == -1:
-        # Initialize loss accumulator for the epoch
-        epoch_loss = 0.0
+        The configuration is responsible for setting up the environment including
+        the model path, device to use, and the bittensor wallet and logging configurations.
+        """
 
-        # Prepare the data loader with random pages for each epoch
-        bt.logging.success( f"Loading {config.pages_per_epoch} pages for training this epoch" )
-        random_pages = [random.randint(1, pt.dataset.SubsetFalconLoader.max_pages) for _ in range( config.pages_per_epoch )]
-        loader = pt.dataset.SubsetFalconLoader(
-            batch_size = config.bs, 
-            sequence_length = config.sl, 
-            pages = random_pages
+        # Initialize an argument parser
+        parser = ArgumentParser()
+
+        # Do not upload model to huggingface
+        parser.add_argument( '--offline', action='store_true', help='Do not upload model to HuggingFace' )
+
+        # Add model_path argument which allows the user to specify the path of the model
+        parser.add_argument("--huggingface_repo_name", type=str, default="", help="Please clarify the huggingface repo name (your huggingface space)/(model_name) e.g. James/model1")
+
+        # Add model_path argument which allows the user to specify the path of the model
+        parser.add_argument("--huggingface_api_token", type=str, default="", help="Please only give api token")
+
+        # Save the model before running any additional steps
+        parser.add_argument( '--early_publish', action='store_true', help='Early save the model to HuggningFace' )
+
+        # Add model_path argument which allows the user to specify the path of the model
+        parser.add_argument("--model_path", type=str, required=False, help="Override model path")
+
+        # Add device argument which defaults to 'cuda' if available, else 'cpu'
+        parser.add_argument("--device", type=str, choices=("cuda", "cpu"), default="cuda" if torch.cuda.is_available() else "cpu", help="Device name.")
+
+        # Add device argument which defaults to 'cuda' if available, else 'cpu'
+        parser.add_argument("--load_best", action='store_true', help='If set, the miner loads the best model from wandb to train off.' )
+
+        # Add device argument which defaults to 'cuda' if available, else 'cpu'
+        parser.add_argument("--load_uid", type=int, default=None, help='If passed loads the model under the specified uid.' )
+
+        # Add device argument which defaults to 'cuda' if available, else 'cpu'
+        parser.add_argument("--load_disk",action='store_true', help='If set, loads the model from disk' )
+
+        # Set the number of epochs
+        parser.add_argument("--num_epochs", type=int, default=-1, help="Number of training epochs (-1 is infinite)")
+
+        # Training lr.
+        parser.add_argument("--lr", type=float, default=0.00001, help="Learning rate.")
+
+        # Training batch size
+        parser.add_argument("--bs", type=int, default=pt.batch_size, help="Batch size")
+
+        # Training sequence length
+        parser.add_argument("--sl", type=int, default=pt.sequence_length, help="Sequence length")
+
+        # Training accumulation steps per step.
+        parser.add_argument("--accumulation_steps", type=int, default=5, help="The number of training accumulation steps")
+
+        # Set the number of pages trained per epoch
+        parser.add_argument("--pages_per_epoch", type=int, default=10, help="Number of pages trained on per epoch")
+
+        # Include bittensor-specific arguments
+        bt.wallet.add_args(parser)
+        bt.subtensor.add_args(parser)
+        bt.logging.add_args(parser)
+
+        return parser
+
+    def __init__(self) -> None:
+        parser = self.get_argument_parser()
+        self.config = config = bt.config(parser)
+
+        bt.logging(config=config)
+        bt.logging.info(config)
+
+        self.wallet = bt.wallet(config=config)
+        self.subtensor = bt.subtensor(config=config)
+        self.metagraph = self.subtensor.metagraph(pt.NETUID)
+
+    def upload_model(self, model: _BaseAutoModelClass) -> None:
+        """
+        Upload the model to HuggingFace.
+        """
+        if self.config.offline:
+            bt.logging.info('Skipping model upload because offline flag is set')
+            return
+
+        if not pt.mining.is_valid_size(model):
+            raise ValueError('Model size is not valid, please check your setting.')
+
+        if not (huggingface_repo_name := self.config.huggingface_repo_name):
+            raise ValueError('Please specify the huggingface repo name')
+
+        _push_flag = pt.mining.push(
+            model,
+            huggingface_repo_name,
+            self.config.huggingface_api_token,
         )
 
-        # Enumerate over the data loader
-        n_batches = 0
-        optimizer.zero_grad()  # Initialize gradients to zero
+        data = huggingface_repo_name
+        bt.extrinsics.serving.publish_metadata(
+            self.subtensor,
+            self.wallet,
+            netuid=pt.NETUID,
+            type=f"Raw{len(data)}",
+            data=data.encode(),
+        )
 
-        for i, batch in enumerate(loader):
-            # Move the input batch to the device
-            inputs = batch.to(model.device)
-            
-            # Forward pass: compute the model output and loss
-            outputs = model(inputs, labels=inputs)
+        bt.logging.success(f'Saving model to path: {pt.mining.path(self.wallet)}.')
+        pt.mining.save(self.wallet, huggingface_repo_name)
 
-            loss = outputs.loss / accumulation_steps  # Scale loss
-            loss.backward()  # Accumulate gradients
+    def load_model(self) -> _BaseAutoModelClass:
+        # Initialize the model based on the best on the network.
+        if self.config.load_best:
+            # Get the best UID be incentive and load it.
+            best_uid = pt.graph.best_uid(self.metagraph)
+            repo_name = self.subtensor.get_commitment(pt.NETUID, best_uid)
+            model = pt.mining.load_from_hf(self.wallet, repo_name)
+            bt.logging.success(f'Loaded model with best uid: {best_uid}')
+            return model
 
-            if (i + 1) % accumulation_steps == 0:
-                n_acc_steps += 1
-                optimizer.step()  # Perform a single optimization step
-                optimizer.zero_grad()  # Clear gradients
-                bt.logging.success(f'Step: {n_acc_steps} loss: {outputs.loss.detach().item()}')
+        # Initialize the model based on a passed uid.
+        if (load_uid := self.config.load_uid) is not None:
+            # Sync the state from the passed uid.
+            repo_name = self.subtensor.get_commitment(pt.NETUID, load_uid)
+            model = pt.mining.load_from_hf(self.wallet, repo_name)
+            bt.logging.success(f'Loaded model from uid: {load_uid}')
+            return model
 
-            torch.cuda.empty_cache()
-                        
-            # Log the loss for the current step
-            n_batches += 1
-            global_step += 1
-            epoch_loss += outputs.loss.detach().item()
+        # Initialize the model from scratch.
+        if self.config.load_disk:
+            model = pt.mining.load(self.wallet)
+            bt.logging.success('Loaded model from disk')
+            return model
 
-        # Calculate the average loss for the epoch
-        avg_loss = epoch_loss / n_batches
+        model = pt.model.get_model()
+        bt.logging.success('Created model from scratch')
+        return model
 
-        # Log the average loss for the epoch
-        bt.logging.success(f'Epoch: {epoch_step} average loss: {avg_loss}')
-        epoch_step += 1
+    @cached_property
+    def ss58_address(self) -> str:
+        return self.wallet.hotkey.ss58_address
 
-        # Check if the average loss of this epoch is the best we've seen so far
-        if avg_loss < best_avg_loss * ( 1 - pt.timestamp_epsilon ):
-            best_avg_loss = avg_loss  # Update the best average loss
-            bt.logging.success(f'New best average loss: {best_avg_loss}.')
-            # Push the model to your run.
-            try:
-                push_flag = pt.mining.push( model, config.huggingface_repo_name, config.huggingface_api_token)
-                info = config.huggingface_repo_name
-                bt.extrinsics.serving.publish_metadata(subtensor, wallet, netuid=pt.NETUID, type=f"Raw{len(info)}", data=info.encode())
-                # Save the model to your mining dir.
-                bt.logging.success(f'Saving model to path: {pt.mining.path( wallet )}.')
-                pt.mining.save( wallet, config.huggingface_repo_name )
-            except:
-                raise ValueError('Model failed to save.')
+    def check_registration(self) -> None:
+        if self.config.offline:
+            return
 
-finally: 
-    # Important step.
-    bt.logging.success(f'Training Done.')
+        if self.ss58_address not in self.metagraph.hotkeys:
+            raise NotRegisteredError(
+                f"You are not registered. \n"
+                f"Use: \n`btcli s register --netuid {pt.NETUID}` to register via burn \n "
+                f"or btcli s pow_register --netuid {pt.NETUID} to register with a proof of work"
+            )
+
+        uid = self.metagraph.hotkeys.index(self.ss58_address)
+        bt.logging.success(f'You are registered with address: {self.ss58_address} and uid: {uid}')
+
+    def iter_epochs(self, model: _BaseAutoModelClass) -> Iterator[float]:  # returns avg loss for each epoch
+        n_acc_steps = 0
+        accumulation_steps = self.config.accumulation_steps
+        optimizer = torch.optim.AdamW(model.parameters(), lr=self.config.lr, weight_decay=0.01)
+
+        while True:
+
+            # Initialize loss accumulator for the epoch
+            epoch_loss = 0.0
+
+            # Prepare the data loader with random pages for each epoch
+            bt.logging.info( f"Loading {self.config.pages_per_epoch} pages for training this epoch" )
+            random_pages = [
+                random.randint(1, pt.dataset.SubsetFalconLoader.max_pages)
+                for _ in range(self.config.pages_per_epoch)
+            ]
+            loader = pt.dataset.SubsetFalconLoader(
+                batch_size = self.config.bs,
+                sequence_length = self.config.sl,
+                pages = random_pages,
+            )
+
+            # Enumerate over the data loader
+            n_batches = 0
+            optimizer.zero_grad()  # Initialize gradients to zero
+
+            for i, batch in enumerate(loader):
+                # Move the input batch to the device
+                inputs = batch.to(model.device)
+
+                # Forward pass: compute the model output and loss
+                outputs = model(inputs, labels=inputs)
+
+                loss = outputs.loss / accumulation_steps  # Scale loss
+                loss.backward()  # Accumulate gradients
+
+                if (i + 1) % accumulation_steps == 0:
+                    n_acc_steps += 1
+                    optimizer.step()  # Perform a single optimization step
+                    optimizer.zero_grad()  # Clear gradients
+                    bt.logging.success(f'Step: {n_acc_steps} loss: {outputs.loss.detach().item()}')
+
+                torch.cuda.empty_cache()
+
+                # Log the loss for the current step
+                n_batches += 1
+                epoch_loss += outputs.loss.detach().item()
+
+            # Calculate the average loss for the epoch
+            yield epoch_loss / n_batches
+
+    def run(self) -> None:
+        self.check_registration()
+
+        model = self.load_model()
+        model.train()
+        model.to(self.config.device)
+
+        if self.config.early_publish:
+            self.upload_model(model)
+
+        # Start the training loop
+        best_avg_loss = math.inf
+        avg_losses = self.iter_epochs(model)
+        if self.config.num_epochs != -1:
+            avg_losses = islice(avg_losses, self.config.num_epochs)
+
+        for epoch_step, avg_loss in enumerate(avg_losses):
+            # Log the average loss for the epoch
+            bt.logging.success(f'Epoch: {epoch_step} average loss: {avg_loss}')
+
+            # Check if the average loss of this epoch is the best we've seen so far
+            if avg_loss < best_avg_loss * ( 1 - pt.timestamp_epsilon ):
+                best_avg_loss = avg_loss  # Update the best average loss
+                bt.logging.success(f'New best average loss: {best_avg_loss}')
+                self.upload_model(model)
+
+
+if __name__ == "__main__":
+    Miner().run()

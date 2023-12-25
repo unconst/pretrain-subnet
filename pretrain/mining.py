@@ -104,7 +104,7 @@ def push( model, repo_name, token):
     model.push_to_hub(repo_name=repo_name, repo_id=repo_name, token=token, safe_serialization=True)
 
 
-def model_size_valid(model):
+def is_valid_size(model) -> bool:
     """
     check the size of model
     Parameters:
@@ -114,9 +114,9 @@ def model_size_valid(model):
         Bool.
     """
     model_size = sum(p.numel() for p in model.parameters())
-    # current size of gpt2 is 122268040, previous size is 57868320. 
-    # distilgpt2 size is 81912576 try to get a new model size that no one pretrained before 
-    if model_size > 122200000 or model_size <82000000:
+    # current size of gpt2 is 122268040, previous size is 57868320.
+    # distilgpt2 size is 81912576 try to get a new model size that no one pretrained before
+    if not (82_000_000 <= model_size <= 122_200_000):
         warnings.warn("This model size is not Valid, please make sure you model parameter size is between 82M and 122M .")
         return False
     return True
@@ -141,8 +141,8 @@ def save( wallet, repo_name ):
         snapshot_download(repo_id=repo_name, \
                         local_dir=_model_path, \
                             local_dir_use_symlinks=False)
-        model = AutoModelForCausalLM.from_pretrained(_model_path, use_safetensors=True, local_files_only=True) 
-        if model_size_valid(model):
+        model = AutoModelForCausalLM.from_pretrained(_model_path, use_safetensors=True, local_files_only=True)
+        if is_valid_size(model):
             return model
     except:
         shutil.rmtree(_model_path) 
@@ -160,10 +160,10 @@ def load_from_hf(wallet, repo_name):
     Returns:
         model: model loaded under wallet path.
     """
-    
+
     model = save(wallet, repo_name)
-    
-    if model_size_valid(model):
+
+    if is_valid_size(model):
         return model
     else:
         raise ValueError('Model failed to load.')
@@ -182,7 +182,7 @@ def load( wallet, device: str = 'cpu'):
     _model_path = path(wallet)
     model = AutoModelForCausalLM.from_pretrained(_model_path, use_safetensors=True, local_files_only=True) 
     model.to(device)
-    if model_size_valid(model):
+    if is_valid_size(model):
         return model
     else:
         shutil.rmtree(_model_path) 
